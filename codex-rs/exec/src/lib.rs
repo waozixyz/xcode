@@ -230,7 +230,6 @@ struct ExecRunArgs {
     images: Vec<PathBuf>,
     json_mode: bool,
     last_message_file: Option<PathBuf>,
-    model_provider: Option<String>,
     managed_worktree: Option<ManagedExecWorktree>,
     oss: bool,
     output_schema_path: Option<PathBuf>,
@@ -575,7 +574,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     if oss {
         return Err(anyhow::anyhow!(codex_utils_oss::OSS_UNAVAILABLE));
     }
-    let model_provider: Option<String> = None;
 
     let model = model_cli_arg;
 
@@ -593,7 +591,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         persisted_permission_profile: None,
         cwd: resolved_cwd,
         workspace_roots: None,
-        model_provider: model_provider.clone(),
+        model_provider: None,
         service_tier: None,
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
@@ -778,7 +776,6 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         images,
         json_mode,
         last_message_file,
-        model_provider,
         managed_worktree,
         oss,
         output_schema_path,
@@ -880,7 +877,6 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         images,
         json_mode,
         last_message_file,
-        model_provider,
         managed_worktree,
         oss,
         output_schema_path,

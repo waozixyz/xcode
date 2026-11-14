@@ -1052,6 +1052,12 @@ fn main() -> anyhow::Result<()> {
         // Helper personalities have already been dispatched; only the
         // long-lived CLI hands its memory back while idle.
         native_idle::start();
+        // Report the newest upstream Codex release to the service, never
+        // Xcoder's own version; record it before any request is built.
+        if let Ok(codex_home) = find_codex_home() {
+            codex_login::upstream_version::load_cached(codex_home.as_path());
+            codex_login::upstream_version::refresh_in_background(codex_home.into_path_buf());
+        }
         // Finish polling the large subcommand dispatcher before polling interactive TUI events.
         if let Some(tui) = Box::pin(dispatch_cli(arg0_paths, remote_control_disabled)).await? {
             tui.await?;

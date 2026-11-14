@@ -222,14 +222,18 @@ async fn bounded_read(reader: impl AsyncRead + Unpin, limit: usize) -> Result<Ve
     Ok(bytes)
 }
 
+/// Reads the next request on a callback channel. `None` means the cell closed
+/// the channel between requests: a cell uses as many of its channels as it
+/// needs, and the unused ones close when it exits.
 async fn read_request(
     mut socket: UnixStream,
     budget: Arc<Semaphore>,
-) -> Result<(RequestSocket, NativeMessage), String> {
-    let length = socket
-        .read_u32_le()
-        .await
-        .map_err(|error| error.to_string())? as usize;
+) -> Result<Option<(RequestSocket, NativeMessage)>, String> {
+    let length = match socket.read_u32_le().await {
+        Ok(length) => length as usize,
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
     if length > MAX_FRAME {
         return Err("native request exceeds 64 MiB".into());
     }
@@ -245,13 +249,13 @@ async fn read_request(
         .map_err(|error| error.to_string())?;
     let request: NativeMessage = serde_json::from_slice(&bytes)
         .map_err(|error| format!("invalid native request: {error}"))?;
-    Ok((
+    Ok(Some((
         RequestSocket {
             socket,
             _budget: permit,
         },
         request,
-    ))
+    )))
 }
 
 struct FrameWriter(Vec<u8>);
@@ -338,13 +342,31 @@ mod native_transport_tests {
     }
 
     #[tokio::test]
+    async fn channel_closed_between_requests_is_not_an_error() {
+        let (sender, socket) = UnixStream::pair().unwrap();
+        drop(sender);
+        let budget = Arc::new(Semaphore::new(1024));
+        assert!(matches!(read_request(socket, budget).await, Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn channel_closed_inside_a_request_is_an_error() {
+        let (mut sender, socket) = UnixStream::pair().unwrap();
+        sender.write_u32_le(8).await.unwrap();
+        sender.write_all(b"{}").await.unwrap();
+        drop(sender);
+        let budget = Arc::new(Semaphore::new(1024));
+        assert!(read_request(socket, budget).await.is_err());
+    }
+
+    #[tokio::test]
     async fn callback_and_reply_budgets_are_released_after_writing() {
         let (mut sender, socket) = UnixStream::pair().unwrap();
         let wire = br#"{"op":"call","name":"fixture","value":"{}"}"#;
         sender.write_u32_le(wire.len() as u32).await.unwrap();
         sender.write_all(wire).await.unwrap();
         let budget = Arc::new(Semaphore::new(1024));
-        let (socket, message) = read_request(socket, budget.clone()).await.unwrap();
+        let (socket, message) = read_request(socket, budget.clone()).await.unwrap().unwrap();
         assert_eq!(message.name, "fixture");
         assert_eq!(budget.available_permits(), 1024 - wire.len() * 2);
         let mut writes = JoinSet::new();
@@ -482,7 +504,9 @@ async fn run(
             },
             result = child.wait() => break result.map_err(|error| error.to_string())?,
             completed = reads.join_next(), if !reads.is_empty() => {
-                let (socket, message) = completed.ok_or("native request task disappeared")?.map_err(|error| error.to_string())??;
+                let Some((socket, message)) = completed.ok_or("native request task disappeared")?.map_err(|error| error.to_string())?? else {
+                    continue;
+                };
                 let op = message.op.as_str();
                 let name = message.name.as_str();
                 let value = message.value.as_str();

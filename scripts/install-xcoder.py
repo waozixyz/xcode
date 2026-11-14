@@ -87,38 +87,17 @@ def install(prefix, before_cutover=None):
     alias = prefix / 'bin/xcoder'
     alias.parent.mkdir(parents=True, exist_ok=True)
     original['xcoder_alias'] = {'path': str(alias), 'symlink': os.readlink(alias) if alias.is_symlink() else None}
-    if alias.is_file() and not alias.is_symlink():
-        saved = backup / ('xcoder-command-' + digest(alias))
-        if not saved.exists():
-            shutil.copy2(alias, saved)
-        original['xcoder_alias']['saved'] = str(saved)
-    original['previous_native'] = {}
-    for name in ['codex', 'codex-code-mode-host', 'codex.xcoder.json']:
-        previous = destination / name
-        if previous.is_file():
-            saved = backup / (name + '-' + digest(previous))
-            if not saved.exists():
-                shutil.copy2(previous, saved)
-            original['previous_native'][name] = str(saved)
+    # Owner rule: never keep copies of replaced binaries. The receipt records
+    # only which paths and links were replaced.
     package_entry = target.resolve() if target.exists() else None
     package_root = Path.home() / '.codex/packages/standalone'
     if package_entry and package_entry.name == 'codex' and package_entry.is_relative_to(package_root):
         # The desktop app also launches this registered package entry directly.
-        # Preserve the running inode and original bytes before the atomic switch.
-        saved = backup / ('package-codex-' + digest(package_entry))
-        if not saved.exists():
-            shutil.copy2(package_entry, saved)
         original['package_entry'] = str(package_entry)
-        original['package_saved'] = str(saved)
         compatibility = package_entry.with_name('codex-upstream')
         if compatibility.exists() or compatibility.is_symlink():
             raise FileExistsError(str(compatibility))
         original['package_compatibility_entry'] = str(compatibility)
-    if target.is_file() and not target.is_symlink():
-        saved = backup / ('codex-' + digest(target))
-        if not saved.exists():
-            shutil.copy2(target, saved)
-        original['saved'] = str(saved)
     receipt = backup / ('original-' + str(time.time_ns()) + '.json')
     receipt.write_text(json.dumps(original, indent=2) + '\n')
     receipt.chmod(0o600)
@@ -158,7 +137,7 @@ def install(prefix, before_cutover=None):
         os.replace(alias_link, alias)
     installed = json.loads(subprocess.check_output([str(target), '--xcoder-runtime-info'], text=True))
     if installed != metadata or digest(destination / 'codex') != expected['binary_sha256'] or digest(destination / 'codex-code-mode-host') != expected['host_sha256']:
-        raise ValueError('Installed Xcoder verification failed; original target retained in ' + str(receipt))
+        raise ValueError('Installed Xcoder verification failed; replaced paths are recorded in ' + str(receipt))
     if original.get('package_entry'):
         registered = json.loads(subprocess.check_output([original['package_entry'], '--xcoder-runtime-info'], text=True))
         if registered != metadata:

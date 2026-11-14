@@ -65,8 +65,8 @@ class ValidationTest(unittest.TestCase):
         parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent) as temporary:
             root = Path(temporary)
-            paths = {'abi': 'build/native-dispatch/native-abi-test',
-                     'allocator': 'build/native-dispatch/native-allocator-test',
+            paths = {**{suite: 'build/native-dispatch/' + name
+                        for suite, name in validation.NATIVE_TESTS.items()},
                      **{suite: 'codex-rs/target/release/deps/' + suite.replace('-', '_') + '-fixture'
                         for suite in validation.RUST_SUITES}}
             rows = []

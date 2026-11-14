@@ -272,6 +272,26 @@ pub(crate) fn prepare_brokered_shell_snapshot_env(
     }
 }
 
+/// Without a snapshot (none configured, or not written yet when the first
+/// commands of a session run), a login shell still reads the login profile,
+/// which can reset `PATH` or put another `apply_patch` first. Replay the
+/// Codex-owned `PATH` entries at the start of the script, after login startup.
+fn replay_runtime_path_after_login(
+    command: &[String],
+    explicit_env_overrides: &HashMap<String, String>,
+    runtime_path_prepends: &RuntimePathPrepends,
+) -> Vec<String> {
+    let mut command = command.to_vec();
+    if command.len() < 3 || command[1] != "-lc" {
+        return command;
+    }
+    let exports = runtime_path_prepends.shell_exports_after_snapshot(explicit_env_overrides);
+    if !exports.is_empty() {
+        command[2] = format!("{exports}\n{}", command[2]);
+    }
+    command
+}
+
 /// POSIX-only helper: for commands produced by `Shell::derive_exec_args`
 /// for Bash/Zsh/sh of the form `[shell_path, "-lc", "<script>"]` or brokered
 /// `[shell_path, "-c", "<script>"]`, and
@@ -313,13 +333,9 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         return command.to_vec();
     }
 
-    let Some(snapshot) = shell_snapshot else {
-        return command.to_vec();
+    let Some(snapshot) = shell_snapshot.filter(|snapshot| snapshot.exists()) else {
+        return replay_runtime_path_after_login(command, explicit_env_overrides, runtime_path_prepends);
     };
-
-    if !snapshot.exists() {
-        return command.to_vec();
-    }
 
     if command.len() < 3 {
         return command.to_vec();

@@ -253,6 +253,51 @@ fn runtime_path_prepends_ignores_empty_path_entry() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn login_shell_without_snapshot_replays_runtime_path_after_login() {
+    let mut env = HashMap::from([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
+    let mut runtime_path_prepends = RuntimePathPrepends::default();
+    runtime_path_prepends.prepend(&mut env, PathBuf::from("/tmp/arg0 helper").as_path());
+    let session_shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+    };
+    let command = vec![
+        "/bin/bash".to_string(),
+        "-lc".to_string(),
+        "apply_patch <<'PATCH'".to_string(),
+    ];
+
+    let missing = AbsolutePathBuf::from_absolute_path("/nonexistent/snapshot.sh").unwrap();
+    for snapshot in [None, Some(&missing)] {
+        let rewritten = maybe_wrap_shell_lc_with_snapshot(
+            &command,
+            &session_shell,
+            snapshot,
+            &HashMap::new(),
+            &env,
+            &runtime_path_prepends,
+        );
+        assert_eq!(rewritten[..2], command[..2]);
+        assert_eq!(
+            rewritten[2],
+            "if [ -n \"${PATH:-}\" ]; then export PATH='/tmp/arg0 helper':\"$PATH\"; else export PATH='/tmp/arg0 helper'; fi\napply_patch <<'PATCH'"
+        );
+    }
+
+    let user_path = HashMap::from([("PATH".to_string(), "/custom".to_string())]);
+    let rewritten = maybe_wrap_shell_lc_with_snapshot(
+        &command,
+        &session_shell,
+        None,
+        &user_path,
+        &env,
+        &runtime_path_prepends,
+    );
+    assert_eq!(rewritten, command, "an explicit PATH override wins");
+}
+
 #[test]
 fn explicit_escalation_keeps_user_proxy_env_without_codex_marker() {
     let env = HashMap::from([

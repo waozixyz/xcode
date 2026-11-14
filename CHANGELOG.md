@@ -2,10 +2,16 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 
 ## Unreleased
 
-- Report the tracked upstream Codex release (0.169.0) instead of the `0.0.0` development
-  version when fetching the model catalog, so newer models such as GPT-6.1-Sol are listed.
-  Model requests now identify the same way in their User-Agent and `version` header; a fresh
-  ChatGPT-account session with GPT-6.1-Sol was refused while they still said `0.0.0`.
+## 0.1.0 — 2026-11-14
+
+First Xcoder release: Codex with native Ziran tool execution, for Linux x86_64.
+
+- Installing replaces the previous binaries in place; the installer no longer keeps copies of them.
+- Shell commands that run before the session's shell snapshot is written also put Xcoder's `apply_patch` ahead of a login profile's `PATH`; only snapshot restores replayed it before.
+- Tool cells no longer fail with "unexpected end of file" when they exit: the callback channels a cell leaves unused now close quietly.
+
+- The version Xcoder reports to the Codex service follows the newest upstream Codex release, not Xcoder's own version: at least 0.169.0, and newer once GitHub's latest `openai/codex` release says so (checked in the background at most every 20 hours, cached in `CODEX_HOME/xcoder-upstream-version.json`; `XCODER_UPSTREAM_VERSION_CHECK=0` turns the check off). The model catalog, the User-Agent and the `version` header all use it, so newer models such as GPT-6.1-Sol are listed and accepted; while requests said `0.0.0`, the service hid GPT-6.1-Sol and refused it.
+- `xcoder --version` shows Xcoder's own release number.
 
 - Remove parts Xcoder never uses under Harmony: the `cloud`, `tcp-tunnel`, `responses-api-proxy`, `exec-server` and `debug app-server` subcommands with their seven crates, the Ollama and LM Studio providers, and the AWS SDK behind Amazon Bedrock sign-in. `--oss` now stops at startup with an explanation instead of probing for local servers, and Bedrock selection reports that it is unavailable. About 22,000 lines and the AWS SDK dependency tree are gone.
 
