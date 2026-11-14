@@ -13,7 +13,7 @@ pub struct NativeCodeModeSessionProvider;
 
 impl CodeModeSessionProvider for NativeCodeModeSessionProvider {
     fn availability(&self) -> Result<(), String> {
-        crate::native_sandbox::toolchain().map(|_| ())
+        Ok(())
     }
 
     fn create_session(&self) -> CodeModeSessionProviderFuture<'_> {

@@ -20,30 +20,14 @@ pub fn bundled_models_response()
     serde_json::from_str(include_str!("../models.json"))
 }
 
-/// Upstream Codex release whose model catalog this build tracks.
+pub use codex_protocol::client_version::TRACKED_UPSTREAM_CLIENT_VERSION;
+
+/// The whole client version reported for catalog requests and cache entries.
 ///
-/// Xcoder keeps upstream's `0.0.0` development workspace version, but the
-/// models endpoint hides newer models (for example `gpt-6.1-sol`) from
-/// `0.0.0` clients. Catalog requests and cache entries therefore report the
-/// tracked release instead of the development placeholder.
-pub const TRACKED_UPSTREAM_CLIENT_VERSION: &str = "0.169.0";
-
-/// Convert the client version string to a whole version string (e.g. "1.2.3-alpha.4" -> "1.2.3").
+/// See [`codex_protocol::client_version`] for why it is not the `0.0.0`
+/// development placeholder.
 pub fn client_version_to_whole() -> String {
-    whole_client_version(
-        env!("CARGO_PKG_VERSION_MAJOR"),
-        env!("CARGO_PKG_VERSION_MINOR"),
-        env!("CARGO_PKG_VERSION_PATCH"),
-    )
-}
-
-fn whole_client_version(major: &str, minor: &str, patch: &str) -> String {
-    let version = format!("{major}.{minor}.{patch}");
-    if version == "0.0.0" {
-        TRACKED_UPSTREAM_CLIENT_VERSION.to_string()
-    } else {
-        version
-    }
+    codex_protocol::client_version::reported_client_version().to_string()
 }
 
 #[cfg(test)]

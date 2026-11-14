@@ -44,6 +44,9 @@ fn test_get_codex_user_agent() {
     let originator = originator().value;
     let prefix = format!("{originator}/");
     assert!(user_agent.starts_with(&prefix));
+    let reported = codex_protocol::client_version::reported_client_version();
+    assert!(user_agent.starts_with(&format!("{originator}/{reported} (")));
+    assert!(!user_agent.starts_with(&format!("{originator}/0.0.0 ")));
 }
 
 #[test]

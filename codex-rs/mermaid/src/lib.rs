@@ -1,36 +1,13 @@
-//! Bounded, terminal-native Mermaid diagram prototype.
-//!
-//! Supports flowcharts, sequences, states, classes, and entity relationships.
-//! Graph edges own separate lanes and endpoint positions. Crossings never join routes. Unsupported
-//! syntax and outputs exceeding the caller's width return errors, leaving source fallback to
-//! the caller. This crate performs no I/O and does not depend on a Mermaid implementation.
+//! Bounded terminal-native Mermaid rendering, implemented as a portable Ziran module.
 
-mod draw;
-mod output;
-mod parse;
-mod relations;
-mod sequence;
-mod state;
-mod syntax;
-
-pub use output::Role;
-pub use output::Span;
 use std::fmt;
 
 const MAX_SOURCE: usize = 16 * 1024;
-const MAX_NODES: usize = 16;
-const MAX_EDGES: usize = 24;
-const MAX_LABEL: usize = 40;
-const MAX_CELLS: usize = 64 * 1024;
 
-/// A diagram cannot be faithfully represented by this bounded prototype.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderError {
-    /// Syntax or text is outside the explicitly supported subset.
     Unsupported,
-    /// A source, diagram, label, or canvas limit was exceeded.
     Limit,
-    /// The complete diagram exceeds the supplied display width.
     TooWide,
 }
 
@@ -46,127 +23,144 @@ impl fmt::Display for RenderError {
 
 impl std::error::Error for RenderError {}
 
-/// Render a bounded subset of Mermaid as plain Unicode text.
-///
-/// Supports flowcharts, sequence diagrams, flat state diagrams, class diagrams, and ER diagrams.
-/// See the crate README for each grammar and its limits. Unknown syntax, unsafe terminal text,
-/// and diagrams exceeding `max_width` return errors; no partial result is returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Node,
+    Edge,
+    Text,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub text: String,
+    pub role: Role,
+}
+
 pub fn render(source: &str, max_width: usize) -> Result<String, RenderError> {
-    Ok(render_spans(source, max_width)?
-        .into_iter()
-        .map(|line| line.into_iter().map(|span| span.text).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n"))
+    let grid = native_render(source, max_width)?;
+    let mut text = String::with_capacity(grid.points.count as usize * 2);
+    for y in 0..grid.height as usize {
+        if y != 0 { text.push('\n'); }
+        for point in grid.row(y) {
+            if *point != 0 { text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?); }
+        }
+    }
+    Ok(text)
 }
 
-/// Render the same bounded diagram as lines of semantic spans for caller-provided styling.
 pub fn render_spans(source: &str, max_width: usize) -> Result<Vec<Vec<Span>>, RenderError> {
-    if source.len() > MAX_SOURCE {
-        return Err(RenderError::Limit);
-    }
-    let statements = syntax::statements(source)?;
-    let (header, body) = statements.split_first().ok_or(RenderError::Unsupported)?;
-    match *header {
-        "sequenceDiagram" => sequence::render(body, max_width),
-        "stateDiagram-v2" | "stateDiagram" | "classDiagram" | "erDiagram" => {
-            draw::render(&relations::parse(header, body)?, max_width)
+    let grid = native_render(source, max_width)?;
+    let mut lines = Vec::with_capacity(grid.height as usize);
+    for y in 0..grid.height as usize {
+        let mut line: Vec<Span> = Vec::new();
+        let roles = &grid.roles()[y * grid.width as usize..];
+        let row = grid.row(y);
+        let mut start = 0;
+        while start < row.len() {
+            if row[start] == 0 { start += 1; continue; }
+            let role = match roles[start] {
+                0 => Role::Edge,
+                1 => Role::Node,
+                2 => Role::Text,
+                _ => return Err(RenderError::Unsupported),
+            };
+            let mut end = start;
+            let mut bytes = 0;
+            while end < row.len() && (row[end] == 0 || roles[end] == roles[start]) {
+                let point = row[end];
+                if point != 0 {
+                    bytes += if point < 0x80 { 1 } else if point < 0x800 { 2 }
+                             else if point < 0x10000 { 3 } else { 4 };
+                }
+                end += 1;
+            }
+            let mut text = String::with_capacity(bytes);
+            for point in &row[start..end] {
+                if *point != 0 { text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?); }
+            }
+            line.push(Span { text, role });
+            start = end;
         }
-        _ => draw::render(&parse::parse(header, body)?, max_width),
+        lines.push(line);
+    }
+    Ok(lines)
+}
+
+fn native_render(source: &str, max_width: usize) -> Result<NativeGrid, RenderError> {
+    if source.len() > MAX_SOURCE { return Err(RenderError::Limit); }
+    let grid = unsafe {
+        xcoder_mermaid_grid(NativeSource { data: source.as_ptr(), length: source.len() as i64 },
+                            max_width.min(i64::MAX as usize) as i64)
+    };
+    match grid.status {
+        0 => {},
+        2 => return Err(RenderError::Limit),
+        3 => return Err(RenderError::TooWide),
+        _ => return Err(RenderError::Unsupported),
+    }
+    let cells = i64::from(grid.width).checked_mul(i64::from(grid.height));
+    if grid.width <= 0 || grid.height <= 0 || cells != Some(grid.points.count)
+        || grid.points.count != grid.roles.count || grid.points.count > 64 * 1024
+        || grid.points.data.is_null() || grid.roles.data.is_null()
+    {
+        return Err(RenderError::Unsupported);
+    }
+    Ok(grid)
+}
+
+#[repr(C)]
+struct NativeSource {
+    data: *const u8,
+    length: i64,
+}
+
+#[repr(C)]
+struct NativeVec<T> {
+    data: *mut T,
+    count: i64,
+    capacity: i64,
+}
+
+#[repr(C)]
+struct NativeGrid {
+    points: NativeVec<u32>,
+    roles: NativeVec<u8>,
+    width: i32,
+    height: i32,
+    status: i32,
+}
+
+impl NativeGrid {
+    fn points(&self) -> &[u32] {
+        // Successful native results own initialized row-major cells until Drop.
+        unsafe { std::slice::from_raw_parts(self.points.data, self.points.count as usize) }
+    }
+
+    fn roles(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.roles.data, self.roles.count as usize) }
+    }
+
+    fn row(&self, y: usize) -> &[u32] {
+        let start = y * self.width as usize;
+        let row = &self.points()[start..start + self.width as usize];
+        let end = row.iter().rposition(|point| {
+            *point != 0 && char::from_u32(*point).is_none_or(|ch| !ch.is_whitespace())
+        }).map_or(0, |x| x + 1);
+        &row[..end]
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    #[default]
-    Down,
-    Up,
-    Right,
-    Left,
+impl Drop for NativeGrid {
+    fn drop(&mut self) { unsafe { xcoder_mermaid_grid_free(self) }; }
 }
 
-impl Direction {
-    fn parse(text: &str) -> Result<Self, RenderError> {
-        match text {
-            "TD" | "TB" => Ok(Self::Down),
-            "BT" => Ok(Self::Up),
-            "LR" => Ok(Self::Right),
-            "RL" => Ok(Self::Left),
-            _ => Err(RenderError::Unsupported),
-        }
-    }
-}
-
-/// Node shapes supported by the terminal renderer.
-#[derive(Debug, PartialEq, Eq)]
-enum Shape {
-    /// A rectangular node, such as `A[Work]`.
-    Rectangle,
-    /// A decision node (`A{Done?}`), rendered with a `◇` marker inside a box.
-    Decision,
-    /// A stadium node (`A([Start])`), rendered as a box with rounded corners.
-    Stadium,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct Node {
-    id: String,
-    label: String,
-    shape: Shape,
-    declared: bool,
-    members: Vec<String>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct Edge {
-    from: usize,
-    to: usize,
-    label: String,
-    target_label: String,
-    source_tip: char,
-    target_tip: char,
-    dashed: bool,
-}
-
-impl Edge {
-    fn directed(from: usize, to: usize, label: String) -> Self {
-        Self {
-            from,
-            to,
-            label,
-            target_label: String::new(),
-            source_tip: '─',
-            target_tip: '◄',
-            dashed: false,
-        }
-    }
-}
-
-#[derive(Debug, Default, PartialEq, Eq)]
-struct Graph {
-    direction: Direction,
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
-}
-
-impl Graph {
-    fn node(&mut self, id: &str) -> Result<usize, RenderError> {
-        if let Some(index) = self.nodes.iter().position(|node| node.id == id) {
-            return Ok(index);
-        }
-        if self.nodes.len() == MAX_NODES {
-            return Err(RenderError::Limit);
-        }
-        self.nodes.push(Node {
-            id: id.to_owned(),
-            label: id.to_owned(),
-            shape: Shape::Rectangle,
-            declared: false,
-            members: Vec::new(),
-        });
-        Ok(self.nodes.len() - 1)
-    }
+unsafe extern "C" {
+    fn xcoder_mermaid_grid(source: NativeSource, max_width: i64) -> NativeGrid;
+    fn xcoder_mermaid_grid_free(grid: *mut NativeGrid);
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod parity_tests;

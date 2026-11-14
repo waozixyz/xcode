@@ -1,0 +1,336 @@
+// Hands an idle Xcoder session's resident memory back to the operating system.
+//
+// A session that is not working still holds its whole history, the freed space
+// its allocator keeps for reuse, and every code page it ever ran. One release
+// pass returns the allocator's free pages, asks the kernel to move private
+// memory to swap, and unmaps unmodified program pages (they stay in the page
+// cache and return on the next use). Nothing is discarded: the next keypress or
+// event pages back only what it touches.
+//
+// The watcher runs the pass once the process has used almost no processor time
+// for the configured period, and again only after the session has worked or
+// grown since.
+#scope_file
+libc :: #system_library "libc";
+OpenRaw :: (path: *u8, flags: s32, mode: s32) -> s32 #foreign libc "open";
+ReadRaw :: (fd: s32, output: *u8, count: usize) -> isize #foreign libc "read";
+CloseRaw :: (fd: s32) -> s32 #foreign libc "close";
+AdviseRaw :: (address: *void, length: usize, advice: s32) -> s32 #foreign libc "madvise";
+TrimRaw :: (pad: usize) -> s32 #foreign libc "malloc_trim";
+PageSizeRaw :: () -> s32 #foreign libc "getpagesize";
+ClockRaw :: (clock: s32, value: *ClockValue) -> s32 #foreign libc "clock_gettime";
+SleepRaw :: (request: *ClockValue, remaining: *ClockValue) -> s32 #foreign libc "nanosleep";
+ThreadEntry :: #type (argument: *void) -> *void #c_call;
+ThreadCreateRaw :: (thread: *usize, attributes: *void, entry: ThreadEntry, argument: *void) -> s32 #foreign libc "pthread_create";
+ThreadDetachRaw :: (thread: usize) -> s32 #foreign libc "pthread_detach";
+
+ClockValue :: struct {
+    seconds: s64
+    nanoseconds: s64
+}
+
+ReadOnly :: 0;
+CloseOnExec :: 524288;
+AdviseUnmap :: 4;    // MADV_DONTNEED
+AdvisePageOut :: 21; // MADV_PAGEOUT
+ProcessCpuClock :: 2;
+// Regrowth after a release that justifies another pass while still idle.
+RegrowthBytes :: 33554432;
+
+// One mapping of /proc/self/smaps; sizes are in KiB as the kernel prints them.
+Mapping :: struct {
+    start: u64
+    end: u64
+    private: bool
+    writable: bool
+    file: bool
+    special: bool
+    resident: s64
+    dirty: s64
+    anonymous: s64
+    swapped: s64
+    valid: bool
+}
+
+Report :: struct {
+    unmapped: s64
+    paged: s64
+    mappings: s64
+}
+
+watch_idle_milliseconds: s64 = 0;
+release_count: s64 = 0;
+
+IsDigit :: (byte: u8) -> bool {
+    return byte >= cast(u8)48 && byte <= cast(u8)57
+}
+
+HexValue :: (line: *u8, count: s32, at: *s32) -> u64 {
+    value: u64 = 0
+    index: s32 = at.*
+    while index < count {
+        byte: u8 = line[index]
+        digit: u64 = 0
+        if IsDigit(byte) {
+            digit = cast(u64)(byte - cast(u8)48)
+        } else {
+            if byte < cast(u8)97 || byte > cast(u8)102 { break }
+            digit = cast(u64)(byte - cast(u8)87)
+        }
+        value = value * cast(u64)16 + digit
+        index += 1
+    }
+    at.* = index
+    return value
+}
+
+// The number after `name` on a "Name:   123 kB" line, or -1 for another line.
+Field :: (line: *u8, count: s32, name: string) -> s64 {
+    length: s32 = cast(s32)name.count
+    if count <= length { return -1 }
+    index: s32 = 0
+    while index < length {
+        if line[index] != name[index] { return -1 }
+        index += 1
+    }
+    while index < count && line[index] == cast(u8)32 { index += 1 }
+    value: s64 = 0
+    digits: s32 = 0
+    while index < count && IsDigit(line[index]) {
+        value = value * 10 + cast(s64)(line[index] - cast(u8)48)
+        index += 1
+        digits += 1
+    }
+    if digits == 0 { return -1 }
+    return value
+}
+
+Finish :: (mapping: *Mapping, report: *Report) {
+    if !mapping.valid { return }
+    mapping.valid = false
+    // Shared mappings belong to other processes too; the kernel's own pages
+    // ([vdso], [vvar]) cannot be advised.
+    if !mapping.private || mapping.special || mapping.resident == 0 { return }
+    address := cast(*void)cast(usize)mapping.start
+    length := cast(usize)(mapping.end - mapping.start)
+    if mapping.file && !mapping.writable && mapping.dirty == 0 &&
+       mapping.anonymous == 0 && mapping.swapped == 0 {
+        // Every resident page is an unmodified copy of the file, so dropping
+        // this process's view loses nothing, whoever else maps the file.
+        if AdviseRaw(address, length, AdviseUnmap) == 0 {
+            report.unmapped += mapping.resident * 1024
+        }
+        return
+    }
+    // Modified and anonymous pages must be kept: the kernel writes them to
+    // swap, or leaves them resident when no swap space is free.
+    if AdviseRaw(address, length, AdvisePageOut) == 0 {
+        report.paged += mapping.resident * 1024
+    }
+}
+
+Line :: (line: *u8, count: s32, mapping: *Mapping, report: *Report) {
+    if count == 0 { return }
+    first: u8 = line[0]
+    // Mapping headers start with a lowercase hexadecimal address; every
+    // field line starts with a capital letter.
+    if IsDigit(first) || (first >= cast(u8)97 && first <= cast(u8)102) {
+        Finish(mapping, report)
+        at: s32 = 0
+        start: u64 = HexValue(line, count, *at)
+        if at >= count || line[at] != cast(u8)45 { return }
+        at += 1
+        end: u64 = HexValue(line, count, *at)
+        if at + 5 > count || end <= start { return }
+        mapping.start = start
+        mapping.end = end
+        mapping.writable = line[at + 2] == cast(u8)119
+        mapping.private = line[at + 4] == cast(u8)112
+        at += 5
+        // Skip the offset, device and inode to reach the optional path.
+        skipped: s32 = 0
+        while skipped < 3 {
+            while at < count && line[at] == cast(u8)32 { at += 1 }
+            while at < count && line[at] != cast(u8)32 { at += 1 }
+            skipped += 1
+        }
+        while at < count && line[at] == cast(u8)32 { at += 1 }
+        mapping.file = at < count && line[at] == cast(u8)47
+        mapping.special = at + 1 < count && line[at] == cast(u8)91 && line[at + 1] == cast(u8)118
+        mapping.resident = 0
+        mapping.dirty = 0
+        mapping.anonymous = 0
+        mapping.swapped = 0
+        mapping.valid = true
+        report.mappings += 1
+        return
+    }
+    if !mapping.valid { return }
+    value: s64 = Field(line, count, "Rss:")
+    if value >= 0 { mapping.resident = value; return }
+    value = Field(line, count, "Private_Dirty:")
+    if value >= 0 { mapping.dirty = value; return }
+    value = Field(line, count, "Anonymous:")
+    if value >= 0 { mapping.anonymous = value; return }
+    value = Field(line, count, "Swap:")
+    if value >= 0 { mapping.swapped = value }
+}
+
+OpenProc :: (name: string) -> s32 {
+    path: [32]u8
+    length: s32 = cast(s32)name.count
+    if length >= 32 { return -1 }
+    index: s32 = 0
+    while index < length {
+        path[index] = name[index]
+        index += 1
+    }
+    path[length] = cast(u8)0
+    return OpenRaw(*path[0], ReadOnly | CloseOnExec, 0)
+}
+
+ReleaseMappings :: (report: *Report) -> bool {
+    fd: s32 = OpenProc("/proc/self/smaps")
+    if fd < 0 { return false }
+    chunk: [16384]u8
+    line: [256]u8
+    length: s32 = 0
+    mapping: Mapping
+    while true {
+        got: isize = ReadRaw(fd, *chunk[0], cast(usize)16384)
+        if got <= 0 { break }
+        index: s32 = 0
+        while index < cast(s32)got {
+            byte: u8 = chunk[index]
+            if byte == cast(u8)10 {
+                Line(*line[0], length, *mapping, report)
+                length = 0
+            } else {
+                if length < 256 {
+                    line[length] = byte
+                    length += 1
+                }
+            }
+            index += 1
+        }
+    }
+    Finish(*mapping, report)
+    unused CloseRaw(fd)
+    return true
+}
+
+// Resident bytes from /proc/self/statm, or -1.
+ResidentBytes :: () -> s64 {
+    fd: s32 = OpenProc("/proc/self/statm")
+    if fd < 0 { return -1 }
+    text: [128]u8
+    got: isize = ReadRaw(fd, *text[0], cast(usize)127)
+    unused CloseRaw(fd)
+    if got <= 0 { return -1 }
+    count: s32 = cast(s32)got
+    index: s32 = 0
+    while index < count && text[index] != cast(u8)32 { index += 1 }
+    while index < count && text[index] == cast(u8)32 { index += 1 }
+    pages: s64 = 0
+    digits: s32 = 0
+    while index < count && IsDigit(text[index]) {
+        pages = pages * 10 + cast(s64)(text[index] - cast(u8)48)
+        index += 1
+        digits += 1
+    }
+    if digits == 0 { return -1 }
+    return pages * cast(s64)PageSizeRaw()
+}
+
+CpuNanoseconds :: () -> s64 {
+    value: ClockValue
+    if ClockRaw(ProcessCpuClock, *value) != 0 { return -1 }
+    return value.seconds * 1000000000 + value.nanoseconds
+}
+
+Sleep :: (milliseconds: s64) {
+    request: ClockValue
+    request.seconds = milliseconds / 1000
+    request.nanoseconds = (milliseconds % 1000) * 1000000
+    unused SleepRaw(*request, null)
+}
+
+Watch :: (argument: *void) -> *void {
+    unused argument
+    idle: s64 = watch_idle_milliseconds
+    interval: s64 = idle / 4
+    if interval < 250 { interval = 250 }
+    if interval > 5000 { interval = 5000 }
+    // Below two percent of one processor the session is only keeping time.
+    busy: s64 = interval * 20000
+    quiet: s64 = 0
+    released: bool = false
+    floor: s64 = 0
+    last: s64 = CpuNanoseconds()
+    report: [5]s64
+    while true {
+        Sleep(interval)
+        now: s64 = CpuNanoseconds()
+        used: s64 = now - last
+        last = now
+        if used > busy {
+            quiet = 0
+            released = false
+            continue
+        }
+        quiet += interval
+        if quiet < idle { continue }
+        if released && ResidentBytes() < floor + RegrowthBytes { continue }
+        if xcoder_idle_release(*report[0]) == 1 {
+            released = true
+            floor = report[1]
+        }
+        // The pass itself must not count as the session working.
+        last = CpuNanoseconds()
+    }
+    return null
+}
+
+#scope_export
+
+// Run one release pass now. `report` receives five values: resident bytes
+// before and after, bytes of unmodified file pages unmapped, bytes handed to
+// swap, and the number of mappings examined. Returns 1, or 0 when the
+// process's mappings cannot be read.
+#program_export
+xcoder_idle_release :: (report: *s64) -> s32 {
+    totals: Report
+    before: s64 = ResidentBytes()
+    unused TrimRaw(cast(usize)0)
+    if !ReleaseMappings(*totals) { return 0 }
+    release_count += 1
+    if report != null {
+        report[0] = before
+        report[1] = ResidentBytes()
+        report[2] = totals.unmapped
+        report[3] = totals.paged
+        report[4] = totals.mappings
+    }
+    return 1
+}
+
+// Start the watcher: release once the process has been idle for
+// `idle_milliseconds`. Returns 1 when the watcher runs.
+#program_export
+xcoder_idle_watch :: (idle_milliseconds: s64) -> s32 {
+    if idle_milliseconds <= 0 || watch_idle_milliseconds != 0 { return 0 }
+    watch_idle_milliseconds = idle_milliseconds
+    thread: usize = 0
+    if ThreadCreateRaw(*thread, null, Watch, null) != 0 {
+        watch_idle_milliseconds = 0
+        return 0
+    }
+    unused ThreadDetachRaw(thread)
+    return 1
+}
+
+// Release passes completed so far.
+#program_export
+xcoder_idle_releases :: () -> s64 {
+    return release_count
+}

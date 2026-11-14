@@ -9,12 +9,16 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
 use codex_protocol::models::ContentItemMetadata;
 use codex_protocol::models::input_text;
+#[cfg(test)]
 use codex_utils_string::approx_bytes_for_tokens;
+#[cfg(test)]
 use codex_utils_string::approx_tokens_from_byte_count;
 use serde::Deserialize;
 use serde::Serialize;
+#[cfg(test)]
 use std::io;
 
+#[cfg(test)]
 const MAX_MANAGED_DEVELOPER_INSTRUCTIONS_TOKENS: usize = 10_000;
 const REPLACEMENT_NOTICE: &str = "These managed developer instructions replace all previously provided managed developer instructions.";
 const REMOVAL_NOTICE: &str =
@@ -56,6 +60,7 @@ impl ContextualUserFragment for ManagedDeveloperInstructions {
 }
 
 /// Reject oversized policy rather than silently dropping part of its instructions.
+#[cfg(test)]
 pub(crate) fn validate_managed_developer_instructions(
     requirement: Option<&Sourced<String>>,
 ) -> io::Result<()> {

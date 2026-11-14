@@ -68,7 +68,7 @@ impl Default for ManagedFeatures {
 }
 
 impl ManagedFeatures {
-    pub(crate) fn from_configured(
+    pub fn from_configured(
         configured_features: Features,
         feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     ) -> std::io::Result<Self> {
@@ -148,7 +148,7 @@ impl ManagedFeatures {
     }
 
     /// Refresh ordinary MCP feature values and pins without changing session-static features.
-    pub(crate) fn refresh_mcp_features(&mut self, next: &Self) -> ConstraintResult<()> {
+    pub fn refresh_mcp_features(&mut self, next: &Self) -> ConstraintResult<()> {
         let mut refreshed = self.clone();
         let mut values = self.get().clone();
         for feature in [
@@ -362,7 +362,7 @@ fn explicit_feature_settings_in_config(cfg: &ConfigToml) -> Vec<(String, Feature
     explicit_settings
 }
 
-pub(crate) fn resolve_runtime_auth_mode(
+pub fn resolve_runtime_auth_mode(
     cfg: &ConfigToml,
     requirements: Option<&Sourced<FeatureRequirementsToml>>,
 ) -> std::io::Result<RuntimeAuthMode> {
@@ -393,7 +393,7 @@ pub(crate) fn resolve_runtime_auth_mode(
     Ok(configured.unwrap_or_default())
 }
 
-pub(crate) fn validate_explicit_feature_settings_in_config_toml(
+pub fn validate_explicit_feature_settings_in_config_toml(
     cfg: &ConfigToml,
     feature_requirements: Option<&Sourced<FeatureRequirementsToml>>,
 ) -> std::io::Result<()> {
@@ -436,7 +436,7 @@ pub(crate) fn validate_explicit_feature_settings_in_config_toml(
     Ok(())
 }
 
-pub(crate) fn validate_feature_requirements_in_config_toml(
+pub fn validate_feature_requirements_in_config_toml(
     cfg: &ConfigToml,
     feature_requirements: Option<&Sourced<FeatureRequirementsToml>>,
 ) -> std::io::Result<()> {

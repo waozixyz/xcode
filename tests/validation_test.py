@@ -60,6 +60,35 @@ class ValidationTest(unittest.TestCase):
     def test_binary_replaced_during_tests_is_not_certified(self):
         self.run_suite(changed=True)
 
+    def test_prebuilt_suite_cannot_omit_or_replace_a_required_test(self):
+        parent = ROOT / 'build/validation-tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as temporary:
+            root = Path(temporary)
+            paths = {'abi': 'build/native-dispatch/native-abi-test',
+                     'allocator': 'build/native-dispatch/native-allocator-test',
+                     **{suite: 'codex-rs/target/release/deps/' + suite.replace('-', '_') + '-fixture'
+                        for suite in validation.RUST_SUITES}}
+            rows = []
+            for suite, name in paths.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'guard fixture, never executed')
+                rows.append(dict(suite=suite, path=name, sha256=validation.digest(path)))
+            manifest = root / 'build/native-dispatch/tests.json'
+            value = dict(schema=1, sources={'source': 'original'}, tests=rows)
+            with patch.object(validation, 'ROOT', root), \
+                 patch.object(validation, 'test_source_hashes', return_value={'source': 'original'}):
+                manifest.write_text(json.dumps(value))
+                self.assertEqual(validation.prebuilt_tests(), value)
+                manifest.write_text(json.dumps({**value, 'tests': rows[:-1]}))
+                with self.assertRaises(RuntimeError):
+                    validation.prebuilt_tests()
+                manifest.write_text(json.dumps(value))
+                (root / paths['abi']).write_bytes(b'concurrent replacement')
+                with self.assertRaises(RuntimeError):
+                    validation.prebuilt_tests()
+
 
 if __name__ == '__main__':
     unittest.main()

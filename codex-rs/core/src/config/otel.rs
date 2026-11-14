@@ -7,10 +7,7 @@ use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
 
-pub(crate) fn resolve_config(
-    config: OtelConfigToml,
-    startup_warnings: &mut Vec<String>,
-) -> OtelConfig {
+pub fn resolve_config(config: OtelConfigToml, startup_warnings: &mut Vec<String>) -> OtelConfig {
     let log_user_prompt = config.log_user_prompt.unwrap_or(false);
     let environment = config
         .environment

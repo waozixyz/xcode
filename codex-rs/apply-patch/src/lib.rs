@@ -56,6 +56,14 @@ pub const CODEX_CORE_APPLY_PATCH_ARG1: &str = "--codex-run-as-apply-patch";
 pub const CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS_ENV_VAR: &str =
     "CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS";
 
+/// Directory holding this process's own `apply_patch` helper.
+///
+/// The CLI sets it at startup after creating the helper, and clears any
+/// inherited value when it cannot. Shell tools replay it at the front of
+/// `PATH` after login or snapshot startup, so a login profile cannot reset
+/// `PATH` or put another `apply_patch` ahead of the Codex implementation.
+pub const CODEX_APPLY_PATCH_HELPER_DIR_ENV_VAR: &str = "CODEX_APPLY_PATCH_HELPER_DIR";
+
 /// Policy for one patch application. Standalone callers follow symlinks by default.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApplyPatchOptions {

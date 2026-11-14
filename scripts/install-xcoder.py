@@ -19,6 +19,24 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+# The local-test receipt key of each packaged executable in build/bin.
+PACKAGED = {'binary_sha256': 'xcoder', 'host_sha256': 'codex-code-mode-host'}
+
+
+def packaged_digests(root=None):
+    binaries = (root or ROOT) / 'build/bin'
+    return {key: digest(binaries / name) for key, name in PACKAGED.items()}
+
+
+def tested_digests():
+    """The packaged digests, only when the local-test receipt covers exactly these executables."""
+    expected = packaged_digests()
+    validation = json.loads((ROOT / 'backup/xcoder-validation.json').read_text())
+    if not validation.get('local_tests_passed') or any(validation.get(key) != value for key, value in expected.items()):
+        raise ValueError('Run the integrated local tests for these exact executables first')
+    return expected
+
+
 def atomic_copy(source, target):
     fd, name = tempfile.mkstemp(dir=target.parent, prefix=target.name + '.new-')
     try:
@@ -56,17 +74,14 @@ def install(prefix, before_cutover=None):
     if metadata != dict(product='xcoder', tool_language='ziran', pipeline='zi2c', javascript_tool_runtime=False):
         raise ValueError('Not the native Xcoder build')
     # The validation receipt binds both executables to their actual local test.
-    validation = json.loads((ROOT / 'backup/xcoder-validation.json').read_text())
-    expected = dict(binary_sha256=digest(binary), host_sha256=digest(host))
-    if not validation.get('local_tests_passed') or any(validation.get(key) != value for key, value in expected.items()):
-        raise ValueError('Run the integrated local tests for these exact executables before installation')
+    expected = tested_digests()
     backup = ROOT / 'backup/xcoder-install'
     subprocess.run(['git', 'check-ignore', '-q', 'backup/xcoder-install'], cwd=ROOT, check=True)
     backup.mkdir(parents=True, exist_ok=True, mode=0o700)
     destination = prefix / 'lib/xcoder/bin'
     destination.mkdir(parents=True, exist_ok=True)
     managed = prefix / 'lib/harmony/agent-bin/codex'
-    target = managed if managed.is_symlink() or managed.is_file() else prefix / 'bin/codex'
+    target = managed if managed.is_symlink() or managed.is_file() else prefix / 'bin/xcoder'
     target.parent.mkdir(parents=True, exist_ok=True)
     original = {'path': str(target), 'symlink': os.readlink(target) if target.is_symlink() else None}
     alias = prefix / 'bin/xcoder'
@@ -135,11 +150,12 @@ def install(prefix, before_cutover=None):
         raise FileExistsError(str(link))
     link.symlink_to(destination / 'codex')
     os.replace(link, target)
-    alias_link = alias.with_name(alias.name + '.xcoder-new')
-    if alias_link.exists() or alias_link.is_symlink():
-        raise FileExistsError(str(alias_link))
-    alias_link.symlink_to(destination / 'codex')
-    os.replace(alias_link, alias)
+    if alias != target:
+        alias_link = alias.with_name(alias.name + '.xcoder-new')
+        if alias_link.exists() or alias_link.is_symlink():
+            raise FileExistsError(str(alias_link))
+        alias_link.symlink_to(destination / 'codex')
+        os.replace(alias_link, alias)
     installed = json.loads(subprocess.check_output([str(target), '--xcoder-runtime-info'], text=True))
     if installed != metadata or digest(destination / 'codex') != expected['binary_sha256'] or digest(destination / 'codex-code-mode-host') != expected['host_sha256']:
         raise ValueError('Installed Xcoder verification failed; original target retained in ' + str(receipt))

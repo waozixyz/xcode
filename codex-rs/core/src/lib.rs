@@ -88,6 +88,9 @@ mod attestation;
 mod code_mode_host;
 mod codex_delegate;
 mod command_canonicalization;
+#[cfg(not(test))]
+pub use codex_core_config::config;
+#[cfg(test)]
 pub mod config;
 pub mod connectors;
 pub mod context;

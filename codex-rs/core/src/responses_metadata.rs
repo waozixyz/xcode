@@ -108,13 +108,16 @@ const RESERVED_METADATA_KEYS: &[&str] = &[
 
 // These keys were previously valid user configuration. Accept existing configs while filtering
 // their values before constructing Core-owned request metadata.
+#[cfg(test)]
 const BACKWARD_COMPATIBLE_RESERVED_METADATA_KEYS: &[&str] = &[
     "guardian_recorded_items",
     WINDOW_NUMBER_KEY,
     FORKED_FROM_ORDINAL_EXCLUSIVE_KEY,
     ANALYTICS_ENABLED_KEY,
 ];
+#[cfg(test)]
 const MAX_EXTRA_METADATA_ENTRIES: usize = 16;
+#[cfg(test)]
 const MAX_EXTRA_METADATA_KEY_BYTES: usize = 64;
 pub(crate) const MAX_EXTRA_METADATA_VALUE_BYTES: usize = 128;
 
@@ -508,6 +511,7 @@ fn insert_header(headers: &mut ApiHeaderMap, name: &'static str, value: &str) {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn validate_extra_metadata<'a>(
     extra: impl IntoIterator<Item = (&'a String, &'a String)>,
 ) -> Result<(), &'static str> {
@@ -541,6 +545,7 @@ pub(crate) fn filter_extra_metadata(
         .collect()
 }
 
+#[cfg(test)]
 fn valid_extra_metadata_key(key: &str) -> bool {
     let mut bytes = key.bytes();
     bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())

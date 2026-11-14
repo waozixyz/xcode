@@ -179,10 +179,15 @@ fn object(value: Option<&Value>) -> Option<Map<String, Value>> {
     }
 }
 
-impl crate::config::Config {
+pub(crate) trait ConfigSearchExt {
+    fn client_search_provider(&self) -> Option<WebSearchProvider>;
+    fn requires_native_search(&self) -> bool;
+}
+
+impl ConfigSearchExt for crate::config::Config {
     // Read the scalar override from the highest enabled configuration layer. Hosts can
     // supply it through normal session flags without extending the shared Config struct.
-    pub(crate) fn client_search_provider(&self) -> Option<WebSearchProvider> {
+    fn client_search_provider(&self) -> Option<WebSearchProvider> {
         self.config_layer_stack
             .layers_high_to_low()
             .find_map(|layer| layer.config.get("tools")?.get("client_search_provider"))?
@@ -191,7 +196,7 @@ impl crate::config::Config {
             .ok()
     }
 
-    pub(crate) fn requires_native_search(&self) -> bool {
+    fn requires_native_search(&self) -> bool {
         let standalone = codex_features::Feature::StandaloneWebSearch;
         if !self.features.enabled(standalone) {
             return false;

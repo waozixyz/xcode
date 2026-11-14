@@ -1,7 +1,9 @@
 //! Zi2c code-mode backend. The existing Rust actors retain approvals, transport,
 //! output budgets and terminal-state ownership. Active cells are native Ziran;
 //! no JavaScript engine or per-session worker is started.
+mod cache;
 mod event_channel;
+mod plan;
 
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
@@ -14,7 +16,7 @@ use codex_protocol::ToolName;
 use futures::FutureExt;
 use serde_json::{Value as JsonValue, json};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -82,7 +84,6 @@ impl TerminationHandle {
 }
 
 const MAX_FRAME: usize = 64 * 1024 * 1024;
-const MAX_REQUESTS: usize = 128;
 const MAX_BUFFERED_RPC: usize = 256 * 1024 * 1024;
 
 #[derive(serde::Deserialize)]
@@ -120,7 +121,6 @@ pub(crate) fn spawn_runtime(
     ),
     String,
 > {
-    let toolchain = crate::native_sandbox::toolchain()?;
     if request.source.len() > 1024 * 1024 {
         return Err("Ziran cell source exceeds 1 MiB".into());
     }
@@ -130,16 +130,31 @@ pub(crate) fn spawn_runtime(
     let termination = TerminationHandle(cancel.clone());
     let event_tx = event_tx.into();
     tokio::spawn(async move {
-        let operation = AssertUnwindSafe(run(
-            request,
-            stored_values,
-            event_tx.clone(),
-            command_rx,
-            control_rx,
-            pending_mode,
-            toolchain,
-            heap_limit,
-        ))
+        let operation = AssertUnwindSafe(async {
+            if request.source.trim_start().starts_with('{') {
+                plan::run(
+                    request,
+                    event_tx.clone(),
+                    command_rx,
+                    control_rx,
+                    pending_mode,
+                )
+                .await
+            } else {
+                let toolchain = crate::native_sandbox::toolchain()?;
+                run(
+                    request,
+                    stored_values,
+                    event_tx.clone(),
+                    command_rx,
+                    control_rx,
+                    pending_mode,
+                    toolchain,
+                    heap_limit,
+                )
+                .await
+            }
+        })
         .catch_unwind();
         tokio::select! {
             biased;
@@ -276,7 +291,7 @@ fn buffer_reply(
     })
 }
 
-fn write_reply(tasks: &mut JoinSet<Result<(), String>>, reply: BufferedReply) {
+fn write_reply(tasks: &mut JoinSet<Result<UnixStream, String>>, reply: BufferedReply) {
     tasks.spawn(async move {
         let BufferedReply {
             mut socket,
@@ -291,12 +306,12 @@ fn write_reply(tasks: &mut JoinSet<Result<(), String>>, reply: BufferedReply) {
             .write_all(&bytes)
             .await
             .map_err(|error| error.to_string())?;
-        Ok(())
+        Ok(socket)
     });
 }
 
 fn reply(
-    tasks: &mut JoinSet<Result<(), String>>,
+    tasks: &mut JoinSet<Result<UnixStream, String>>,
     socket: RequestSocket,
     value: JsonValue,
     budget: &Arc<Semaphore>,
@@ -342,7 +357,7 @@ mod native_transport_tests {
             serde_json::from_slice::<JsonValue>(&response).unwrap()["value"],
             json!(49)
         );
-        writes.join_next().await.unwrap().unwrap().unwrap();
+        let _socket = writes.join_next().await.unwrap().unwrap().unwrap();
         assert_eq!(budget.available_permits(), 1024);
     }
 }
@@ -408,37 +423,8 @@ async fn run(
     )
     .map_err(|error| error.to_string())?;
     std::fs::write(path.join("main.zi"), &request.source).map_err(|error| error.to_string())?;
-    let mut compiler = crate::native_sandbox::compiler(path, &toolchain)
-        .spawn()
-        .map_err(|error| format!("start Zi2c sandbox: {error}"))?;
-    let stdout = compiler
-        .stdout
-        .take()
-        .ok_or("compiler stdout unavailable")?;
-    let stderr = compiler
-        .stderr
-        .take()
-        .ok_or("compiler stderr unavailable")?;
-    let compilation = async {
-        let (status, out, err) = tokio::join!(
-            compiler.wait(),
-            bounded_read(stdout, 64 * 1024),
-            bounded_read(stderr, 64 * 1024)
-        );
-        Ok::<_, String>((status.map_err(|error| error.to_string())?, out?, err?))
-    };
-    let (status, out, err) = tokio::time::timeout(Duration::from_secs(30), compilation)
-        .await
-        .map_err(|_| "Zi2c compilation exceeded 30 seconds")??;
-    if !status.success() {
-        return Err(format!(
-            "Zi2c compilation failed: {}{}",
-            String::from_utf8_lossy(&out),
-            String::from_utf8_lossy(&err)
-        ));
-    }
-    let listener = UnixListener::bind(path.join("rpc")).map_err(|error| error.to_string())?;
-    let mut child = crate::native_sandbox::cell(path, heap_limit)?;
+    cache::prepare(path, &toolchain, &request.source).await?;
+    let (mut child, channels) = crate::native_sandbox::cell(path, heap_limit)?;
     events
         .send(RuntimeEvent::Started)
         .await
@@ -456,6 +442,9 @@ async fn run(
     let mut writes = JoinSet::new();
     let mut pending = HashMap::<String, RequestSocket>::new();
     let budget = Arc::new(Semaphore::new(MAX_BUFFERED_RPC));
+    for socket in channels {
+        reads.spawn(read_request(socket, budget.clone()));
+    }
     let mut paused_replies = Vec::new();
     let mut paused = false;
     let mut sequence = 0u64;
@@ -492,10 +481,6 @@ async fn run(
                 Some(RuntimeControlCommand::Terminate) | None => return Ok(()),
             },
             result = child.wait() => break result.map_err(|error| error.to_string())?,
-            accepted = listener.accept(), if reads.len() + pending.len() + paused_replies.len() + writes.len() < MAX_REQUESTS => {
-                let (socket, _) = accepted.map_err(|error| error.to_string())?;
-                reads.spawn(read_request(socket, budget.clone()));
-            }
             completed = reads.join_next(), if !reads.is_empty() => {
                 let (socket, message) = completed.ok_or("native request task disappeared")?.map_err(|error| error.to_string())??;
                 let op = message.op.as_str();
@@ -555,7 +540,10 @@ async fn run(
                     _ => reply(&mut writes, socket, json!({"ok":false,"error":"unknown native operation"}), &budget)?,
                 }
             }
-            result = writes.join_next(), if !writes.is_empty() => { result.ok_or("native reply task disappeared")?.map_err(|error| error.to_string())??; }
+            result = writes.join_next(), if !writes.is_empty() => {
+                let socket = result.ok_or("native reply task disappeared")?.map_err(|error| error.to_string())??;
+                reads.spawn(read_request(socket, budget.clone()));
+            }
         }
     };
     reads.abort_all();

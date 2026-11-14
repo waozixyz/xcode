@@ -13,10 +13,12 @@ use crate::PUBLIC_TOOL_NAME;
 
 const MAX_JS_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
 const DEFERRED_NESTED_TOOLS_GUIDANCE: &str = "Some nested tools are deferred. Use Catalog() to inspect enabled tool names and schemas; names can change between cells.";
-pub const TOOL_SEARCH_GUIDANCE: &str = r#"Discover deferred tools with Call("tool_search", "{\"query\":\"...\",\"limit\":8}"). Inspect the returned tool names and schemas before calling them."#;
-const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run native Ziran code to orchestrate tool calls. Xcoder compiles cells with Zi2c; JavaScript is not supported.
-Supply a complete Ziran program, starting with `using X :: #import "xcoder/runtime"`, and `main :: () -> s32 { ...; return 0 }`.
-Example:
+pub const TOOL_SEARCH_GUIDANCE: &str = r#"Discover deferred tools with {"calls":[{"tool":"tool_search","input":{"query":"...","limit":8}}]}. Inspect returned tool names and schemas before calling them."#;
+const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run tool calls through the precompiled native Ziran executor. Prefer a JSON tool plan; it needs no runtime compilation or worker process:
+{"calls":[{"tool":"exec_command","input":{"cmd":"pwd"}}]}
+`calls` accepts at most 128 enabled tool calls. Inputs are JSON values for function tools and exact strings for freeform tools. Calls run sequentially by default; add `"parallel":true` for up to four independent calls at once. Each reply is emitted as JSON with `call` (zero-based index), `tool`, `ok`, and `value` or `error`. A plan cannot depend on earlier results; use a later cell or custom code when results determine the next operation. All names and inputs are validated before any call starts. Permissions, approvals, cancellation and output budgets remain with the host.
+For custom orchestration, supply a complete Ziran program starting with `using X :: #import "xcoder/runtime"` and `main :: () -> s32 { ...; return 0 }`. Zi2c compiles only cache misses; identical source reuses its private cached executable. Custom code still executes in a separate sandbox. JavaScript is not supported.
+Custom example:
 using X :: #import "xcoder/runtime"
 main :: () -> s32 {
     reply := Call("exec_command", "{\"cmd\":\"pwd\"}")
@@ -95,7 +97,7 @@ pub struct ParsedExecSource {
 pub fn parse_exec_source(input: &str) -> Result<ParsedExecSource, String> {
     if input.trim().is_empty() {
         return Err(
-            "exec expects a complete non-empty Ziran program, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.".to_string(),
+            "exec expects a JSON tool plan or complete non-empty Ziran program, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.".to_string(),
         );
     }
 
@@ -114,7 +116,10 @@ pub fn parse_exec_source(input: &str) -> Result<ParsedExecSource, String> {
     };
 
     if rest.trim().is_empty() {
-        return Err("exec pragma must be followed by Ziran source on subsequent lines".to_string());
+        return Err(
+            "exec pragma must be followed by a tool plan or Ziran source on subsequent lines"
+                .to_string(),
+        );
     }
 
     let directive = pragma.trim();

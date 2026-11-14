@@ -26,6 +26,7 @@ pub use tool_name::DEFAULT_FUNCTION_NAMESPACE;
 pub use tool_name::ToolName;
 pub mod approvals;
 pub mod capabilities;
+pub mod client_version;
 mod codex_error_info;
 pub mod config_types;
 mod guardian_transcript;

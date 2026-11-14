@@ -16,6 +16,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 const OTEL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 
+#[path = "../../../native/allocator.rs"]
+mod native_allocator;
+
 #[derive(Debug, Parser)]
 struct Cli {
     #[arg(
@@ -95,6 +98,19 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
+    native_allocator::configure();
+    // Persist custom-code cache files outside RAM-backed runtime directories.
+    if std::env::var_os("XCODER_RUNTIME_DIR").is_none()
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        // SAFETY: no async runtime or worker threads have started yet.
+        unsafe {
+            std::env::set_var(
+                "XCODER_RUNTIME_DIR",
+                PathBuf::from(home).join(".local/state/xcoder/runtime"),
+            );
+        }
+    }
     let cli = Cli::parse();
     if cli.codex_ui_plugin_process {
         return codex_code_mode_runtime::run_ui_sandbox().map_err(Into::into);

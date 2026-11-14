@@ -4,20 +4,16 @@ use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
 use unicode_width::UnicodeWidthStr;
 
+/// Render statements as separate lines, so equivalent graphs compare by output.
+fn flowchart(header: &str, statements: &[&str]) -> Result<String, RenderError> {
+    render(&format!("{header}\n{}", statements.join("\n")), /*max_width*/ 200)
+}
+
 #[test]
 fn stadium_declarations_and_references() {
-    let graph =
-        super::parse::parse("flowchart TD", &["A", "A([Ready?])", "A", "A([Ready?])"]).unwrap();
-    assert_eq!(
-        graph.nodes,
-        vec![super::Node {
-            id: "A".to_owned(),
-            label: "Ready?".to_owned(),
-            shape: super::Shape::Stadium,
-            declared: true,
-            members: Vec::new(),
-        }]
-    );
+    let output = flowchart("flowchart TD", &["A", "A([Ready?])", "A", "A([Ready?])"]).unwrap();
+    assert_eq!(output, flowchart("flowchart TD", &["A([Ready?])"]).unwrap());
+    assert!(output.contains('╭') && output.contains("Ready?"), "{output}");
 }
 
 #[test]
@@ -43,8 +39,8 @@ B --> C(["Checkout"])
 A[Review & confirm;]"#;
     let unquoted = quoted.replace('"', "");
     assert_eq!(
-        super::parse::parse("flowchart TD", &quoted.lines().collect::<Vec<_>>()).unwrap(),
-        super::parse::parse("flowchart TD", &unquoted.lines().collect::<Vec<_>>()).unwrap(),
+        flowchart("flowchart TD", &quoted.lines().collect::<Vec<_>>()).unwrap(),
+        flowchart("flowchart TD", &unquoted.lines().collect::<Vec<_>>()).unwrap(),
     );
     for (infix, pipe) in [
         ("-- Yes -->", "-->|Yes|"),
@@ -52,13 +48,13 @@ A[Review & confirm;]"#;
         ("-. retry .->", "-.->|retry|"),
     ] {
         assert_eq!(
-            super::parse::parse("flowchart", &[&format!("A {infix} B --> C")]).unwrap(),
-            super::parse::parse("graph TB", &[&format!("A {pipe} B --> C")]).unwrap(),
+            flowchart("flowchart", &[&format!("A {infix} B --> C")]).unwrap(),
+            flowchart("graph TB", &[&format!("A {pipe} B --> C")]).unwrap(),
         );
     }
     assert_eq!(
-        super::parse::parse("graph", &["A[Input & config] & B -- send --> C & D -.-> E"]).unwrap(),
-        super::parse::parse(
+        flowchart("graph", &["A[Input & config] & B -- send --> C & D -.-> E"]).unwrap(),
+        flowchart(
             "flowchart TD",
             &[
                 "A[Input & config]",
@@ -76,66 +72,30 @@ A[Review & confirm;]"#;
         )
         .unwrap(),
     );
+    // `oB` and `xB` are node names, not circle or cross endpoints.
+    let output = flowchart("flowchart", &["A--- oB", "A-.- xB"]).unwrap();
+    assert!(output.contains("│ oB") && output.contains("│ xB"), "{output}");
     assert_eq!(
-        super::parse::parse("flowchart", &["A--- oB", "A-.- xB"])
-            .unwrap()
-            .nodes,
-        super::parse::parse("flowchart", &["A", "oB", "xB"])
-            .unwrap()
-            .nodes,
-    );
-    assert_eq!(
-        super::parse::parse("flowchart", &["A --> B & B"]).unwrap(),
-        super::parse::parse("flowchart TD", &["A --> B", "A --> B"]).unwrap(),
+        flowchart("flowchart", &["A --> B & B"]).unwrap(),
+        flowchart("flowchart TD", &["A --> B", "A --> B"]).unwrap(),
     );
     assert_eq!(
         render(&format!("graph TD; {quoted}"), /*max_width*/ 180).unwrap(),
         render(&format!("graph TD; {unquoted}"), /*max_width*/ 180).unwrap(),
     );
-    let source = r#"graph TD;A["chimpansen hoppar ()[]"] -->|"x | y; z"| B{"x < 3?"};"#;
-    let statements = super::syntax::statements(source).unwrap();
-    assert_eq!(
-        super::parse::parse(statements[0], &statements[1..]).unwrap(),
-        super::Graph {
-            nodes: vec![
-                super::Node {
-                    id: "A".into(),
-                    label: "chimpansen hoppar ()[]".into(),
-                    shape: super::Shape::Rectangle,
-                    declared: true,
-                    members: Vec::new(),
-                },
-                super::Node {
-                    id: "B".into(),
-                    label: "x < 3?".into(),
-                    shape: super::Shape::Decision,
-                    declared: true,
-                    members: Vec::new(),
-                },
-            ],
-            edges: vec![super::Edge::directed(
-                /*from*/ 0,
-                /*to*/ 1,
-                "x | y; z".into()
-            )],
-            ..super::Graph::default()
-        }
-    );
+    // Quoted text keeps separators and brackets; the decision keeps its marker.
+    let output =
+        render(r#"graph TD;A["chimpansen hoppar ()[]"] -->|"x | y; z"| B{"x < 3?"};"#, 200).unwrap();
+    for text in ["┌", "│ chimpansen hoppar ()[]", "x | y; z", "│ ◇ x < 3?"] {
+        assert!(output.contains(text), "{text}: {output}");
+    }
+    assert_eq!(output.matches('├').count(), 2, "{output}");
     for (quoted, label) in [
         (r#"A["(Database)"]"#, "(Database)"),
         (r#"A["/Input/"]"#, "/Input/"),
     ] {
-        let graph = super::parse::parse("flowchart TD", &[quoted]).unwrap();
-        assert_eq!(
-            graph.nodes,
-            vec![super::Node {
-                id: "A".to_owned(),
-                label: label.to_owned(),
-                shape: super::Shape::Rectangle,
-                declared: true,
-                members: Vec::new(),
-            }]
-        );
+        let output = flowchart("flowchart TD", &[quoted]).unwrap();
+        assert!(output.starts_with('┌') && output.contains(&format!("│ {label}")), "{output}");
     }
 }
 

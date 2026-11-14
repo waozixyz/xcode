@@ -17,6 +17,7 @@ use crate::responses_headers::json_headers_to_http_headers;
 use crate::safety_buffering::treatment_from_headers;
 use crate::sse::ResponsesStreamEvent;
 use crate::sse::process_responses_event;
+use crate::sse::responses::CustomToolInputAssembler;
 use crate::telemetry::WebsocketTelemetry;
 use bytes::Bytes;
 use codex_client::TransportError;
@@ -828,6 +829,7 @@ async fn run_websocket_response_stream(
 ) -> Result<(), ApiError> {
     let mut last_server_model: Option<String> = None;
     let mut safety_buffering_treatment = SafetyBufferingTreatment::default();
+    let mut custom_tool_inputs = CustomToolInputAssembler::default();
     if matches!(
         interrupt.clone().now_or_never(),
         Some(ResponseInterrupt::Cancel { .. })
@@ -910,13 +912,14 @@ async fn run_websocket_response_stream(
                     return Err(error);
                 }
 
-                let event = match event {
+                let mut event = match event {
                     Ok(event) => event,
                     Err(err) => {
                         debug!("failed to parse websocket event: {err}, data: {text}");
                         continue;
                     }
                 };
+                custom_tool_inputs.reconcile(&mut event)?;
                 if matches!(interruption, Some(ResponseInterrupt::Cancel { .. }))
                     && matches!(
                         event.kind(),
@@ -1137,6 +1140,62 @@ mod tests {
     use serde_json::value::to_raw_value;
     use std::collections::HashMap;
     use std::sync::Arc;
+
+    #[test]
+    fn websocket_reconciles_custom_tool_input_before_dispatch() {
+        let mut inputs = CustomToolInputAssembler::default();
+        let mut completed = None;
+        for value in [
+            json!({
+                "type": "response.output_item.added",
+                "item": {
+                    "id": "ctc_ws",
+                    "type": "custom_tool_call",
+                    "call_id": "call_ws",
+                    "name": "exec",
+                    "input": "prefix 雪",
+                }
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "call_id": "call_ws",
+                "delta": "\\\"tail",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.done",
+                "item_id": "ctc_ws",
+                "call_id": "call_ws",
+                "input": "prefix 雪\\\"tail",
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_ws",
+                    "type": "custom_tool_call",
+                    "call_id": "call_ws",
+                    "name": "exec",
+                    "input": "refix 雪\\\"tailtail",
+                }
+            }),
+        ] {
+            let mut event: ResponsesStreamEvent =
+                serde_json::from_value(value).expect("deserialize websocket event");
+            inputs
+                .reconcile(&mut event)
+                .expect("reconcile websocket input");
+            if let Some(ResponseEvent::OutputItemDone(item)) =
+                process_responses_event(event).expect("process websocket event")
+            {
+                completed = Some(item);
+            }
+        }
+
+        assert!(matches!(
+            completed,
+            Some(ResponseItem::CustomToolCall { input, .. })
+                if input == "prefix 雪\\\"tail"
+        ));
+    }
 
     #[test]
     fn direct_serialization_preserves_websocket_request_payload() {

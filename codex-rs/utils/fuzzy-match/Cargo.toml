@@ -9,3 +9,6 @@ workspace = true
 
 [lib]
 doctest = false
+
+[build-dependencies]
+cc = "1"

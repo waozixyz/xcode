@@ -40,10 +40,10 @@ pub struct NetworkProxySpec {
 
 /// The primary attachment controls the shared proxy. The executor handling the call
 /// supplies local-binding semantics even when it inherits the controller policy.
-pub(crate) struct McpNetworkRoute<'a> {
-    pub(crate) primary_allows_proxy: bool,
-    pub(crate) local_binding: LocalBindingPolicy,
-    pub(crate) owner: Option<&'a EnvironmentNetworkPolicy>,
+pub struct McpNetworkRoute<'a> {
+    pub primary_allows_proxy: bool,
+    pub local_binding: LocalBindingPolicy,
+    pub owner: Option<&'a EnvironmentNetworkPolicy>,
 }
 
 pub struct StartedNetworkProxy {
@@ -69,7 +69,7 @@ impl StartedNetworkProxy {
         self.proxy.clone()
     }
 
-    pub(crate) fn network_policy_decider(&self) -> Option<Arc<dyn NetworkPolicyDecider>> {
+    pub fn network_policy_decider(&self) -> Option<Arc<dyn NetworkPolicyDecider>> {
         self.network_policy_decider.as_ref().map(Arc::clone)
     }
 }
@@ -100,11 +100,11 @@ impl ConfigReloader for StaticNetworkProxyReloader {
 }
 
 impl NetworkProxySpec {
-    pub(crate) fn enabled(&self) -> bool {
+    pub fn enabled(&self) -> bool {
         self.config.enabled
     }
 
-    pub(crate) fn credential_broker_enabled(&self) -> bool {
+    pub fn credential_broker_enabled(&self) -> bool {
         self.enabled() && self.config.credential_broker && self.constraints.enabled != Some(false)
     }
 
@@ -117,12 +117,12 @@ impl NetworkProxySpec {
     }
 
     #[cfg(any(target_os = "windows", test))]
-    pub(crate) fn configured_proxy_ports(&self) -> std::io::Result<Vec<u16>> {
+    pub fn configured_proxy_ports(&self) -> std::io::Result<Vec<u16>> {
         managed_proxy_ports(&self.config).map_err(std::io::Error::other)
     }
 
     #[cfg(any(target_os = "windows", test))]
-    pub(crate) fn allow_local_binding(&self) -> bool {
+    pub fn allow_local_binding(&self) -> bool {
         self.config.allow_local_binding()
     }
 
@@ -258,7 +258,7 @@ impl NetworkProxySpec {
         ))
     }
 
-    pub(crate) fn recompute_for_permission_profile(
+    pub fn recompute_for_permission_profile(
         &self,
         permission_profile: &PermissionProfile,
     ) -> std::io::Result<Self> {
@@ -274,7 +274,7 @@ impl NetworkProxySpec {
         EnvironmentNetworkPolicy::from_config(&self.config, self.hard_deny_allowlist_misses)
     }
 
-    pub(crate) fn for_environment(
+    pub fn for_environment(
         controller: Option<&Self>,
         policy: &EnvironmentNetworkPolicy,
         permission_profile: &PermissionProfile,
@@ -385,8 +385,7 @@ impl NetworkProxySpec {
     }
 
     /// Derives the network restrictions a trusted MCP server may apply to a call.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the next PR"))]
-    pub(crate) fn mcp_network_policy(
+    pub fn mcp_network_policy(
         controller: Option<&Self>,
         controller_profile: &PermissionProfile,
         route: McpNetworkRoute<'_>,
@@ -466,10 +465,7 @@ impl NetworkProxySpec {
         })
     }
 
-    pub(crate) fn with_exec_policy_network_rules(
-        &self,
-        exec_policy: &Policy,
-    ) -> std::io::Result<Self> {
+    pub fn with_exec_policy_network_rules(&self, exec_policy: &Policy) -> std::io::Result<Self> {
         let mut spec = self.clone();
         let (allowed, denied) = exec_policy.compiled_network_domains();
         spec.config.apply_saved_domain_rules(allowed, &denied);
@@ -488,7 +484,7 @@ impl NetworkProxySpec {
         Ok(spec)
     }
 
-    pub(crate) async fn apply_to_started_proxy(
+    pub async fn apply_to_started_proxy(
         &self,
         started_proxy: &StartedNetworkProxy,
     ) -> std::io::Result<()> {
@@ -503,7 +499,7 @@ impl NetworkProxySpec {
             })
     }
 
-    pub(crate) fn build_state_with_audit_metadata(
+    pub fn build_state_with_audit_metadata(
         &self,
         audit_metadata: NetworkProxyAuditMetadata,
         executor_os: Platform,

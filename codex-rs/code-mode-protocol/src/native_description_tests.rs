@@ -34,6 +34,8 @@ fn native_descriptions_keep_names_schemas_and_incremental_identity() {
         None,
     );
     assert!(description.contains("native Ziran"));
+    assert!(description.contains("needs no runtime compilation"));
+    assert!(description.contains(r#"{"calls":[{"tool":"exec_command""#));
     assert!(description.contains("1234 ms"));
     assert!(description.contains("command to run"));
     assert!(!description.contains("declare const tools"));
@@ -66,7 +68,7 @@ fn server_javascript_templates_cannot_override_the_native_contract() {
     );
     assert!(description.contains("xcoder/runtime"));
     assert!(!description.contains("Run JavaScript in V8"));
-    assert!(description.contains("Call(\"tool_search\""));
+    assert!(description.contains(r#""tool":"tool_search""#));
 }
 
 #[test]
@@ -84,6 +86,8 @@ fn native_source_and_observation_pragma_round_trip() {
         "using X :: #import \"xcoder/runtime\"\nmain :: () -> s32 { Text(\"hi\"); return 0 }";
     let plain = parse_exec_source(source).unwrap();
     assert_eq!(plain.code, source);
+    let plan = r#"{"calls":[{"tool":"exec_command","input":{"cmd":"pwd"}}]}"#;
+    assert_eq!(parse_exec_source(plan).unwrap().code, plan);
     let with_pragma = parse_exec_source(&format!(
         "// @exec: {{\"yield_time_ms\":12,\"max_output_tokens\":42}}\n{source}"
     ))

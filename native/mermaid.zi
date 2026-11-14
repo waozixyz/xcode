@@ -1,0 +1,13 @@
+// Xcoder's C ABI adapter. The renderer lives in the mermaid package.
+Mermaid :: #import "mermaid/mermaid"
+
+#program_export
+xcoder_mermaid_grid :: (source: string, max_width: s64) -> Mermaid.RenderedGrid {
+    return Mermaid.RenderGrid(source, max_width)
+}
+
+#program_export
+xcoder_mermaid_grid_free :: (grid: *Mermaid.RenderedGrid) {
+    VecFree(grid.points)
+    VecFree(grid.roles)
+}

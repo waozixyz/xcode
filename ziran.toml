@@ -8,3 +8,7 @@ ref = "master"
 
 [exports]
 runtime = "native/runtime.zi"
+
+[dependencies.mermaid]
+git = "https://github.com/ziranlang/mermaid.git"
+ref = "master"

@@ -21,6 +21,7 @@ use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -171,11 +172,204 @@ pub struct ResponsesStreamEvent {
     item_id: Option<String>,
     call_id: Option<String>,
     delta: Option<String>,
+    input: Option<String>,
     text: Option<String>,
     summary_index: Option<i64>,
     content_index: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_present_value")]
     safety_buffering: Option<Value>,
+}
+
+#[derive(Default)]
+struct CustomToolInputAssembly {
+    streamed: String,
+    saw_delta: bool,
+    done: Option<String>,
+}
+
+#[derive(Default)]
+pub(crate) struct CustomToolInputAssembler {
+    inputs: HashMap<String, CustomToolInputAssembly>,
+    call_items: HashMap<String, String>,
+}
+
+impl CustomToolInputAssembler {
+    fn item_key(item_id: &str) -> String {
+        format!("item:{item_id}")
+    }
+
+    fn call_key(call_id: &str) -> String {
+        format!("call:{call_id}")
+    }
+
+    fn resolve_key(
+        &mut self,
+        item_id: Option<&str>,
+        call_id: Option<&str>,
+    ) -> Result<Option<String>, ApiError> {
+        if let Some(item_id) = item_id {
+            let item_key = Self::item_key(item_id);
+            if let Some(call_id) = call_id {
+                if let Some(previous) = self.call_items.get(call_id)
+                    && previous != &item_key
+                {
+                    return Err(ApiError::Stream(format!(
+                        "custom tool call id {call_id} changed item identity"
+                    )));
+                }
+                self.call_items.insert(call_id.to_owned(), item_key.clone());
+                if !self.inputs.contains_key(&item_key)
+                    && let Some(input) = self.inputs.remove(&Self::call_key(call_id))
+                {
+                    self.inputs.insert(item_key.clone(), input);
+                }
+            }
+            return Ok(Some(item_key));
+        }
+        if let Some(call_id) = call_id {
+            return Ok(Some(
+                self.call_items
+                    .get(call_id)
+                    .cloned()
+                    .unwrap_or_else(|| Self::call_key(call_id)),
+            ));
+        }
+        Ok(None)
+    }
+
+    fn get_or_insert(
+        &mut self,
+        item_id: Option<&str>,
+        call_id: Option<&str>,
+    ) -> Result<Option<&mut CustomToolInputAssembly>, ApiError> {
+        let key = self.resolve_key(item_id, call_id)?;
+        Ok(key.map(|key| self.inputs.entry(key).or_default()))
+    }
+
+    fn take(
+        &mut self,
+        item_id: Option<&str>,
+        call_id: Option<&str>,
+    ) -> Result<Option<CustomToolInputAssembly>, ApiError> {
+        let key = self.resolve_key(item_id, call_id)?;
+        if let Some(call_id) = call_id {
+            self.call_items.remove(call_id);
+        }
+        Ok(key.and_then(|key| self.inputs.remove(&key)))
+    }
+
+    fn added_item(&mut self, item: &Value) -> Result<(), ApiError> {
+        let Some(item) = item.as_object() else {
+            return Ok(());
+        };
+        if item.get("type").and_then(Value::as_str) != Some("custom_tool_call") {
+            return Ok(());
+        }
+        let Some(prefix) = item.get("input").and_then(Value::as_str) else {
+            return Ok(());
+        };
+        let item_id = item.get("id").and_then(Value::as_str);
+        let call_id = item.get("call_id").and_then(Value::as_str);
+        let Some(input) = self.get_or_insert(item_id, call_id)? else {
+            return Ok(());
+        };
+        if !prefix.is_empty() {
+            input.streamed.push_str(prefix);
+            input.saw_delta = true;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn reconcile(&mut self, event: &mut ResponsesStreamEvent) -> Result<(), ApiError> {
+        match event.kind.as_str() {
+            "response.output_item.added" => {
+                if let Some(item) = event.item.as_ref() {
+                    self.added_item(item)?;
+                }
+            }
+            "response.custom_tool_call_input.delta" => {
+                let item_id = event.item_id.as_deref();
+                let call_id = event.call_id.as_deref();
+                let Some(delta) = event.delta.as_deref() else {
+                    return Ok(());
+                };
+                let Some(input) = self.get_or_insert(item_id, call_id)? else {
+                    return Ok(());
+                };
+                if input.done.is_some() {
+                    return Err(ApiError::Stream(
+                        "custom tool input delta arrived after input.done".into(),
+                    ));
+                }
+                input.streamed.push_str(delta);
+                input.saw_delta = true;
+            }
+            "response.custom_tool_call_input.done" => {
+                let item_id = event.item_id.as_deref();
+                let call_id = event.call_id.as_deref();
+                let done = event.input.as_deref();
+                let Some(input) = self.get_or_insert(item_id, call_id)? else {
+                    return Ok(());
+                };
+                if input.done.is_some() {
+                    return Err(ApiError::Stream(
+                        "duplicate custom tool input.done event".into(),
+                    ));
+                }
+                if input.saw_delta
+                    && let Some(done) = done
+                    && input.streamed != done
+                {
+                    return Err(ApiError::Stream(format!(
+                        "streamed custom tool input does not match input.done ({} streamed bytes, {} done bytes)",
+                        input.streamed.len(),
+                        done.len()
+                    )));
+                }
+                input.done = done.map(str::to_owned);
+            }
+            "response.output_item.done" => {
+                let Some(item) = event.item.as_mut().and_then(Value::as_object_mut) else {
+                    return Ok(());
+                };
+                if item.get("type").and_then(Value::as_str) != Some("custom_tool_call") {
+                    return Ok(());
+                }
+                let item_id = item.get("id").and_then(Value::as_str);
+                let call_id = item.get("call_id").and_then(Value::as_str);
+                let Some(input) = self.take(item_id, call_id)? else {
+                    return Ok(());
+                };
+                let snapshot = item.get("input").and_then(Value::as_str);
+                let exact = if let Some(done) = input.done {
+                    done
+                } else if input.saw_delta {
+                    if snapshot != Some(input.streamed.as_str()) {
+                        return Err(ApiError::Stream(format!(
+                            "streamed custom tool input has no matching input.done or output snapshot ({} streamed bytes, {} snapshot bytes)",
+                            input.streamed.len(),
+                            snapshot.map(str::len).unwrap_or(0)
+                        )));
+                    }
+                    return Ok(());
+                } else {
+                    return Ok(());
+                };
+                if snapshot != Some(exact.as_str()) {
+                    debug!(
+                        item_id,
+                        call_id,
+                        assembled_bytes = exact.len(),
+                        snapshot_bytes = snapshot.map(str::len),
+                        "replacing mismatched custom tool input snapshot"
+                    );
+                }
+                item.insert("input".into(), Value::String(exact));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 fn deserialize_present_value<'de, D>(deserializer: D) -> Result<Option<Value>, D::Error>
@@ -589,6 +783,7 @@ async fn process_sse_with_treatment(
     let mut stream = stream.eventsource();
     let mut response_error: Option<ApiError> = None;
     let mut last_server_model: Option<String> = None;
+    let mut custom_tool_inputs = CustomToolInputAssembler::default();
 
     loop {
         let start = Instant::now();
@@ -630,7 +825,7 @@ async fn process_sse_with_treatment(
 
         trace!("SSE event: {}", &sse.data);
 
-        let event: ResponsesStreamEvent = match serde_json::from_str(&sse.data) {
+        let mut event: ResponsesStreamEvent = match serde_json::from_str(&sse.data) {
             Ok(event) => event,
             Err(e) => {
                 debug!(
@@ -643,6 +838,10 @@ async fn process_sse_with_treatment(
                 continue;
             }
         };
+        if let Err(error) = custom_tool_inputs.reconcile(&mut event) {
+            let _ = tx_event.send(Err(error)).await;
+            return;
+        }
         let safety_buffering = event.safety_buffering(&safety_buffering_treatment);
         let metadata_events = event.metadata_events(safety_buffering);
 
@@ -1041,6 +1240,261 @@ mod tests {
             } if item_id == "ctc_1" && call_id == "call_1" && delta == "*** Begin"
         );
         assert_matches!(&events[1], ResponseEvent::Completed { .. });
+    }
+
+    #[tokio::test]
+    async fn custom_tool_call_done_uses_exact_streamed_input() {
+        let source = format!(
+            "{{\"calls\":[{{\"tool\":\"exec_command\",\"input\":{{\"cmd\":\"{}\"}}}}]}}",
+            "literal \\\\ slash \\\" quote 雪 heredoc\\n".repeat(4096)
+        );
+        let split = source.char_indices().nth(4096).unwrap().0;
+        let tail = source.char_indices().rev().nth(4096).unwrap().0;
+        let corrupt = format!("{}{}", &source[split..], &source[tail..]);
+        let mut input_events = vec![json!({
+            "type": "response.output_item.added",
+            "item": {
+                "id": "ctc_integrity",
+                "type": "custom_tool_call",
+                "call_id": "call_integrity",
+                "name": "exec",
+                "input": "",
+            }
+        })];
+        let mut at = 0;
+        while at < source.len() {
+            let mut end = (at + 4093).min(source.len());
+            while !source.is_char_boundary(end) {
+                end -= 1;
+            }
+            input_events.push(json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ctc_integrity",
+                "call_id": "call_integrity",
+                "delta": &source[at..end],
+            }));
+            at = end;
+        }
+        input_events.extend([
+            json!({
+                "type": "response.custom_tool_call_input.done",
+                "item_id": "ctc_integrity",
+                "call_id": "call_integrity",
+                "input": source,
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_integrity",
+                    "type": "custom_tool_call",
+                    "call_id": "call_integrity",
+                    "name": "exec",
+                    "input": corrupt,
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp_integrity" }
+            }),
+        ]);
+
+        let events = run_sse(input_events).await;
+        let streamed = events
+            .iter()
+            .filter_map(|event| match event {
+                ResponseEvent::ToolCallInputDelta { delta, .. } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(streamed, source);
+        assert_matches!(
+            events.iter().find(|event| matches!(event, ResponseEvent::OutputItemDone(_))),
+            Some(ResponseEvent::OutputItemDone(ResponseItem::CustomToolCall { input, .. }))
+                if input == &source
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_tool_input_rejects_delta_done_mismatch() {
+        let input_events = [
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ctc_mismatch",
+                "call_id": "call_mismatch",
+                "delta": "prefix",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.done",
+                "item_id": "ctc_mismatch",
+                "call_id": "call_mismatch",
+                "input": "different",
+            }),
+        ];
+        let body = input_events
+            .into_iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>();
+        let events = collect_events(&[body.as_bytes()]).await;
+
+        assert_matches!(
+            events.as_slice(),
+            [
+                Ok(ResponseEvent::ToolCallInputDelta { delta, .. }),
+                Err(ApiError::Stream(error)),
+            ] if delta == "prefix"
+                && error.contains("streamed custom tool input does not match input.done")
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_tool_inputs_keep_interleaved_calls_separate() {
+        let events = run_sse(vec![
+            json!({
+                "type": "response.output_item.added",
+                "item": {
+                    "id": "ctc_a",
+                    "type": "custom_tool_call",
+                    "call_id": "call_a",
+                    "name": "exec",
+                    "input": "a",
+                }
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ctc_a",
+                "call_id": "call_a",
+                "delta": "雪",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "call_id": "call_b",
+                "delta": "b\\",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "call_id": "call_a",
+                "delta": "\"tail",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ctc_b",
+                "call_id": "call_b",
+                "delta": "\ntail",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.done",
+                "item_id": "ctc_a",
+                "call_id": "call_a",
+                "input": "a雪\"tail",
+            }),
+            json!({
+                "type": "response.custom_tool_call_input.done",
+                "call_id": "call_b",
+                "input": "b\\\ntail",
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_b",
+                    "type": "custom_tool_call",
+                    "call_id": "call_b",
+                    "name": "exec",
+                    "input": "corrupt b",
+                }
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_a",
+                    "type": "custom_tool_call",
+                    "call_id": "call_a",
+                    "name": "exec",
+                    "input": "corrupt a",
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp_interleaved" }
+            }),
+        ])
+        .await;
+        let done = events
+            .iter()
+            .filter_map(|event| match event {
+                ResponseEvent::OutputItemDone(ResponseItem::CustomToolCall {
+                    call_id,
+                    input,
+                    ..
+                }) => Some((call_id.as_str(), input.as_str())),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(done.get("call_a"), Some(&"a雪\"tail"));
+        assert_eq!(done.get("call_b"), Some(&"b\\\ntail"));
+    }
+
+    #[tokio::test]
+    async fn custom_tool_call_without_stream_events_keeps_snapshot() {
+        let events = run_sse(vec![
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_legacy",
+                    "type": "custom_tool_call",
+                    "call_id": "call_legacy",
+                    "name": "exec",
+                    "input": "legacy snapshot",
+                }
+            }),
+            json!({
+                "type": "response.completed",
+                "response": { "id": "resp_legacy" }
+            }),
+        ])
+        .await;
+
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemDone(ResponseItem::CustomToolCall { input, .. })
+                if input == "legacy snapshot"
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_tool_partial_stream_without_done_fails_closed() {
+        let input_events = [
+            json!({
+                "type": "response.custom_tool_call_input.delta",
+                "item_id": "ctc_partial",
+                "call_id": "call_partial",
+                "delta": "partial",
+            }),
+            json!({
+                "type": "response.output_item.done",
+                "item": {
+                    "id": "ctc_partial",
+                    "type": "custom_tool_call",
+                    "call_id": "call_partial",
+                    "name": "exec",
+                    "input": "partial plus unobserved tail",
+                }
+            }),
+        ];
+        let body = input_events
+            .into_iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect::<String>();
+        let events = collect_events(&[body.as_bytes()]).await;
+
+        assert_matches!(
+            events.as_slice(),
+            [
+                Ok(ResponseEvent::ToolCallInputDelta { delta, .. }),
+                Err(ApiError::Stream(error)),
+            ] if delta == "partial"
+                && error.contains("has no matching input.done or output snapshot")
+        );
     }
 
     #[tokio::test]

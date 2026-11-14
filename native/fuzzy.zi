@@ -1,0 +1,90 @@
+// Allocation-light fuzzy matching: only the needle's lowered scalar stream is stored.
+using U :: #import "std/utf8";
+using Data :: #import "std/unicode_data";
+using B :: #import "std/byte_text_linux";
+
+LowerCount :: (point: u32, output: *u32) -> s32 {
+    if point < cast(u32)128 {
+        output[0] = ifx point >= cast(u32)65 && point <= cast(u32)90 then point + cast(u32)32 else point
+        return 1
+    }
+    record := Data.Mapping(point, 1)
+    if record.count == 0 {
+        output[0] = point
+        return 1
+    }
+    count := cast(s32)record[3]
+    if count < 1 || count > 3 { return 0 }
+    for index: 0..count - 1 { output[index] = Data.Point(record, 4 + index * 3) }
+    return count
+}
+
+#program_export
+xcoder_fuzzy_match :: (haystack_data: *u8, haystack_length: s64, needle_data: *u8, needle_length: s64, scratch: *u32, scratch_capacity: s64, indices: *s64, index_capacity: s64, score: *s32) -> s64 {
+    if score == null || haystack_length < 0 || needle_length < 0 ||
+       haystack_length > cast(s64)2147483647 || needle_length > cast(s64)2147483647 ||
+       (haystack_length > 0 && haystack_data == null) ||
+       (needle_length > 0 && needle_data == null) { return -1 }
+    if needle_length == 0 {
+        score.* = cast(s32)2147483647
+        return 0
+    }
+    if index_capacity < needle_length || indices == null { return -1 }
+    haystack := B.BytesFromPointer(haystack_data, cast(u64)haystack_length)
+    needle := B.BytesFromPointer(needle_data, cast(u64)needle_length)
+    haystack_text := B.TextFromBytes(haystack)
+    needle_text := B.TextFromBytes(needle)
+    if !U.Valid(haystack_text) || !U.Valid(needle_text) { return -1 }
+
+    if scratch == null || scratch_capacity < needle_length * 3 { return -1 }
+    lowered := scratch
+    lowered_count: s64 = 0
+    needle_at: s32 = 0
+    while needle_at < cast(s32)needle_length {
+        decoded := U.Decode(needle_text, needle_at)
+        mapped: [3]u32
+        count := LowerCount(decoded.value, *mapped[0])
+        if count == 0 { return -1 }
+        for index: 0..count - 1 {
+            lowered[lowered_count] = mapped[index]
+            lowered_count += 1
+        }
+        needle_at = decoded.after
+    }
+
+    matches: s64 = 0
+    first_lower: s64 = -1
+    last_lower: s64 = -1
+    lower_position: s64 = 0
+    wanted: s64 = 0
+    haystack_at: s32 = 0
+    original_index: s64 = 0
+    while haystack_at < cast(s32)haystack_length && wanted < lowered_count {
+        decoded := U.Decode(haystack_text, haystack_at)
+        mapped: [3]u32
+        count := LowerCount(decoded.value, *mapped[0])
+        if count == 0 { return -1 }
+        for index: 0..count - 1 {
+            scalar := mapped[index]
+            if wanted < lowered_count && scalar == lowered[wanted] {
+                if matches == index_capacity { return -1 }
+                indices[matches] = original_index
+                matches += 1
+                if first_lower < 0 { first_lower = lower_position }
+                last_lower = lower_position
+                wanted += 1
+            }
+            lower_position += 1
+        }
+        haystack_at = decoded.after
+        original_index += 1
+    }
+    if wanted < lowered_count { return -1 }
+
+    window := last_lower - first_lower + 1 - lowered_count
+    result: s32 = 0
+    if window > 0 { result = cast(s32)window }
+    if first_lower == 0 { result -= 100 }
+    score.* = result
+    return matches
+}

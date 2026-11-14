@@ -135,23 +135,17 @@ fn unicode_labels_and_later_declarations() {
         vec![r#"state "Ready" as S"#, r#"state "Working" as S"#],
     ] {
         // References before and after descriptions must retain the same state identity.
-        let mut body = vec!["S --> T"];
+        let mut body = vec!["stateDiagram-v2", "S --> T"];
         body.extend(&descriptions);
         body.push("T --> S");
-        let graph = crate::state::parse(&body).unwrap();
-        let mut expected = crate::state::parse(&["S --> T", "T --> S"]).unwrap();
-        expected.nodes[0] = crate::Node {
-            id: "S".to_owned(),
-            label: "Ready".to_owned(),
-            shape: crate::Shape::Rectangle,
-            declared: true,
-            members: if descriptions.len() == 1 {
-                Vec::new()
-            } else {
-                vec!["Working".to_owned()]
-            },
-        };
-        assert_eq!(graph, expected, "{descriptions:?}");
+        let mut expected = vec!["stateDiagram-v2", "S: Ready"];
+        if descriptions.len() > 1 { expected.push("S: Working"); }
+        expected.extend(["S --> T", "T --> S"]);
+        assert_eq!(
+            render(&body.join("\n"), /*max_width*/ 100),
+            render(&expected.join("\n"), /*max_width*/ 100),
+            "{descriptions:?}"
+        );
     }
 }
 
@@ -228,45 +222,27 @@ fn graph_relationship_endpoints() {
             render(&source.replace(';', "\n"), /*max_width*/ 100).unwrap(),
         );
     }
-    let source = "classDiagram\nclass A {\nstring a;b\nObject[] elementData\n}\nA : +get()";
-    let statements = crate::syntax::statements(source).unwrap();
-    assert_eq!(
-        crate::relations::parse(statements[0], &statements[1..]).unwrap(),
-        crate::Graph {
-            nodes: vec![crate::Node {
-                id: "A".into(),
-                label: "A".into(),
-                shape: crate::Shape::Rectangle,
-                declared: false,
-                members: vec![
-                    "string a;b".into(),
-                    "Object[] elementData".into(),
-                    "+get()".into()
-                ],
-            }],
-            ..crate::Graph::default()
-        }
-    );
-    for (line, target, target_tip, target_label, dashed) in [
-        ("A --orange", "orange", '─', "", false),
-        ("A ..o_range", "o_range", '─', "", true),
-        ("A --o B", "B", '◇', "", false),
-        (r#"A ..o"many" B"#, "B", '◇', "(many)", true),
+    // Body members keep their semicolons and precede later member statements.
+    let output = render(
+        "classDiagram\nclass A {\nstring a;b\nObject[] elementData\n}\nA : +get()",
+        /*max_width*/ 100,
+    )
+    .unwrap();
+    let rows = ["│ A", "│ string a;b", "│ Object[] elementData", "│ +get()"]
+        .map(|row| output.find(row).unwrap_or_else(|| panic!("{row}: {output}")));
+    assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{output}");
+    // Endpoint markers bind only before whitespace or a quoted cardinality.
+    for (line, spaced, target_tip, dashed) in [
+        ("A --orange", "A -- orange", '─', false),
+        ("A ..o_range", "A .. o_range", '─', true),
+        ("A --o B", "A --o  B", '◇', false),
+        (r#"A ..o"many" B"#, r#"A ..o "many" B"#, '◇', true),
     ] {
-        let graph = crate::relations::parse("classDiagram", &[line]).unwrap();
-        let mut expected = crate::Graph::default();
-        let from = expected.node("A").unwrap();
-        let to = expected.node(target).unwrap();
-        expected.edges.push(crate::Edge {
-            from,
-            to,
-            label: String::new(),
-            target_label: target_label.to_owned(),
-            source_tip: '─',
-            target_tip,
-            dashed,
-        });
-        assert_eq!(graph, expected, "{line}");
+        let output = render(&format!("classDiagram; {line}"), /*max_width*/ 100).unwrap();
+        assert_eq!(Ok(output.clone()), render(&format!("classDiagram; {spaced}"), 100), "{line}");
+        let ports = output.lines().filter(|row| row.contains('├')).collect::<Vec<_>>();
+        assert!(ports[0].contains("├─") && ports[1].contains(&format!("├{target_tip}")), "{line}: {output}");
+        assert_eq!(output.contains('┆'), dashed, "{line}: {output}");
     }
 }
 

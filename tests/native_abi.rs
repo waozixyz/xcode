@@ -3,6 +3,32 @@
 struct Tool { name: *const u8, length: i64, kind: i32 }
 unsafe extern "C" {
     fn xcoder_resolve_tool(name: *const u8, length: i64, catalog: *const Tool, count: i64) -> i64;
+    fn xcoder_executor_init(state: *mut Executor, count: i64, lanes: i64) -> i32;
+    fn xcoder_executor_next(state: *mut Executor) -> i64;
+    fn xcoder_executor_complete(state: *mut Executor) -> i32;
+}
+#[repr(C)]
+#[derive(Default)]
+struct Executor { cursor: i64, active: i64, completed: i64, count: i64, lanes: i64 }
+#[test]
+fn precompiled_executor_bounds_parallelism_and_completes_exactly_once() {
+    let mut state = Executor::default();
+    unsafe {
+        assert_eq!(xcoder_executor_init(&mut state, 9, 4), 1);
+        for index in 0..4 { assert_eq!(xcoder_executor_next(&mut state), index); }
+        assert_eq!(xcoder_executor_next(&mut state), -1);
+        for index in 4..9 {
+            assert_eq!(xcoder_executor_complete(&mut state), 1);
+            assert_eq!(xcoder_executor_next(&mut state), index);
+        }
+        for _ in 0..4 { assert_eq!(xcoder_executor_complete(&mut state), 1); }
+        assert_eq!(state.completed, 9);
+        assert_eq!(xcoder_executor_next(&mut state), -1);
+        assert_eq!(xcoder_executor_complete(&mut state), 0);
+        assert_eq!(xcoder_executor_init(&mut state, 129, 1), 0);
+        assert_eq!(xcoder_executor_init(&mut state, 1, 5), 0);
+        assert_eq!(xcoder_executor_init(std::ptr::null_mut(), 1, 1), 0);
+    }
 }
 fn lookup(name: &[u8], names: &[&[u8]]) -> i64 {
     let catalog: Vec<_> = names.iter().map(|name| Tool { name: name.as_ptr(), length: name.len() as i64, kind: 1 }).collect();

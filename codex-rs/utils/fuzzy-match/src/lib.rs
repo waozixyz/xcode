@@ -14,53 +14,43 @@ pub fn fuzzy_match(haystack: &str, needle: &str) -> Option<(Vec<usize>, i32)> {
         return Some((Vec::new(), i32::MAX));
     }
 
-    let mut lowered_chars: Vec<char> = Vec::new();
-    let mut lowered_to_orig_char_idx: Vec<usize> = Vec::new();
-    for (orig_idx, ch) in haystack.chars().enumerate() {
-        for lc in ch.to_lowercase() {
-            lowered_chars.push(lc);
-            lowered_to_orig_char_idx.push(orig_idx);
-        }
+    let mut scratch = vec![0u32; needle.len().saturating_mul(3)];
+    let mut indices = vec![0usize; needle.len()];
+    let mut score = 0i32;
+    let count = unsafe {
+        xcoder_fuzzy_match(
+            haystack.as_ptr(),
+            haystack.len() as i64,
+            needle.as_ptr(),
+            needle.len() as i64,
+            scratch.as_mut_ptr(),
+            scratch.len() as i64,
+            indices.as_mut_ptr().cast::<i64>(),
+            indices.len() as i64,
+            &mut score,
+        )
+    };
+    if count < 0 {
+        return None;
     }
+    indices.truncate(count as usize);
+    indices.sort_unstable();
+    indices.dedup();
+    Some((indices, score))
+}
 
-    let lowered_needle: Vec<char> = needle.to_lowercase().chars().collect();
-
-    let mut result_orig_indices: Vec<usize> = Vec::with_capacity(lowered_needle.len());
-    let mut first_lower_pos: Option<usize> = None;
-    let mut last_lower_pos: Option<usize> = None;
-    let mut cur = 0usize;
-    for &nc in lowered_needle.iter() {
-        let mut found_at: Option<usize> = None;
-        while cur < lowered_chars.len() {
-            if lowered_chars[cur] == nc {
-                found_at = Some(cur);
-                cur += 1;
-                break;
-            }
-            cur += 1;
-        }
-        let pos = found_at?;
-        result_orig_indices.push(lowered_to_orig_char_idx[pos]);
-        first_lower_pos.get_or_insert(pos);
-        last_lower_pos = Some(pos);
-    }
-
-    // Score using the actual lowered positions, even within a character expansion.
-    let first_lower_pos = first_lower_pos?;
-    // last defaults to first for single-hit; score = extra span between first/last hit
-    // minus needle len (≥0).
-    // Strongly reward prefix matches by subtracting 100 when the first hit is at index 0.
-    let last_lower_pos = last_lower_pos.unwrap_or(first_lower_pos);
-    let window =
-        (last_lower_pos as i32 - first_lower_pos as i32 + 1) - (lowered_needle.len() as i32);
-    let mut score = window.max(0);
-    if first_lower_pos == 0 {
-        score -= 100;
-    }
-
-    result_orig_indices.sort_unstable();
-    result_orig_indices.dedup();
-    Some((result_orig_indices, score))
+unsafe extern "C" {
+    fn xcoder_fuzzy_match(
+        haystack: *const u8,
+        haystack_length: i64,
+        needle: *const u8,
+        needle_length: i64,
+        scratch: *mut u32,
+        scratch_capacity: i64,
+        indices: *mut i64,
+        index_capacity: i64,
+        score: *mut i32,
+    ) -> i64;
 }
 
 #[cfg(test)]

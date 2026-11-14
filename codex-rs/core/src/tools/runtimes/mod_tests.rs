@@ -297,7 +297,8 @@ fn maybe_wrap_shell_lc_with_snapshot_bootstraps_in_user_shell() {
     assert_eq!(rewritten[0], "/bin/zsh");
     assert_eq!(rewritten[1], "-c");
     assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/bash' -c 'echo hello'"));
+    assert!(rewritten[2].contains("exec '/bin/bash' -c \"$0\" \"$@\""));
+    assert_eq!(rewritten[3], "echo hello");
 }
 
 #[test]
@@ -322,7 +323,8 @@ fn maybe_wrap_shell_lc_with_snapshot_escapes_single_quotes() {
         &RuntimePathPrepends::default(),
     );
 
-    assert!(rewritten[2].contains(r#"exec '/bin/bash' -c 'echo '"'"'hello'"'"''"#));
+    assert!(rewritten[2].contains("exec '/bin/bash' -c \"$0\" \"$@\""));
+    assert_eq!(rewritten[3], "echo 'hello'");
 }
 
 #[test]
@@ -350,7 +352,8 @@ fn maybe_wrap_shell_lc_with_snapshot_uses_bash_bootstrap_shell() {
     assert_eq!(rewritten[0], "/bin/bash");
     assert_eq!(rewritten[1], "-c");
     assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/zsh' -c 'echo hello'"));
+    assert!(rewritten[2].contains("exec '/bin/zsh' -c \"$0\" \"$@\""));
+    assert_eq!(rewritten[3], "echo hello");
 }
 
 #[test]
@@ -378,7 +381,8 @@ fn maybe_wrap_shell_lc_with_snapshot_uses_sh_bootstrap_shell() {
     assert_eq!(rewritten[0], "/bin/sh");
     assert_eq!(rewritten[1], "-c");
     assert!(rewritten[2].contains("if . '"));
-    assert!(rewritten[2].contains("exec '/bin/bash' -c 'echo hello'"));
+    assert!(rewritten[2].contains("exec '/bin/bash' -c \"$0\" \"$@\""));
+    assert_eq!(rewritten[3], "echo hello");
 }
 
 #[test]
@@ -405,10 +409,9 @@ fn maybe_wrap_shell_lc_with_snapshot_preserves_trailing_args() {
         &RuntimePathPrepends::default(),
     );
 
-    assert!(
-        rewritten[2]
-            .contains(r#"exec '/bin/bash' -c 'printf '"'"'%s %s'"'"' "$0" "$1"' 'arg0' 'arg1'"#)
-    );
+    assert!(rewritten[2].contains("exec '/bin/bash' -c \"$0\" \"$@\""));
+    assert_eq!(rewritten[3], command[2]);
+    assert_eq!(rewritten[4..], command[3..]);
 }
 
 #[test]
@@ -450,11 +453,46 @@ fn maybe_wrap_shell_lc_with_snapshot_reuses_brokered_session_zsh() {
             "if . '{}' >/dev/null 2>&1; then :; fi",
             shell_single_quote(&shell_snapshot.to_string_lossy())
         )));
-        assert!(rewritten[2].ends_with(&command[2]));
-        assert!(rewritten[2].contains(&format!("unset {copy_key} || exit 1")));
+        assert!(rewritten[2].ends_with("builtin eval \"$__CODEX_SNAPSHOT_ORIGINAL_SCRIPT\""));
+        assert!(rewritten[4].contains(&format!("unset {copy_key} || exit 1")));
         assert!(!rewritten[2].contains("exec '/bin/zsh'"));
-        assert_eq!(rewritten[3..], command[3..]);
+        assert_eq!(rewritten[3], command[3]);
+        assert!(rewritten[4].ends_with(&command[2]));
+        assert_eq!(rewritten[5..], command[4..]);
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn maybe_wrap_shell_lc_with_snapshot_keeps_large_script_out_of_wrapper_argument() {
+    let dir = tempdir().expect("create temp dir");
+    let snapshot_path = dir.path().join("snapshot.sh");
+    std::fs::write(&snapshot_path, "# Snapshot file\n").expect("write snapshot");
+    let (session_shell, shell_snapshot) =
+        shell_with_snapshot(ShellType::Bash, "/bin/bash", snapshot_path.abs());
+    let script = format!("printf 'large-script-ok'\n# {}", "x".repeat(120_000));
+    let command = vec!["/bin/bash".to_string(), "-lc".to_string(), script.clone()];
+
+    let rewritten = maybe_wrap_shell_lc_with_snapshot(
+        &command,
+        &session_shell,
+        Some(&shell_snapshot),
+        &HashMap::new(),
+        &HashMap::new(),
+        &RuntimePathPrepends::default(),
+    );
+
+    assert!(
+        !rewritten[2].contains(&script),
+        "wrapper unexpectedly contains the script"
+    );
+    assert_eq!(rewritten[3], script);
+    let output = Command::new(&rewritten[0])
+        .args(&rewritten[1..])
+        .output()
+        .expect("run rewritten command");
+    assert!(output.status.success(), "command failed: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "large-script-ok");
 }
 
 #[test]
@@ -1917,4 +1955,84 @@ fn brokered_credential_exports_stop_when_startup_makes_credential_readonly() {
         output.stdout.is_empty(),
         "protected command unexpectedly ran"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn apply_patch_helper_dir_requires_absolute_directory_with_helper() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let helper_dir = dir.path().join("codex-helper");
+    std::fs::create_dir_all(&helper_dir)?;
+
+    assert_eq!(apply_patch_helper_dir(None), None);
+    assert_eq!(
+        apply_patch_helper_dir(Some(helper_dir.clone().into_os_string())),
+        None
+    );
+    assert_eq!(apply_patch_helper_dir(Some("relative/helper".into())), None);
+
+    std::fs::write(helper_dir.join("apply_patch"), "")?;
+    assert_eq!(
+        apply_patch_helper_dir(Some(helper_dir.clone().into_os_string())),
+        Some(helper_dir)
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn maybe_wrap_shell_lc_with_snapshot_runs_codex_apply_patch_ahead_of_login_profile()
+-> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir()?;
+    let profile_bin = dir.path().join("profile-bin");
+    let helper_dir = dir.path().join("codex-helper");
+    for (bin, label) in [(&profile_bin, "profile"), (&helper_dir, "codex")] {
+        std::fs::create_dir_all(bin)?;
+        let script = bin.join("apply_patch");
+        std::fs::write(&script, format!("#!/bin/sh\nprintf {label}\n"))?;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755))?;
+    }
+    // Login startup, as captured by the snapshot, resets PATH and puts a
+    // profile directory with a different `apply_patch` first.
+    let snapshot_path = dir.path().join("snapshot.sh");
+    std::fs::write(
+        &snapshot_path,
+        format!(
+            "# Snapshot file\nexport PATH='{}:/usr/bin:/bin'\n",
+            profile_bin.display()
+        ),
+    )?;
+    let (session_shell, shell_snapshot) =
+        shell_with_snapshot(ShellType::Bash, "/bin/bash", snapshot_path.abs());
+    let command = vec![
+        "/bin/bash".to_string(),
+        "-lc".to_string(),
+        "apply_patch </dev/null".to_string(),
+    ];
+    let helper_dir = apply_patch_helper_dir(Some(helper_dir.into_os_string()))
+        .ok_or_else(|| anyhow::anyhow!("helper directory should be accepted"))?;
+    let mut env = HashMap::from([("PATH".to_string(), "/usr/bin:/bin".to_string())]);
+    let mut runtime_path_prepends = RuntimePathPrepends::default();
+    runtime_path_prepends.prepend(&mut env, helper_dir.as_path());
+    let rewritten = maybe_wrap_shell_lc_with_snapshot(
+        &command,
+        &session_shell,
+        Some(&shell_snapshot),
+        &HashMap::new(),
+        &env,
+        &runtime_path_prepends,
+    );
+    let path = env
+        .get("PATH")
+        .ok_or_else(|| anyhow::anyhow!("PATH should be set"))?;
+    let output = Command::new(&rewritten[0])
+        .args(&rewritten[1..])
+        .env("PATH", path)
+        .output()?;
+
+    assert!(output.status.success(), "command failed: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "codex");
+    Ok(())
 }

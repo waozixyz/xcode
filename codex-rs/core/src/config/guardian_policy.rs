@@ -8,7 +8,7 @@ use codex_config::ConfigRequirementsToml;
 use codex_config::config_toml::AutoReviewToml;
 use codex_protocol::config_types::ApprovalsReviewer;
 
-pub(crate) fn resolve_guardian_policy_text(
+pub fn resolve_guardian_policy_text(
     requirements: &ConfigRequirementsToml,
     fallback: Option<&AutoReviewToml>,
 ) -> (Option<String>, Option<String>) {
@@ -21,7 +21,7 @@ pub(crate) fn resolve_guardian_policy_text(
 
 /// Resolves the effective reviewer without replacing the retained request.
 /// Trusted private reviewers omit the model to bypass model-required review.
-pub(crate) fn resolve_guardian_reviewer(
+pub fn resolve_guardian_reviewer(
     requested: ApprovalsReviewer,
     model: Option<&str>,
     requirements: &ConfigRequirements,

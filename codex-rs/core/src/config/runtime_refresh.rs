@@ -21,7 +21,7 @@ use std::collections::HashMap;
 mod tests;
 
 #[derive(Clone, Copy)]
-pub(crate) enum RuntimeConfigRefresh {
+pub enum RuntimeConfigRefresh {
     User,
     Mcp,
     UserFiles,
@@ -35,7 +35,7 @@ struct McpRefreshToml {
 }
 
 impl Config {
-    pub(crate) fn resolve_runtime_refresh(
+    pub fn resolve_runtime_refresh(
         &self,
         incoming: &Self,
         scope: RuntimeConfigRefresh,

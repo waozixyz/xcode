@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 
+use codex_apply_patch::CODEX_APPLY_PATCH_HELPER_DIR_ENV_VAR;
 use codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1;
 use codex_async_utils::THREAD_STACK_SIZE_BYTES;
 #[cfg(unix)]
@@ -55,6 +56,16 @@ impl Arg0PathEntryGuard {
 
     pub fn paths(&self) -> &Arg0DispatchPaths {
         &self.paths
+    }
+
+    /// The directory that holds this process's `apply_patch` helper.
+    pub fn helper_dir(&self) -> Option<&Path> {
+        let dir = self._temp_dir.path();
+        #[cfg(unix)]
+        let helper = dir.join(APPLY_PATCH_ARG0);
+        #[cfg(windows)]
+        let helper = dir.join(format!("{APPLY_PATCH_ARG0}.bat"));
+        helper.exists().then_some(dir)
     }
 }
 
@@ -143,6 +154,19 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
         // this point in its execution.
         unsafe {
             std::env::set_var("PATH", updated_path_env_var);
+        }
+    }
+    // Shell tools restore this directory after login startup. Never trust an
+    // inherited value: only a helper created by this process may be published.
+    let helper_dir = path_entry_guard
+        .as_ref()
+        .and_then(Arg0PathEntryGuard::helper_dir);
+    // It is safe to modify the environment because our process is still
+    // single-threaded at this point in its execution.
+    unsafe {
+        match helper_dir {
+            Some(dir) => std::env::set_var(CODEX_APPLY_PATCH_HELPER_DIR_ENV_VAR, dir),
+            None => std::env::remove_var(CODEX_APPLY_PATCH_HELPER_DIR_ENV_VAR),
         }
     }
     path_entry_guard

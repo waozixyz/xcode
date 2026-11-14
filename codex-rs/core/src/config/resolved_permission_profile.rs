@@ -7,12 +7,12 @@ use codex_protocol::models::ProfileWorkspaceRoot;
 use codex_utils_path_uri::PathUri;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PermissionProfileState {
+pub struct PermissionProfileState {
     permission_profile: Constrained<PermissionProfileSnapshot>,
 }
 
 impl PermissionProfileState {
-    pub(crate) fn from_constrained_legacy(
+    pub fn from_constrained_legacy(
         constrained_permission_profile: Constrained<PermissionProfile>,
     ) -> ConstraintResult<Self> {
         let snapshot =
@@ -20,7 +20,7 @@ impl PermissionProfileState {
         Self::from_constrained_snapshot(constrained_permission_profile, snapshot)
     }
 
-    pub(crate) fn from_constrained_active_profile(
+    pub fn from_constrained_active_profile(
         constrained_permission_profile: Constrained<PermissionProfile>,
         active_permission_profile: Option<ActivePermissionProfile>,
         profile_workspace_roots: Vec<PathUri>,
@@ -42,7 +42,7 @@ impl PermissionProfileState {
         Self::from_constrained_snapshot(constrained_permission_profile, snapshot)
     }
 
-    pub(crate) fn from_constrained_snapshot(
+    pub fn from_constrained_snapshot(
         constrained_permission_profile: Constrained<PermissionProfile>,
         permission_profile: PermissionProfileSnapshot,
     ) -> ConstraintResult<Self> {
@@ -52,23 +52,23 @@ impl PermissionProfileState {
         Ok(Self { permission_profile })
     }
 
-    pub(crate) fn permission_profile(&self) -> &PermissionProfile {
+    pub fn permission_profile(&self) -> &PermissionProfile {
         self.permission_profile.get().permission_profile()
     }
 
-    pub(crate) fn snapshot(&self) -> PermissionProfileSnapshot {
+    pub fn snapshot(&self) -> PermissionProfileSnapshot {
         self.permission_profile.get().clone()
     }
 
-    pub(crate) fn active_permission_profile(&self) -> Option<ActivePermissionProfile> {
+    pub fn active_permission_profile(&self) -> Option<ActivePermissionProfile> {
         self.permission_profile.get().active_permission_profile()
     }
 
-    pub(crate) fn profile_workspace_roots(&self) -> &[ProfileWorkspaceRoot] {
+    pub fn profile_workspace_roots(&self) -> &[ProfileWorkspaceRoot] {
         self.permission_profile.get().profile_workspace_roots()
     }
 
-    pub(crate) fn can_set_legacy_permission_profile(
+    pub fn can_set_legacy_permission_profile(
         &self,
         permission_profile: &PermissionProfile,
     ) -> ConstraintResult<()> {
@@ -76,7 +76,7 @@ impl PermissionProfileState {
         self.permission_profile.can_set(&candidate)
     }
 
-    pub(crate) fn set_legacy_permission_profile(
+    pub fn set_legacy_permission_profile(
         &mut self,
         permission_profile: PermissionProfile,
     ) -> ConstraintResult<()> {
@@ -84,7 +84,7 @@ impl PermissionProfileState {
             .set(PermissionProfileSnapshot::legacy(permission_profile))
     }
 
-    pub(crate) fn set_permission_profile_snapshot(
+    pub fn set_permission_profile_snapshot(
         &mut self,
         snapshot: PermissionProfileSnapshot,
     ) -> ConstraintResult<()> {

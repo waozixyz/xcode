@@ -183,10 +183,10 @@ mod permission_profile_selection;
 mod permissions;
 mod requirements;
 mod resolved_permission_profile;
-pub(crate) use guardian_policy::resolve_guardian_policy_text;
-pub(crate) use guardian_policy::resolve_guardian_reviewer;
+pub use guardian_policy::resolve_guardian_policy_text;
+pub use guardian_policy::resolve_guardian_reviewer;
 mod runtime_refresh;
-pub(crate) use runtime_refresh::RuntimeConfigRefresh;
+pub use runtime_refresh::RuntimeConfigRefresh;
 #[cfg(test)]
 mod schema;
 mod token_budget_startup;
@@ -203,15 +203,15 @@ pub use codex_network_proxy::NetworkProxyAuditMetadata;
 use codex_sandboxing::compatibility_sandbox_policy_for_permission_profile;
 pub use codex_sandboxing::system_bwrap_warning;
 pub use managed_features::ManagedFeatures;
-pub(crate) use metrics::emit_session_start_metrics;
-pub(crate) use metrics::legacy_multi_agent_disabled_sources;
+pub use metrics::emit_session_start_metrics;
+pub use metrics::legacy_multi_agent_disabled_sources;
 pub use network_config::EnvironmentNetworkConfigError;
 pub use network_config::NetworkConfigInputs;
 pub use network_config::PreparedNetworkConfig;
 pub use network_config::project_environment_profile_network;
 pub use network_config::validate_environment_network_policy;
 #[cfg(test)]
-pub(crate) use network_proxy_spec::McpNetworkRoute;
+pub use network_proxy_spec::McpNetworkRoute;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
 pub use permission_profile_catalog::PermissionProfileCatalogEntry;
@@ -224,10 +224,10 @@ pub use permission_profile_selection::resolve_permission_profile_selection;
 pub use permissions::CompiledPermissionProfile;
 pub use permissions::WorkspaceWriteSettings;
 pub use permissions::compile_permission_profile;
-pub(crate) use permissions::is_builtin_permission_profile_name;
+pub use permissions::is_builtin_permission_profile_name;
 pub use permissions::network_proxy_config_from_profile_network;
 pub use permissions::resolve_permission_profile;
-pub(crate) use resolved_permission_profile::PermissionProfileState;
+pub use resolved_permission_profile::PermissionProfileState;
 pub use token_budget_startup::TokenBudgetStartupConfig;
 pub use windows_sandbox_config::PreparedWindowsSandboxConfig;
 use windows_sandbox_config::config_allows_mxc;
@@ -266,18 +266,17 @@ impl Default for GhostSnapshotConfig {
 /// Maximum number of bytes of the documentation that will be embedded. Larger
 /// files are *silently truncated* to this size so we do not take up too much of
 /// the context window.
-pub(crate) const AGENTS_MD_MAX_BYTES: usize = DEFAULT_PROJECT_DOC_MAX_BYTES; // 32 KiB
-pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
-pub(crate) const DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION: usize = 4;
-pub(crate) const DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
-pub(crate) const DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS: i64 = 3600 * 1000;
-pub(crate) const DEFAULT_MULTI_AGENT_V2_DEFAULT_WAIT_TIMEOUT_MS: i64 = 30_000;
+pub const AGENTS_MD_MAX_BYTES: usize = DEFAULT_PROJECT_DOC_MAX_BYTES; // 32 KiB
+pub const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
+pub const DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION: usize = 4;
+pub const DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
+pub const DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS: i64 = 3600 * 1000;
+pub const DEFAULT_MULTI_AGENT_V2_DEFAULT_WAIT_TIMEOUT_MS: i64 = 30_000;
 const DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE: &str = "collaboration";
 
-pub(crate) const HARD_MIN_MULTI_AGENT_V2_TIMEOUT_MS: i64 = 0;
-pub(crate) const HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS: i64 =
-    DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS;
-pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
+pub const HARD_MIN_MULTI_AGENT_V2_TIMEOUT_MS: i64 = 0;
+pub const HARD_MAX_MULTI_AGENT_V2_TIMEOUT_MS: i64 = DEFAULT_MULTI_AGENT_V2_MAX_WAIT_TIMEOUT_MS;
+pub const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 const LOCAL_DEV_BUILD_VERSION: &str = "0.0.0";
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
@@ -322,7 +321,7 @@ fn resolve_mcp_oauth_credentials_store_mode(
 }
 
 #[cfg(test)]
-pub(crate) async fn test_config() -> Config {
+pub async fn test_config() -> Config {
     let codex_home = tempfile::tempdir().expect("create temp dir");
     Config::load_from_base_config_with_overrides(
         ConfigToml {
@@ -391,11 +390,11 @@ impl Permissions {
         })
     }
 
-    pub(crate) fn permission_profile_state(&self) -> &PermissionProfileState {
+    pub fn permission_profile_state(&self) -> &PermissionProfileState {
         &self.permission_profile_state
     }
 
-    pub(crate) fn set_permission_profile_state(
+    pub fn set_permission_profile_state(
         &mut self,
         permission_profile_state: PermissionProfileState,
     ) {
@@ -1284,7 +1283,7 @@ pub struct TokenBudgetConfig {
 }
 
 impl TokenBudgetConfig {
-    pub(crate) fn validate(&self) -> std::io::Result<()> {
+    pub fn validate(&self) -> std::io::Result<()> {
         if self
             .reminder_threshold_tokens
             .is_some_and(|tokens| tokens <= 0)
@@ -1356,7 +1355,7 @@ impl TokenBudgetConfig {
         Ok(())
     }
 
-    pub(crate) fn fallback_buffer_tokens(&self) -> i64 {
+    pub fn fallback_buffer_tokens(&self) -> i64 {
         if self.auto_compact_fallback_prompt.is_some() {
             self.auto_compact_fallback_buffer_tokens.unwrap_or(0)
         } else {
@@ -1654,7 +1653,7 @@ impl ConfigBuilder {
     }
 
     #[cfg(test)]
-    pub(crate) fn without_managed_config_for_tests() -> Self {
+    pub fn without_managed_config_for_tests() -> Self {
         Self::default().loader_overrides(LoaderOverrides::without_managed_config_for_tests())
     }
 }
@@ -1683,7 +1682,7 @@ async fn config_toml_from_layers(layers: &ConfigLayerStack) -> std::io::Result<C
 
 impl Config {
     /// Capture storage and sync preparation use one session-static rollout choice.
-    pub(crate) fn guardian_context_budgeting(&self) -> codex_guardian_context::ContextBudgeting {
+    pub fn guardian_context_budgeting(&self) -> codex_guardian_context::ContextBudgeting {
         if self.guardian_sync_elastic_budget.is_some() {
             codex_guardian_context::ContextBudgeting::Elastic
         } else {
@@ -1728,7 +1727,7 @@ impl Config {
                 .enabled(Feature::GuardianNativeMultiAgentHistory)
     }
 
-    pub(crate) fn multi_agent_version_override(&self) -> Option<MultiAgentVersion> {
+    pub fn multi_agent_version_override(&self) -> Option<MultiAgentVersion> {
         if self.features.enabled(Feature::MultiAgentV2) {
             Some(MultiAgentVersion::V2)
         } else if !self.agents_enabled {
@@ -1738,7 +1737,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn multi_agent_version_from_features(&self) -> MultiAgentVersion {
+    pub fn multi_agent_version_from_features(&self) -> MultiAgentVersion {
         self.multi_agent_version_override().unwrap_or_else(|| {
             if self.features.enabled(Feature::Collab) {
                 MultiAgentVersion::V1
@@ -1748,7 +1747,7 @@ impl Config {
         })
     }
 
-    pub(crate) fn multi_agent_version_for_model(
+    pub fn multi_agent_version_for_model(
         &self,
         model_multi_agent_version: Option<MultiAgentVersion>,
     ) -> MultiAgentVersion {
@@ -1757,7 +1756,7 @@ impl Config {
             .unwrap_or_else(|| self.multi_agent_version_from_features())
     }
 
-    pub(crate) fn effective_agent_max_threads(
+    pub fn effective_agent_max_threads(
         &self,
         multi_agent_version: MultiAgentVersion,
     ) -> Option<usize> {
@@ -1924,7 +1923,7 @@ impl Config {
         .await
     }
 
-    pub(crate) async fn to_mcp_config_with_plugin_registrations(
+    pub async fn to_mcp_config_with_plugin_registrations(
         &self,
         plugins_manager: &codex_core_plugins::PluginsManager,
         additional_plugin_registrations: impl IntoIterator<Item = McpServerRegistration>,
@@ -1934,7 +1933,7 @@ impl Config {
         self.to_mcp_config_with_loaded_plugins(&loaded_plugins, additional_plugin_registrations)
     }
 
-    pub(crate) fn to_mcp_config_with_loaded_plugins(
+    pub fn to_mcp_config_with_loaded_plugins(
         &self,
         loaded_plugins: &PluginLoadOutcome,
         additional_plugin_registrations: impl IntoIterator<Item = McpServerRegistration>,
@@ -2059,7 +2058,7 @@ impl Config {
         }
     }
 
-    pub(crate) fn prefix_mcp_tool_names(&self) -> bool {
+    pub fn prefix_mcp_tool_names(&self) -> bool {
         !self.features.enabled(Feature::NonPrefixedMcpToolNames)
             || self.non_prefixed_mcp_tool_servers.is_some()
     }
@@ -2508,7 +2507,7 @@ fn ensure_no_inline_bearer_tokens(value: &TomlValue) -> std::io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn set_project_trust_level_inner(
+pub fn set_project_trust_level_inner(
     doc: &mut DocumentMut,
     project_path: &Path,
     trust_level: TrustLevel,
@@ -2614,7 +2613,7 @@ fn resolve_tool_suggest_config(
     resolve_tool_suggest_config_from_config(config_toml.tool_suggest.as_ref(), config_layer_stack)
 }
 
-pub(crate) fn resolve_tool_suggest_config_from_layer_stack(
+pub fn resolve_tool_suggest_config_from_layer_stack(
     config_layer_stack: &ConfigLayerStack,
 ) -> ToolSuggestConfig {
     let tool_suggest = config_layer_stack
@@ -3020,7 +3019,7 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
     }
 }
 
-pub(crate) fn resolve_token_budget_config(
+pub fn resolve_token_budget_config(
     config_toml: &ConfigToml,
     features: &ManagedFeatures,
 ) -> std::io::Result<Option<TokenBudgetConfig>> {
@@ -3263,7 +3262,7 @@ pub fn resolve_bootstrap_http_client_factory(
     Ok(factory)
 }
 
-pub(crate) fn resolve_web_search_mode_for_turn(
+pub fn resolve_web_search_mode_for_turn(
     web_search_mode: &Constrained<WebSearchMode>,
     permission_profile: &PermissionProfile,
     provider_capabilities: ProviderCapabilities,
@@ -3408,7 +3407,7 @@ impl Config {
         .await
     }
 
-    pub(crate) async fn load_config_with_layer_stack(
+    pub async fn load_config_with_layer_stack(
         fs: &dyn ExecutorFileSystem,
         mut cfg: ConfigToml,
         overrides: ConfigOverrides,
@@ -5072,7 +5071,7 @@ impl Config {
         )
     }
 
-    pub(crate) fn credential_masking_warning(
+    pub fn credential_masking_warning(
         &self,
         permission_profile: &PermissionProfile,
     ) -> Option<&'static str> {

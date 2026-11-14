@@ -43,9 +43,9 @@ use super::permission_path;
 #[cfg(test)]
 use super::permission_path::contains_glob_chars_for_platform;
 
-pub(crate) const BUILT_IN_READ_ONLY_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
-pub(crate) const BUILT_IN_WORKSPACE_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
-pub(crate) const BUILT_IN_DANGER_FULL_ACCESS_PROFILE: &str =
+pub const BUILT_IN_READ_ONLY_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
+pub const BUILT_IN_WORKSPACE_PROFILE: &str = BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
+pub const BUILT_IN_DANGER_FULL_ACCESS_PROFILE: &str =
     BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 
 /// Keep the active apply_patch aliases readable without granting access to other
@@ -69,7 +69,7 @@ pub(super) fn active_arg0_helper_dir(
         .and_then(|path| AbsolutePathBuf::from_absolute_path(path).ok())
 }
 
-pub(crate) fn default_builtin_permission_profile_name(
+pub fn default_builtin_permission_profile_name(
     active_project: &ProjectConfig,
     windows_sandbox_level: WindowsSandboxLevel,
 ) -> &'static str {
@@ -82,7 +82,7 @@ pub(crate) fn default_builtin_permission_profile_name(
     }
 }
 
-pub(crate) fn is_builtin_permission_profile_name(profile_name: &str) -> bool {
+pub fn is_builtin_permission_profile_name(profile_name: &str) -> bool {
     matches!(
         profile_name,
         BUILT_IN_READ_ONLY_PROFILE
@@ -120,7 +120,7 @@ fn builtin_permission_profile(
     }
 }
 
-pub(crate) fn validate_user_permission_profile_names(
+pub fn validate_user_permission_profile_names(
     permissions: Option<&PermissionsToml>,
 ) -> io::Result<()> {
     let Some(permissions) = permissions else {
@@ -155,7 +155,7 @@ pub fn network_proxy_config_from_profile_network(
     config
 }
 
-pub(crate) fn apply_network_proxy_feature_config(
+pub fn apply_network_proxy_feature_config(
     config: &mut NetworkProxyConfig,
     feature_config: &NetworkProxyConfigToml,
 ) {
@@ -354,7 +354,7 @@ fn insert_scoped_filesystem_permission_toml(
     }
 }
 
-pub(crate) fn network_proxy_config_for_profile_selection(
+pub fn network_proxy_config_for_profile_selection(
     permissions: Option<&PermissionsToml>,
     profile_name: &str,
 ) -> io::Result<NetworkProxyConfig> {
@@ -518,7 +518,7 @@ fn compile_resolved_permission_profile(
     Ok((file_system_sandbox_policy, network_sandbox_policy))
 }
 
-pub(crate) fn reject_unknown_builtin_permission_profile(profile_name: &str) -> io::Result<()> {
+pub fn reject_unknown_builtin_permission_profile(profile_name: &str) -> io::Result<()> {
     if profile_name.starts_with(':') {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,

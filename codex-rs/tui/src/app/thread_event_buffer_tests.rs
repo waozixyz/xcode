@@ -233,3 +233,85 @@ fn thread_event_store_coalesces_only_adjacent_matching_agent_message_deltas() {
     );
     assert!(store.has_pending_thread_approvals());
 }
+
+#[test]
+fn replay_buffer_keeps_only_the_ends_of_large_command_output() {
+    let small = "one\ntwo\n";
+    assert_eq!(shorten_command_output(small), None);
+
+    let large = (0..4000)
+        .map(|line| format!("line {line:05}\n"))
+        .collect::<String>();
+    let shortened = shorten_command_output(&large).expect("large output is shortened");
+    assert!(shortened.len() <= MAX_BUFFERED_COMMAND_OUTPUT_BYTES + 64);
+    assert!(shortened.starts_with("line 00000\n"));
+    assert!(shortened.ends_with("line 03999\n"));
+    let kept = shortened.lines().filter(|line| line.starts_with("line ")).count();
+    assert!(shortened.contains(&format!("… +{} lines\n", 4000 - kept)));
+
+    // One long line without a newline is cut on character boundaries.
+    let single = "é".repeat(MAX_BUFFERED_COMMAND_OUTPUT_BYTES);
+    let shortened = shorten_command_output(&single).expect("long line is shortened");
+    assert!(shortened.len() <= MAX_BUFFERED_COMMAND_OUTPUT_BYTES + 64);
+    assert!(shortened.starts_with('é') && shortened.ends_with('é'));
+}
+
+#[test]
+fn replay_buffer_shortens_completed_command_items_only() {
+    let thread_id = ThreadId::new();
+    let mut store = ThreadEventStore::new(/*capacity*/ 4);
+    let output = "x".repeat(MAX_BUFFERED_COMMAND_OUTPUT_BYTES * 4);
+    let live = ServerNotification::ItemCompleted(
+        codex_app_server_protocol::ItemCompletedNotification::new(
+            thread_id.to_string(),
+            "turn-1".to_string(),
+            codex_app_server_protocol::ThreadItemPayload::CommandExecution {
+                model_context: None,
+                sandbox_type: None,
+                id: "call-1".to_string(),
+                command: "yes x".to_string(),
+                cwd: test_path_buf("/tmp/project").abs().into(),
+                process_id: None,
+                plugin_id: None,
+                script_path: None,
+                source: codex_app_server_protocol::CommandExecutionSource::Agent,
+                status: codex_app_server_protocol::CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some(output.clone()),
+                exit_code: Some(0),
+                duration_ms: Some(5),
+            },
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 0,
+        ),
+    );
+
+    store.push_notification_ref(&live);
+
+    // The caller's notification, which feeds the live cell, is untouched.
+    let ServerNotification::ItemCompleted(live) = &live else {
+        unreachable!("constructed as a completed item");
+    };
+    let codex_app_server_protocol::ThreadItemPayload::CommandExecution {
+        aggregated_output: Some(live_output),
+        ..
+    } = &live.item.payload
+    else {
+        unreachable!("constructed as a command");
+    };
+    assert_eq!(live_output.len(), output.len());
+    let Some(ThreadBufferedEvent::Notification(buffered)) = store.buffer.back() else {
+        panic!("the completed item is buffered");
+    };
+    let ServerNotification::ItemCompleted(buffered) = buffered.as_ref() else {
+        panic!("the buffered event is the completed item");
+    };
+    let codex_app_server_protocol::ThreadItemPayload::CommandExecution {
+        aggregated_output: Some(buffered_output),
+        ..
+    } = &buffered.item.payload
+    else {
+        panic!("the buffered item is the command");
+    };
+    assert!(buffered_output.len() <= MAX_BUFFERED_COMMAND_OUTPUT_BYTES + 64);
+}

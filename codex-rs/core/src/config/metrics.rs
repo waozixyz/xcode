@@ -7,7 +7,7 @@ use codex_features::FEATURES;
 use codex_features::Stage;
 use codex_otel::SessionTelemetry;
 
-pub(crate) fn emit_session_start_metrics(config: &Config, telemetry: &SessionTelemetry) {
+pub fn emit_session_start_metrics(config: &Config, telemetry: &SessionTelemetry) {
     for feature in FEATURES {
         if matches!(feature.stage, Stage::Removed) {
             continue;
@@ -28,7 +28,7 @@ pub(crate) fn emit_session_start_metrics(config: &Config, telemetry: &SessionTel
 }
 
 /// Report saved opt-outs even when a higher-precedence session setting overrides them.
-pub(crate) fn legacy_multi_agent_disabled_sources(layers: &ConfigLayerStack) -> Vec<&'static str> {
+pub fn legacy_multi_agent_disabled_sources(layers: &ConfigLayerStack) -> Vec<&'static str> {
     let mut user = None;
     let mut project = None;
     for layer in layers.layers_low_to_high() {

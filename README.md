@@ -1,10 +1,16 @@
 ## Xcoder
 
+For automatic Linux builds and downloads, see
+[Xcoder Linux](https://github.com/waozixyz/xcoder/actions/workflows/xcoder-linux.yml).
+
 Xcoder is Waozi's source fork of OpenAI Codex, under the original Apache 2.0
-license. Tool orchestration uses Ziran compiled through Zi2c. The Rust session
+license. Tool orchestration uses Ziran compiled through Zi2c. Ordinary plans run
+through an executor linked into Rust, without a compiler or child process.
+Custom Ziran cells compile on a cache miss and reuse private cached executables.
+The Rust session
 and approval protocols remain the authority for host operations. JavaScript
 tool cells have no execution path in this fork. Sessions share the Rust process;
-only active native cells start sandboxed children. Ordinary tool calls do not
+only custom native cells start sandboxed children. Ordinary tool calls do not
 start a separate code-mode host. The optional JavaScript UI plugin renderer is
 excluded from the default build (`UI_FEATURES=codex-code-mode-runtime/ui` enables
 it when the corresponding upstream V8 artifacts are available).
@@ -18,8 +24,8 @@ user-systemd scope: a 1.5 GiB soft RAM target, 2 GiB hard RAM limit and up to
 user-systemd manager, explicitly setting `XCODER_BUILD_SCOPE=0` omits only the
 memory scope. Completed artifacts are reused when a build is resumed.
 
-Run `make test` for Rust/C ABI, native sandbox, callback, host transport and
-offline full-CLI local tests. The CLI fixture runs a real shell tool through the
+Run `make test` for Rust/C ABI, Ziran-backed Mermaid and fuzzy-match, native
+sandbox, callback, host transport and offline full-CLI local tests. The CLI fixture runs a real shell tool through the
 embedded supervisor without contacting an external model service.
 `make` builds the CLI at `build/bin/xcoder` with its adjacent tool host.
 `make test` writes an installation receipt only after the full local suite passes;
@@ -32,13 +38,37 @@ normal behavior.
 Update this fork from its source with `make test` and `make install`; the stock
 Codex package updater cannot replace the installed native fork.
 
-Native cells import `xcoder/runtime`. `Call(name, json)` returns caller-owned
+Prefer a JSON tool plan for ordinary calls:
+
+```json
+{"calls":[{"tool":"exec_command","input":{"cmd":"pwd"}}]}
+```
+
+Plans validate structure, tool names and freeform input types before execution;
+each tool validates its own arguments. Results include the call index and tool
+name. Add `"parallel":true` for up to four independent calls at
+once. A plan supports up to 128 calls; dependent steps use a later cell or custom
+code. This path works without the compiler installed.
+
+Custom native cells import `xcoder/runtime`. `Call(name, json)` returns caller-owned
 storage: inspect `Body(*reply)` and release it with `defer Release(*reply)`.
 `Text`, `Image`, `Audio`, `Notify`, `Store`, `Load`, `Catalog` and `Yield` provide
 output and session state. `CallBatch` runs arrays of `BatchCall` on up to four
 explicit threads, then joins them; release each result after use. A native cell has only its executable and callback
 socket; the compiler has only its binaries, headers, standard library and cell
 sources. Tool errors never fall back to JavaScript.
+
+The custom-cell cache holds at most 64 executables and 256 MiB on disk.
+Files default to `~/.local/state/xcoder/runtime/cache`; an explicit
+`XCODER_RUNTIME_DIR` keeps its selected location. Cache keys include source,
+the runtime API, sandbox/compiler settings, toolchain inputs and the C compiler.
+Executables are verified before reuse; corruption triggers recompilation.
+
+`scripts/benchmark-runtime.py --help` describes the offline comparison with
+preserved JavaScript binaries. It records raw samples, hashes, CPU time,
+process-tree proportional RAM and latency under ignored `backup/runtime-benchmark/`.
+Use `--native-mode source` for custom cells and `--native-mode plan` for ordinary
+calls. Compilation and sandbox startup are included; model inference is excluded.
 
 The fork retains upstream documentation below.
 

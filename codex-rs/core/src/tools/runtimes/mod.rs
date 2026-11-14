@@ -125,20 +125,38 @@ impl RuntimePathPrepends {
     }
 }
 
+/// Prepends Codex-owned tool directories: the package `PATH` directory, then
+/// this process's `apply_patch` helper directory so it is searched first.
+///
+/// Both are recorded in `runtime_path_prepends`, which snapshot wrapping
+/// replays after login startup. Without that replay a login profile can reset
+/// `PATH` (dropping the helper) or put another `apply_patch` ahead of it, and
+/// shell commands that invoke `apply_patch` would silently run that program.
 #[cfg(unix)]
 pub(crate) fn apply_package_path_prepend(
     env: &mut HashMap<String, String>,
     runtime_path_prepends: &mut RuntimePathPrepends,
 ) {
-    let Some(path_dir) = InstallContext::current()
+    if let Some(path_dir) = InstallContext::current()
         .package_layout
         .as_ref()
         .and_then(|package_layout| package_layout.path_dir.as_ref())
-    else {
-        return;
-    };
+    {
+        runtime_path_prepends.prepend(env, path_dir.as_path());
+    }
+    if let Some(helper_dir) = apply_patch_helper_dir(std::env::var_os(
+        codex_apply_patch::CODEX_APPLY_PATCH_HELPER_DIR_ENV_VAR,
+    )) {
+        runtime_path_prepends.prepend(env, helper_dir.as_path());
+    }
+}
 
-    runtime_path_prepends.prepend(env, path_dir.as_path());
+/// Returns the published `apply_patch` helper directory when it is absolute
+/// and still contains the helper.
+#[cfg(unix)]
+fn apply_patch_helper_dir(value: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
+    let dir = std::path::PathBuf::from(value?);
+    (dir.is_absolute() && dir.join("apply_patch").is_file()).then_some(dir)
 }
 
 pub(crate) fn prepare_powershell_command_for_windows_sandbox(
@@ -333,10 +351,6 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     };
     let original_shell = shell_single_quote(&command[0]);
     let snapshot_path = shell_single_quote(snapshot_path.as_ref());
-    let trailing_args = command[3..]
-        .iter()
-        .map(|arg| format!(" '{}'", shell_single_quote(arg)))
-        .collect::<String>();
     let mut override_env = explicit_env_overrides.clone();
     for key in [
         CODEX_SESSION_ID_ENV_VAR,
@@ -488,11 +502,19 @@ unset __CODEX_SNAPSHOT_ORIGINAL_ENV_SET __CODEX_SNAPSHOT_ORIGINAL_ENV \
         zsh_startup_exports,
         outer_brokered_credential_exports,
     ]);
+    // Keep the original script out of the wrapper's `-c` argument. Linux limits
+    // every individual argv string (MAX_ARG_STRLEN), so embedding and escaping a
+    // valid large script here can make only the wrapper exceed that limit.
+    //
+    // For a nested command, the outer shell receives the original script as $0
+    // and forwards it as the inner shell's `-c` argument. For a brokered command
+    // that must reuse the session shell, preserve the caller's $0 and arguments,
+    // temporarily carry the script in $1, then shift it away before evaluating.
     let run_original = if reuse_session_shell {
-        original_script
+        "__CODEX_SNAPSHOT_ORIGINAL_SCRIPT=$1\nshift\nbuiltin eval \"$__CODEX_SNAPSHOT_ORIGINAL_SCRIPT\""
+            .to_string()
     } else {
-        let original_script = shell_single_quote(&original_script);
-        format!("exec '{original_shell}' {original_shell_flag} '{original_script}'{trailing_args}")
+        format!("exec '{original_shell}' {original_shell_flag} \"$0\" \"$@\"")
     };
     let rewritten_script = if override_exports.is_empty() {
         format!("if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{run_original}")
@@ -513,6 +535,16 @@ unset __CODEX_SNAPSHOT_ORIGINAL_ENV_SET __CODEX_SNAPSHOT_ORIGINAL_ENV \
         rewritten_script,
     ];
     if reuse_session_shell {
+        if let Some((arg0, args)) = command[3..].split_first() {
+            rewritten.push(arg0.clone());
+            rewritten.push(original_script);
+            rewritten.extend_from_slice(args);
+        } else {
+            rewritten.push(command[0].clone());
+            rewritten.push(original_script);
+        }
+    } else {
+        rewritten.push(original_script);
         rewritten.extend_from_slice(&command[3..]);
     }
     rewritten

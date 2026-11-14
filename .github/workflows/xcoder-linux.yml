@@ -1,0 +1,68 @@
+name: Xcoder Linux
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xcoder-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Build and test Linux x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '1'
+      # Hosted runners do not have a user systemd manager.
+      XCODER_BUILD_SCOPE: '0'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Set up the locked Ziran toolchain
+        id: ziran
+        uses: ziranlang/ziran/.github/actions/setup@d2db9d35feaf2a3278dc7bed571022b0e0323247
+        with:
+          fetch: 'true'
+          packages: build-essential pkg-config libssl-dev libcap-dev libbz2-dev libzstd-dev zlib1g-dev bubblewrap
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+      - name: Enable private Linux test namespaces
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Cache Cargo downloads and compiled dependencies
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            build/cargo-home/registry
+            build/cargo-home/git
+            codex-rs/target
+          key: xcoder-linux-${{ runner.arch }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/rust-toolchain.toml', 'ziran.lock') }}
+          restore-keys: xcoder-linux-${{ runner.arch }}-
+      - name: Build and run the complete offline local suite
+        run: make test
+      - name: Package the tested Linux build and its native compiler
+        env:
+          ZIRAN_TOOLCHAIN: ${{ steps.ziran.outputs.root }}
+        run: python3 scripts/package-linux.py --toolchain "$ZIRAN_TOOLCHAIN"
+      - name: Test the relocated download
+        run: python3 tests/linux_package_test.py
+      - name: Upload Linux download
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: xcoder-linux-x86_64
+          path: |
+            build/xcoder-linux-x86_64.tar.gz
+            build/xcoder-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30

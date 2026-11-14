@@ -1,4 +1,5 @@
 """Exercise atomic package cutover with a real, private running executable."""
+import json
 import os
 from pathlib import Path
 import runpy
@@ -6,9 +7,11 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-publish = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))['publish_package_entry']
+installer = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))
+publish = installer['publish_package_entry']
 
 
 class PackageCutoverTest(unittest.TestCase):
@@ -49,6 +52,37 @@ class PackageCutoverTest(unittest.TestCase):
             publish(entry, native, compatibility)
         self.assertEqual(entry.read_text(), 'original')
         self.assertEqual(compatibility.read_text(), 'preserve')
+
+    def test_installs_xcoder_without_creating_a_public_codex_alias(self):
+        source = self.root / 'source'
+        (source / 'build/bin').mkdir(parents=True)
+        metadata = dict(product='xcoder', tool_language='ziran', pipeline='zi2c',
+                        javascript_tool_runtime=False)
+        binary = source / 'build/bin/xcoder'
+        binary.write_text('#!/usr/bin/env python3\nprint(' + repr(json.dumps(metadata)) + ')\n')
+        binary.chmod(0o755)
+        host = source / 'build/bin/codex-code-mode-host'
+        shutil.copy2('/usr/bin/true', host)
+        for name in ['LICENSE', 'NOTICE']:
+            (source / name).write_text('local installation fixture\n')
+        (source / 'backup').mkdir()
+        receipt = dict(local_tests_passed=True, binary_sha256=installer['digest'](binary),
+                       host_sha256=installer['digest'](host))
+        (source / 'backup/xcoder-validation.json').write_text(json.dumps(receipt))
+        install = installer['install']
+        for managed in [False, True]:
+            with self.subTest(managed=managed):
+                prefix = self.root / ('managed' if managed else 'standalone')
+                managed_command = prefix / 'lib/harmony/agent-bin/codex'
+                if managed:
+                    managed_command.parent.mkdir(parents=True)
+                    managed_command.symlink_to('/usr/bin/true')
+                with patch.dict(install.__globals__, ROOT=source):
+                    install(prefix)
+                self.assertTrue((prefix / 'bin/xcoder').is_symlink())
+                self.assertFalse((prefix / 'bin/codex').exists())
+                if managed:
+                    self.assertEqual(managed_command.resolve(), (prefix / 'bin/xcoder').resolve())
 
 
 if __name__ == '__main__':

@@ -21,6 +21,7 @@ def main():
     if len(sys.argv) < 2:
         raise SystemExit('Supply the build command and its arguments')
     os.setpriority(os.PRIO_PROCESS, 0, 19)
+    os.environ.setdefault('CARGO_BUILD_JOBS', '1')
     subprocess.run(['ionice', '-c', '2', '-n', '7', '-p', str(os.getpid())], check=True)
     if os.environ.get('XCODER_BUILD_SCOPE') != '0' and ('/' + UNIT) not in Path('/proc/self/cgroup').read_text():
         (ROOT / 'build').mkdir(exist_ok=True)

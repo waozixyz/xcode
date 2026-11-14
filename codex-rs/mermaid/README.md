@@ -1,8 +1,9 @@
 # codex-mermaid
 
-Standalone, bounded Mermaid text renderer.
-It uses the existing `unicode-width` dependency; no Mermaid runtime or new external
-production dependency is needed.
+The Rust adapter for the standalone [Ziran Mermaid package](https://github.com/ziranlang/mermaid).
+The package parses and lays out bounded Unicode terminal diagrams. This crate
+converts its owned cell grid into the existing Rust text and semantic-span API.
+There is no second renderer: all parsing and layout live in the package.
 
 ## Supported subsets
 
@@ -71,10 +72,25 @@ From `codex-rs`, preview a file, optionally specifying the available width:
 cargo run -p codex-mermaid --example render -- 180 < diagram.mmd
 ```
 
-Run `just test -p codex-mermaid --lib`. Coverage includes complex snapshots for every
-family, relationship endpoints, all ER cardinalities, width/error bounds,
-truncated input, and reconstruction of every edge in all 512 directed three-node
-graphs in each of the four layout directions.
+From the repository root, run `build-queue -- make mermaid-test` for the Rust
+local tests and the package's C, Go, and portable VM local tests. The Rust tests
+keep the original renderer's suite and snapshots unchanged where they use the
+public API: complex snapshots for every family, relationship endpoints, all ER
+cardinalities, width/error bounds, truncated input, and reconstruction of every
+edge in all 512 directed three-node graphs in each of the four layout
+directions. Generated flowchart, Unicode, source-bound and inline-storage cases
+compare digests of text and spans recorded from the original renderer.
 
 `render_spans` returns the same layout as lines of semantic `Node`, `Edge`, and
 `Text` spans. Callers apply their own theme; the crate never emits ANSI escapes.
+
+The package is resolved through `ziran.toml` and `ziran.lock`. For local work,
+put its canonical checkout in the ignored `ziran.local.toml` `[overrides]`;
+`build.rs` resolves it with `ziran pkg path mermaid` and tracks its source.
+Production builds without overrides use the committed lock.
+
+`cargo run -p codex-mermaid --example mermaid_width_tables` regenerates the
+package's Unicode width tables from `unicode-width` 0.2.1.
+
+The retained [performance report](../../../docs/mermaid-performance.md) records
+the measured comparison with the original Rust renderer.

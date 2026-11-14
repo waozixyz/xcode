@@ -19,12 +19,10 @@ use codex_cli::run_login_with_api_key;
 use codex_cli::run_login_with_browser;
 use codex_cli::run_login_with_device_code;
 use codex_cli::run_logout;
-use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
 use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
-use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
 use codex_rollout_trace::REDUCED_STATE_FILE_NAME;
 use codex_rollout_trace::replay_bundle;
 use codex_state::StateRuntime;
@@ -80,12 +78,16 @@ mod state_db_recovery;
 #[cfg(not(windows))]
 mod wsl_paths;
 
+#[path = "../../../native/allocator.rs"]
+mod native_allocator;
+#[path = "../../../native/idle.rs"]
+mod native_idle;
+
 use crate::mcp_cmd::McpCli;
 use crate::plugin_cmd::PluginCli;
 use crate::plugin_cmd::PluginSubcommand;
 use crate::queue_cmd::QueueCommand;
 use crate::remote_control_cmd::RemoteControlCommand;
-use codex_exec_server_cli::ExecServerCommand;
 use doctor::DoctorCommand;
 use state_db_recovery as local_state_db;
 
@@ -105,7 +107,6 @@ use codex_login::AuthManager;
 use codex_memories_write::clear_memory_roots_contents;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::manager::RefreshStrategy;
-use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
@@ -147,10 +148,6 @@ struct MultitoolCli {
 enum Subcommand {
     /// Open the agent command center to browse and switch sessions.
     Agents(AgentsCommand),
-
-    /// Internal: forward SSH stdio or a local TCP socket through an HTTP/3 CONNECT proxy.
-    #[clap(hide = true)]
-    TcpTunnel(codex_tcp_tunnel::Args),
 
     /// Run Codex non-interactively.
     #[clap(visible_alias = "e")]
@@ -228,20 +225,9 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
-    /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
-    #[clap(name = "cloud", alias = "cloud-tasks")]
-    Cloud(CloudTasksCli),
-
-    /// Internal: run the responses API proxy.
-    #[clap(hide = true)]
-    ResponsesApiProxy(ResponsesApiProxyArgs),
-
     /// Internal: relay stdio to a Unix domain socket.
     #[clap(hide = true, name = "stdio-to-uds")]
     StdioToUds(StdioToUdsCommand),
-
-    /// [EXPERIMENTAL] Run the standalone exec-server service.
-    ExecServer(ExecServerCommand),
 
     /// Inspect feature flags.
     Features(FeaturesCli),
@@ -265,9 +251,6 @@ enum DebugSubcommand {
     /// Render the raw model catalog as JSON.
     Models(DebugModelsCommand),
 
-    /// Tooling: helps debug the app server.
-    AppServer(DebugAppServerCommand),
-
     /// Render the model-visible prompt input list as JSON.
     PromptInput(DebugPromptInputCommand),
 
@@ -278,24 +261,6 @@ enum DebugSubcommand {
     /// Internal: reset local memory state for a fresh start.
     #[clap(hide = true)]
     ClearMemories,
-}
-
-#[derive(Debug, Parser)]
-struct DebugAppServerCommand {
-    #[command(subcommand)]
-    subcommand: DebugAppServerSubcommand,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum DebugAppServerSubcommand {
-    // Send message to app server V2.
-    SendMessageV2(DebugAppServerSendMessageV2Command),
-}
-
-#[derive(Debug, Parser)]
-struct DebugAppServerSendMessageV2Command {
-    #[arg(value_name = "USER_MESSAGE", required = true)]
-    user_message: String,
 }
 
 #[derive(Debug, Parser)]
@@ -957,16 +922,6 @@ fn delete_action(target: &str, force: bool) -> anyhow::Result<codex_tui::Session
     Ok(codex_tui::SessionArchiveAction::Delete(confirmation))
 }
 
-async fn run_debug_app_server_command(cmd: DebugAppServerCommand) -> anyhow::Result<()> {
-    match cmd.subcommand {
-        DebugAppServerSubcommand::SendMessageV2(cmd) => {
-            let codex_bin = std::env::current_exe()?;
-            codex_app_server_test_client::send_message_v2(&codex_bin, &[], cmd.user_message, &None)
-                .await
-        }
-    }
-}
-
 #[derive(Debug, Default, Parser, Clone)]
 struct FeatureToggles {
     /// Enable a feature (repeatable). Equivalent to `-c features.<name>=true`.
@@ -1047,7 +1002,29 @@ fn stage_str(stage: Stage) -> &'static str {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn set_xcoder_process_name() {
+    // Keep compatibility command paths separate from the process identity the
+    // owner sees in ps, top and Harmony resource accounting.
+    // SAFETY: PR_SET_NAME reads the supplied NUL-terminated static bytes and
+    // mutates only the calling thread's kernel-owned name.
+    unsafe {
+        libc::prctl(
+            libc::PR_SET_NAME,
+            b"xcode\0".as_ptr().cast::<libc::c_char>(),
+            0,
+            0,
+            0,
+        );
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_xcoder_process_name() {}
+
 fn main() -> anyhow::Result<()> {
+    set_xcoder_process_name();
+    native_allocator::configure();
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--xcoder-runtime-info"))
     {
         println!(
@@ -1056,9 +1033,25 @@ fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
+    // Keep the persistent native-code cache in the owner's filesystem rather
+    // than a RAM-backed XDG runtime directory. Explicit paths remain in force.
+    if std::env::var_os("XCODER_RUNTIME_DIR").is_none()
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        // SAFETY: startup runs before the async runtime or worker threads exist.
+        unsafe {
+            std::env::set_var(
+                "XCODER_RUNTIME_DIR",
+                std::path::PathBuf::from(home).join(".local/state/xcoder/runtime"),
+            );
+        }
+    }
     codex_build_info::initialize!();
     let remote_control_disabled = codex_app_server::take_remote_control_disabled_env();
     arg0_dispatch_or_else(move |arg0_paths: Arg0DispatchPaths| async move {
+        // Helper personalities have already been dispatched; only the
+        // long-lived CLI hands its memory back while idle.
+        native_idle::start();
         // Finish polling the large subcommand dispatcher before polling interactive TUI events.
         if let Some(tui) = Box::pin(dispatch_cli(arg0_paths, remote_control_disabled)).await? {
             tui.await?;
@@ -1165,39 +1158,6 @@ async fn dispatch_cli(
                 root_remote_auth_token_env,
                 arg0_paths,
             )));
-        }
-        Some(Subcommand::TcpTunnel(args)) if args.auth_token_stdin => {
-            codex_tcp_tunnel::run(args).await?;
-        }
-        Some(Subcommand::TcpTunnel(args)) => {
-            let config =
-                cloud_config::load_config(&root_config_overrides, LoaderOverrides::default())
-                    .await?;
-            let permit = config.application_network_policy.acquire(&args.proxy_url)?;
-            let manager = AuthManager::shared_from_config_with_auth_modes(
-                &config,
-                /*enable_codex_api_key_env*/ false,
-                vec![AuthMode::Chatgpt, AuthMode::ChatgptAuthTokens],
-            )
-            .await?;
-            anyhow::ensure!(
-                manager.auth_mode() == Some(AuthMode::Chatgpt),
-                "ChatGPT OAuth login required for SSH"
-            );
-            let access_token = async {
-                let oauth = manager
-                    .auth()
-                    .await
-                    .ok_or_else(|| anyhow::anyhow!("ChatGPT OAuth login required for SSH"))?;
-                Ok(oauth.get_token_data()?.access_token)
-            };
-            permit
-                .run(codex_tcp_tunnel::run_ssh_proxy(
-                    args,
-                    access_token,
-                    tokio::io::stdout(),
-                ))
-                .await??;
         }
         Some(Subcommand::Exec(mut exec_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -1780,19 +1740,6 @@ async fn dispatch_cli(
             )
             .await?;
         }
-        Some(Subcommand::Cloud(mut cloud_cli)) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "cloud",
-            )?;
-            prepend_config_flags(
-                &mut cloud_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
-            codex_cloud_tasks::run_main(cloud_cli, arg0_paths.codex_linux_sandbox_exe.clone())
-                .await?;
-        }
         Some(Subcommand::Sandbox(SandboxCommand {
             host: mut sandbox_cli,
             subcommand,
@@ -1865,14 +1812,6 @@ async fn dispatch_cli(
                 )?;
                 run_debug_models_command(cmd, root_config_overrides).await?;
             }
-            DebugSubcommand::AppServer(cmd) => {
-                reject_remote_mode_for_subcommand(
-                    root_remote.as_deref(),
-                    root_remote_auth_token_env.as_deref(),
-                    "debug app-server",
-                )?;
-                run_debug_app_server_command(cmd).await?;
-            }
             DebugSubcommand::PromptInput(cmd) => {
                 reject_remote_mode_for_subcommand(
                     root_remote.as_deref(),
@@ -1926,15 +1865,6 @@ async fn dispatch_cli(
             );
             run_apply_command(apply_cli, /*cwd*/ None).await?;
         }
-        Some(Subcommand::ResponsesApiProxy(args)) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "responses-api-proxy",
-            )?;
-            tokio::task::spawn_blocking(move || codex_responses_api_proxy::run_main(args))
-                .await??;
-        }
         Some(Subcommand::StdioToUds(cmd)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1943,15 +1873,6 @@ async fn dispatch_cli(
             )?;
             let socket_path = cmd.socket_path;
             codex_stdio_to_uds::run(socket_path.as_path()).await?;
-        }
-        Some(Subcommand::ExecServer(mut cmd)) => {
-            reject_remote_mode_for_subcommand(
-                root_remote.as_deref(),
-                root_remote_auth_token_env.as_deref(),
-                "exec-server",
-            )?;
-            cmd.strict_config |= root_strict_config;
-            cmd.run(&arg0_paths, &root_config_overrides).await?;
         }
         Some(Subcommand::Features(FeaturesCli { sub })) => match sub {
             FeaturesSubcommand::List => {
@@ -2411,7 +2332,6 @@ fn unsupported_subcommand_name_for_strict_config(
         | Some(Subcommand::Agents(_))
         | Some(Subcommand::Exec(_))
         | Some(Subcommand::Review(_))
-        | Some(Subcommand::ExecServer(_))
         | Some(Subcommand::Resume(_))
         | Some(Subcommand::Queue(_))
         | Some(Subcommand::Archive(_))
@@ -2434,15 +2354,12 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Logout(_)) => Some("logout"),
         Some(Subcommand::Completion(_)) => Some("completion"),
         Some(Subcommand::Update) => Some("update"),
-        Some(Subcommand::Cloud(_)) => Some("cloud"),
         Some(Subcommand::Sandbox(_)) => Some("sandbox"),
         Some(Subcommand::Debug(_)) => Some("debug"),
         Some(Subcommand::Execpolicy(_)) => Some("execpolicy"),
         Some(Subcommand::Apply(_)) => Some("apply"),
-        Some(Subcommand::ResponsesApiProxy(_)) => Some("responses-api-proxy"),
         Some(Subcommand::StdioToUds(_)) => Some("stdio-to-uds"),
         Some(Subcommand::Features(_)) => Some("features"),
-        Some(Subcommand::TcpTunnel(_)) => Some("tcp-tunnel"),
     }
 }
 
@@ -3558,36 +3475,6 @@ enabled = true
     }
 
     #[test]
-    fn tcp_tunnel_is_hidden_and_accepts_its_control_input_contract() {
-        let root_help = help_from_args(&["codex", "--help"]);
-        assert!(!root_help.contains("tcp-tunnel"), "{root_help}");
-        let help = help_from_args(&["codex", "tcp-tunnel", "--help"]);
-        for option in [
-            "--target",
-            "--auth-token-stdin",
-            "--auth-token-updates-stdin",
-            "--connect-headers-stdin",
-        ] {
-            assert!(help.contains(option), "{help}");
-        }
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "tcp-tunnel",
-            "--proxy-url",
-            "https://proxy.example.org",
-            "--proxy-origins-file",
-            "/tmp/approved-origins",
-            "--target",
-            "[::1]:22",
-            "--auth-token-stdin",
-            "--auth-token-updates-stdin",
-            "--connect-headers-stdin",
-        ])
-        .expect("generic tunnel should parse");
-        assert!(matches!(cli.subcommand, Some(Subcommand::TcpTunnel(_))));
-    }
-
-    #[test]
     fn plugin_marketplace_help_uses_plugin_namespace() {
         let help = help_from_args(&["codex", "plugin", "marketplace", "--help"]);
         assert!(
@@ -4358,80 +4245,6 @@ enabled = true
                 ..
             }))
         );
-
-        let cli = MultitoolCli::try_parse_from(["codex", "exec-server", "--strict-config"])
-            .expect("parse");
-        assert_matches!(
-            cli.subcommand,
-            Some(Subcommand::ExecServer(ExecServerCommand {
-                strict_config: true,
-                ..
-            }))
-        );
-    }
-
-    #[test]
-    fn exec_server_forward_parses_shared_remote_options() {
-        let cli = MultitoolCli::try_parse_from([
-            "codex",
-            "exec-server",
-            "forward",
-            "--connect",
-            "ws://127.0.0.1:8765",
-            "--remote",
-            "https://example.openai.com",
-            "--environment-id",
-            "env-1",
-            "--name",
-            "forwarded",
-            "--strict-config",
-            "--use-agent-identity-auth",
-        ])
-        .expect("parse forward");
-        assert!(cli.remote.remote.is_none());
-        assert!(!cli.interactive.strict_config);
-        assert_matches!(
-            cli.subcommand,
-            Some(Subcommand::ExecServer(ExecServerCommand {
-                strict_config: true,
-                ..
-            }))
-        );
-    }
-
-    #[test]
-    fn exec_server_forward_requires_registration_and_destination() {
-        for args in [
-            vec!["forward", "--connect", "ws://127.0.0.1:8765"],
-            vec![
-                "forward",
-                "--remote",
-                "https://example.openai.com",
-                "--environment-id",
-                "env-1",
-            ],
-            vec![
-                "forward",
-                "--connect",
-                "ws://127.0.0.1:8765",
-                "--remote",
-                "https://example.openai.com",
-            ],
-        ] {
-            assert!(
-                MultitoolCli::try_parse_from(["codex", "exec-server"].into_iter().chain(args))
-                    .is_err()
-            );
-        }
-    }
-
-    #[test]
-    fn root_strict_config_is_supported_for_exec_server() {
-        let cli = MultitoolCli::try_parse_from(["codex", "--strict-config", "exec-server"])
-            .expect("parse");
-
-        reject_root_strict_config_for_subcommand(cli.interactive.strict_config, &cli.subcommand)
-            .expect("exec-server should support root --strict-config");
     }
 
     #[test]

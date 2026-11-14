@@ -59,6 +59,117 @@ async fn run(session: &InProcessCodeModeSession, body: &str) -> RuntimeResponse 
 }
 
 #[tokio::test]
+async fn precompiled_plan_parallel_calls_use_real_delegate_and_keep_inputs() {
+    let session = InProcessCodeModeSession::new();
+    let (calls, mut received) = mpsc::unbounded_channel();
+    let mut input = request("");
+    input.source = json!({"parallel":true,"calls":(0..4).map(|n|
+        json!({"tool":"fixture","input":{"n":n}})).collect::<Vec<_>>()})
+    .to_string();
+    let started = session
+        .execute(
+            input,
+            Arc::new(Delegate {
+                calls,
+                block: false,
+                barrier: Some(Arc::new(tokio::sync::Barrier::new(4))),
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    let (output, error) = text(started.initial_response().await.unwrap());
+    assert_eq!(error, None);
+    assert_eq!(output.matches("\"proof\":49").count(), 4);
+    let mut values = Vec::new();
+    for _ in 0..4 {
+        values.push(
+            received.recv().await.unwrap().input.unwrap()["n"]
+                .as_u64()
+                .unwrap(),
+        );
+    }
+    values.sort();
+    assert_eq!(values, vec![0, 1, 2, 3]);
+    session.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn invalid_plan_is_rejected_before_any_effect_and_next_plan_recovers() {
+    let session = InProcessCodeModeSession::new();
+    let (calls, mut received) = mpsc::unbounded_channel();
+    let delegate = Arc::new(Delegate {
+        calls,
+        block: false,
+        barrier: None,
+    });
+    for source in [
+        json!({"calls":[{"tool":"fixture"},{"tool":"missing"}]}).to_string(),
+        json!({"calls":[],"unknown":true}).to_string(),
+        json!({"calls":(0..129).map(|_|json!({"tool":"fixture"})).collect::<Vec<_>>()}).to_string(),
+    ] {
+        let mut input = request("");
+        input.source = source;
+        let response = session
+            .execute(input, delegate.clone(), None)
+            .await
+            .unwrap()
+            .initial_response()
+            .await
+            .unwrap();
+        assert!(text(response).1.is_some());
+        assert!(received.try_recv().is_err());
+    }
+    let mut input = request("");
+    input.source = r#"{"calls":[{"tool":"fixture"}]}"#.into();
+    let response = session
+        .execute(input, delegate, None)
+        .await
+        .unwrap()
+        .initial_response()
+        .await
+        .unwrap();
+    let (output, error) = text(response);
+    assert_eq!(error, None);
+    assert_eq!(
+        serde_json::from_str::<JsonValue>(&output).unwrap()["value"],
+        json!({"proof":49})
+    );
+    assert_eq!(received.recv().await.unwrap().input, Some(json!({})));
+    session.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn precompiled_plan_preserves_freeform_bytes_and_pending_cancellation() {
+    let session = InProcessCodeModeSession::new();
+    let (calls, mut received) = mpsc::unbounded_channel();
+    let mut input = request("");
+    input.enabled_tools[0].kind = CodeModeToolKind::Freeform;
+    input.source = json!({"calls":[{"tool":"fixture","input":"line one\n文字\u{0}"}]}).to_string();
+    let started = session
+        .execute(
+            input,
+            Arc::new(Delegate {
+                calls,
+                block: true,
+                barrier: None,
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        received.recv().await.unwrap().input,
+        Some(json!("line one\n文字\u{0}"))
+    );
+    session
+        .terminate(started.cell_id.clone().into())
+        .await
+        .unwrap();
+    session.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn compiled_output_stored_values_and_session_isolation() {
     let first = InProcessCodeModeSession::new();
     assert_eq!(
@@ -96,6 +207,44 @@ struct Delegate {
     calls: mpsc::UnboundedSender<CodeModeNestedToolCall>,
     block: bool,
     barrier: Option<Arc<tokio::sync::Barrier>>,
+}
+
+#[tokio::test]
+async fn cached_code_rechecks_current_tool_capabilities() {
+    let session = InProcessCodeModeSession::new();
+    let (calls, mut received) = mpsc::unbounded_channel();
+    let delegate = Arc::new(Delegate {
+        calls,
+        block: false,
+        barrier: None,
+    });
+    let body = r#"r := Call("fixture", "{}"); defer Release(*r); Text(Body(*r))"#;
+    let response = session
+        .execute(request(body), delegate.clone(), None)
+        .await
+        .unwrap()
+        .initial_response()
+        .await
+        .unwrap();
+    assert_eq!(text(response).1, None);
+    received.recv().await.unwrap();
+    let mut disabled = request(body);
+    disabled.enabled_tools.clear();
+    let response = session
+        .execute(disabled, delegate, None)
+        .await
+        .unwrap()
+        .initial_response()
+        .await
+        .unwrap();
+    let (output, error) = text(response);
+    assert_eq!(error, None);
+    assert_eq!(
+        serde_json::from_str::<JsonValue>(&output).unwrap()["ok"],
+        json!(false)
+    );
+    assert!(received.try_recv().is_err());
+    session.shutdown().await.unwrap();
 }
 impl CodeModeSessionDelegate for Delegate {
     fn invoke_tool<'a>(
@@ -350,8 +499,14 @@ async fn pending_callbacks_leave_other_cells_responsive() {
     )
     .await
     .expect("pending callbacks must not stall a text-only cell");
-    assert_eq!(text(independent), ("independent cell completed".into(), None));
-    session.terminate(started.cell_id.clone().into()).await.unwrap();
+    assert_eq!(
+        text(independent),
+        ("independent cell completed".into(), None)
+    );
+    session
+        .terminate(started.cell_id.clone().into())
+        .await
+        .unwrap();
     assert!(matches!(
         started.initial_response().await.unwrap(),
         RuntimeResponse::Terminated { .. }

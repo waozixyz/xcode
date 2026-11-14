@@ -1,14 +1,22 @@
 {
   "format": 1,
   "packages": [
-
+    {
+      "commit": "bfc193de8f7468b6b8ec5ad72d37a15b484b0319",
+      "dependencies": {},
+      "id": "peb7256f63ad47763",
+      "name": "mermaid",
+      "ref": "master",
+      "url": "https://github.com/ziranlang/mermaid.git"
+    }
   ],
   "root": {
-    "dependencies": {},
+    "dependencies": {"mermaid": "peb7256f63ad47763"},
+    "dependency_refs": {"mermaid": "master"},
     "name": "xcoder"
   },
   "toolchain": {
-    "commit": "61b1e5402a4873dc8e84d727bcbe10d7b3077ad6",
+    "commit": "10e854af6b77d1acd6475f9271f9ecbcbd71cdc4",
     "ref": "master",
     "url": "https://github.com/ziranlang/ziran.git"
   }

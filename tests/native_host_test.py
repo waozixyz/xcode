@@ -14,10 +14,12 @@ HOST = Path(os.environ.get('XCODER_TEST_HOST', ROOT / 'build/bin/codex-code-mode
 
 
 class Peer:
-    def __init__(self, directory):
+    def __init__(self, directory, toolchain=None):
         env = {key: value for key, value in os.environ.items() if key not in
                ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS']}
         env['XCODER_RUNTIME_DIR'] = str(directory / 'runtime')
+        if toolchain is not None:
+            env['XCODER_ZIRAN_TOOLCHAIN'] = str(toolchain)
         self.process = subprocess.Popen([str(HOST), '--listen', 'stdio://'], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         self.messages = queue.Queue()
@@ -195,6 +197,54 @@ for i: 0..1 { Text(Body(*calls[i].reply)); Release(*calls[i].reply) }
         self.execute('Text("healthy")', ident=3)
         completed = self.response(3, initial=True)['Result']
         self.assertIsNone(completed['error_text'])
+
+
+class NativePlanHostTest(unittest.TestCase):
+    def test_precompiled_plan_needs_no_compiler_or_child_process(self):
+        parent = ROOT / 'build/native-plan-tests'
+        parent.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(dir=parent)
+        self.addCleanup(temporary.cleanup)
+        directory = Path(temporary.name)
+        peer = Peer(directory, toolchain=directory / 'missing-compiler')
+        self.addCleanup(peer.close)
+        peer.send(dict(type='connection/hello', supportedVersions=[1], requiredCapabilities=[], optionalCapabilities=[]))
+        self.assertEqual(peer.receive()['type'], 'connection/ready')
+        peer.operation(1, 'session/open', outputTruncation='server')
+        self.assertEqual(peer.receive()['result']['status'], 'ok')
+        tools = [dict(name='fixture', tool_name=dict(name='fixture', namespace=None),
+                      description='fixture', kind='function', input_schema=None, output_schema=None)]
+        peer.operation(2, 'session/execute', request=dict(tool_call_id='plan', enabled_tools=tools,
+                       source=json.dumps(dict(calls=[dict(tool='fixture', input=dict(n=7))])),
+                       yield_time_ms=30000, max_output_tokens=1000))
+        self.assertEqual(peer.receive()['type'], 'operation/response')
+        callback = peer.receive()
+        self.assertEqual(callback['type'], 'delegate/request')
+        self.assertEqual(callback['request']['invocation']['input'], {'n': 7})
+        for task in Path(f'/proc/{peer.process.pid}/task').iterdir():
+            self.assertEqual((task / 'children').read_text().strip(), '')
+        peer.send(dict(type='delegate/response', id=callback['id'],
+                       result=dict(status='ok', value=dict(type='tool/result', result={'proof':49}))))
+        response = peer.receive()['result']['value']['Result']
+        self.assertIsNone(response['error_text'])
+        self.assertEqual(json.loads(response['content_items'][0]['text']),
+                         dict(call=0, tool='fixture', ok=True, value={'proof':49}))
+        outcomes = [
+            (dict(status='error', message='fixture denied'), dict(ok=False, error='fixture denied')),
+            (dict(status='ok', value=dict(type='tool/result', result='healthy')), dict(ok=True, value='healthy')),
+        ]
+        for ident, (outcome, expected) in enumerate(outcomes, 3):
+            peer.operation(ident, 'session/execute', request=dict(tool_call_id='plan-' + str(ident),
+                           enabled_tools=tools, source=json.dumps(dict(calls=[dict(tool='fixture')])),
+                           yield_time_ms=30000, max_output_tokens=1000))
+            self.assertEqual(peer.receive()['type'], 'operation/response')
+            callback = peer.receive()
+            self.assertEqual(callback['type'], 'delegate/request')
+            peer.send(dict(type='delegate/response', id=callback['id'], result=outcome))
+            completed = peer.receive()['result']['value']['Result']
+            self.assertIsNone(completed['error_text'])
+            self.assertEqual(json.loads(completed['content_items'][0]['text']),
+                             dict(call=0, tool='fixture', **expected))
 
 
 if __name__ == '__main__':

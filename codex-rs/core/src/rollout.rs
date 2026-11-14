@@ -1,4 +1,3 @@
-use crate::config::Config;
 pub use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
 pub use codex_rollout::Cursor;
 pub use codex_rollout::INTERACTIVE_SESSION_SOURCES;
@@ -23,7 +22,8 @@ pub use codex_rollout::read_head_for_summary;
 pub use codex_rollout::read_session_meta_line;
 pub use codex_rollout::rollout_date_parts;
 
-impl codex_rollout::RolloutConfigView for Config {
+#[cfg(test)]
+impl codex_rollout::RolloutConfigView for crate::config::Config {
     fn codex_home(&self) -> &std::path::Path {
         self.codex_home.as_path()
     }
