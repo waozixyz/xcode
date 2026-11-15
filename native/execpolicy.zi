@@ -1,0 +1,517 @@
+// Parses Xcoder `.rules` files: the declarative subset of Starlark they use.
+//
+// A file is a sequence of top-level statements, each a call such as
+// `prefix_rule(pattern = ["git"], decision = "prompt")` or an assignment
+// `NAME = value`. Values are strings (quoted, raw or triple-quoted, with
+// Starlark's escapes), lists, tuples, integers, True, False, None, names of
+// earlier assignments and `+`. The parser writes a preorder node tree for the
+// Rust evaluator; it never evaluates anything itself.
+using U :: #import "std/utf8";
+using B :: #import "std/byte_text_linux";
+
+// Node kinds. Every node is NodeFields values: kind, then four operands.
+NodeFields :: 5
+StringNode :: 1     // decoded bytes at a, length b
+ListNode :: 2       // a items follow
+TupleNode :: 3      // a items follow
+NoneNode :: 4
+TrueNode :: 5
+FalseNode :: 6
+IntegerNode :: 7    // value a
+NameNode :: 8       // name bytes at a, length b
+AddNode :: 9        // left then right operand follow
+CallNode :: 10      // name at a, length b, c arguments; a location node and the arguments follow
+KeywordNode :: 11   // name at a, length b; the value follows
+PositionalNode :: 12 // the value follows
+LocationNode :: 13  // start line a, column b; end line c, column d (1-based)
+AssignNode :: 14    // name at a, length b; a location node and the value follow
+
+// Error codes, reported with the line and column where parsing stopped.
+UnexpectedCharacter :: 1
+UnterminatedString :: 2
+InvalidEscape :: 3
+UnsupportedStatement :: 4
+ExpectedCallOrAssignment :: 5
+ExpectedArgumentEnd :: 6
+ExpectedListEnd :: 7
+ExpectedExpression :: 8
+UnsupportedFString :: 9
+TooDeep :: 10
+IntegerTooLarge :: 11
+ExpectedStatementEnd :: 12
+OutOfSpace :: 99
+
+MaximumDepth :: 64
+
+Parser :: struct {
+    text: string
+    length: s64
+    at: s64
+    line: s64
+    line_start: s64
+    depth: s64
+    nodes: *s64
+    node_count: s64
+    node_capacity: s64
+    bytes: *u8
+    byte_count: s64
+    byte_capacity: s64
+    error: s64
+    error_line: s64
+    error_column: s64
+}
+
+Fail :: (p: *Parser, code: s64) -> bool {
+    if p.error == 0 {
+        p.error = code
+        p.error_line = p.line
+        p.error_column = p.at - p.line_start + 1
+    }
+    return false
+}
+
+Peek :: (p: *Parser, ahead: s64) -> u8 {
+    if p.at + ahead >= p.length { return cast(u8)0 }
+    return p.text[p.at + ahead]
+}
+
+Advance :: (p: *Parser) {
+    if p.at < p.length {
+        if p.text[p.at] == cast(u8)10 {
+            p.line += 1
+            p.line_start = p.at + 1
+        }
+        p.at += 1
+    }
+}
+
+// Skip spaces, tabs, comments and backslash-newline continuations. Newlines
+// are skipped too when `newlines` is set (inside brackets).
+SkipBlank :: (p: *Parser, newlines: bool) {
+    scanning := true
+    while scanning && p.at < p.length {
+        byte := Peek(p, 0)
+        if byte == cast(u8)32 || byte == cast(u8)9 || byte == cast(u8)12 || byte == cast(u8)13 {
+            Advance(p)
+        } else if byte == cast(u8)10 && newlines {
+            Advance(p)
+        } else if byte == cast(u8)92 && Peek(p, 1) == cast(u8)10 {
+            Advance(p)
+            Advance(p)
+        } else if byte == cast(u8)35 {
+            while p.at < p.length && Peek(p, 0) != cast(u8)10 { Advance(p) }
+        } else {
+            scanning = false
+        }
+    }
+}
+
+IsNameStart :: (byte: u8) -> bool {
+    return byte == cast(u8)95 || (byte >= cast(u8)65 && byte <= cast(u8)90) || (byte >= cast(u8)97 && byte <= cast(u8)122)
+}
+
+IsDigit :: (byte: u8) -> bool { return byte >= cast(u8)48 && byte <= cast(u8)57 }
+
+IsNameByte :: (byte: u8) -> bool { return IsNameStart(byte) || IsDigit(byte) }
+
+AddNodeRecord :: (p: *Parser, kind: s64, a: s64, b: s64, c: s64, d: s64) -> s64 {
+    if p.node_count >= p.node_capacity {
+        unused Fail(p, OutOfSpace)
+        return -1
+    }
+    record := p.node_count * NodeFields
+    p.nodes[record] = kind
+    p.nodes[record + 1] = a
+    p.nodes[record + 2] = b
+    p.nodes[record + 3] = c
+    p.nodes[record + 4] = d
+    p.node_count += 1
+    return p.node_count - 1
+}
+
+PutByte :: (p: *Parser, byte: u8) -> bool {
+    if p.byte_count >= p.byte_capacity { return Fail(p, OutOfSpace) }
+    p.bytes[p.byte_count] = byte
+    p.byte_count += 1
+    return true
+}
+
+// Encode one scalar as UTF-8 into the output bytes.
+PutScalar :: (p: *Parser, point: s64) -> bool {
+    if point < 0 || point > 1114111 || (point >= 55296 && point <= 57343) { return Fail(p, InvalidEscape) }
+    if point < 128 { return PutByte(p, cast(u8)point) }
+    if point < 2048 {
+        return PutByte(p, cast(u8)(192 + point / 64)) && PutByte(p, cast(u8)(128 + point % 64))
+    }
+    if point < 65536 {
+        return PutByte(p, cast(u8)(224 + point / 4096)) && PutByte(p, cast(u8)(128 + (point / 64) % 64)) &&
+               PutByte(p, cast(u8)(128 + point % 64))
+    }
+    return PutByte(p, cast(u8)(240 + point / 262144)) && PutByte(p, cast(u8)(128 + (point / 4096) % 64)) &&
+           PutByte(p, cast(u8)(128 + (point / 64) % 64)) && PutByte(p, cast(u8)(128 + point % 64))
+}
+
+HexValue :: (byte: u8) -> s64 {
+    if IsDigit(byte) { return cast(s64)byte - 48 }
+    if byte >= cast(u8)97 && byte <= cast(u8)102 { return cast(s64)byte - 87 }
+    if byte >= cast(u8)65 && byte <= cast(u8)70 { return cast(s64)byte - 55 }
+    return -1
+}
+
+ReadHex :: (p: *Parser, digits: s64) -> s64 {
+    value: s64 = 0
+    count: s64 = 0
+    while count < digits {
+        digit := HexValue(Peek(p, 0))
+        if digit < 0 {
+            unused Fail(p, InvalidEscape)
+            return -1
+        }
+        value = value * 16 + digit
+        Advance(p)
+        count += 1
+    }
+    return value
+}
+
+// One escape after the backslash, as Starlark decodes it.
+ReadEscape :: (p: *Parser) -> bool {
+    byte := Peek(p, 0)
+    if byte == cast(u8)10 {
+        Advance(p)
+        return true
+    }
+    simple: s64 = -1
+    if byte == cast(u8)92 { simple = 92 }
+    if byte == cast(u8)39 { simple = 39 }
+    if byte == cast(u8)34 { simple = 34 }
+    if byte == cast(u8)110 { simple = 10 }
+    if byte == cast(u8)116 { simple = 9 }
+    if byte == cast(u8)114 { simple = 13 }
+    if byte == cast(u8)97 { simple = 7 }
+    if byte == cast(u8)98 { simple = 8 }
+    if byte == cast(u8)102 { simple = 12 }
+    if byte == cast(u8)118 { simple = 11 }
+    if simple >= 0 {
+        Advance(p)
+        return PutByte(p, cast(u8)simple)
+    }
+    if byte >= cast(u8)48 && byte <= cast(u8)55 {
+        value: s64 = 0
+        count: s64 = 0
+        while count < 3 && Peek(p, 0) >= cast(u8)48 && Peek(p, 0) <= cast(u8)55 {
+            value = value * 8 + cast(s64)Peek(p, 0) - 48
+            Advance(p)
+            count += 1
+        }
+        return PutScalar(p, value)
+    }
+    digits: s64 = 0
+    if byte == cast(u8)120 { digits = 2 }
+    if byte == cast(u8)117 { digits = 4 }
+    if byte == cast(u8)85 { digits = 8 }
+    if digits == 0 { return Fail(p, InvalidEscape) }
+    Advance(p)
+    value := ReadHex(p, digits)
+    if value < 0 { return false }
+    return PutScalar(p, value)
+}
+
+// A string literal at the cursor, optionally prefixed with r/R.
+ParseString :: (p: *Parser) -> s64 {
+    raw := false
+    first := Peek(p, 0)
+    if first == cast(u8)114 || first == cast(u8)82 {
+        raw = true
+        Advance(p)
+    }
+    quote := Peek(p, 0)
+    triple := Peek(p, 1) == quote && Peek(p, 2) == quote
+    Advance(p)
+    if triple {
+        Advance(p)
+        Advance(p)
+    }
+    offset := p.byte_count
+    while true {
+        if p.at >= p.length {
+            unused Fail(p, UnterminatedString)
+            return -1
+        }
+        byte := Peek(p, 0)
+        if byte == quote && (!triple || (Peek(p, 1) == quote && Peek(p, 2) == quote)) {
+            Advance(p)
+            if triple {
+                Advance(p)
+                Advance(p)
+            }
+            return AddNodeRecord(p, StringNode, offset, p.byte_count - offset, 0, 0)
+        }
+        if byte == cast(u8)10 && !triple {
+            unused Fail(p, UnterminatedString)
+            return -1
+        }
+        if byte == cast(u8)92 && !raw {
+            Advance(p)
+            if !ReadEscape(p) { return -1 }
+        } else if byte == cast(u8)92 && raw {
+            // A raw string keeps the backslash and the character after it.
+            if !PutByte(p, byte) { return -1 }
+            Advance(p)
+            if p.at < p.length {
+                if !PutByte(p, Peek(p, 0)) { return -1 }
+                Advance(p)
+            }
+        } else {
+            if !PutByte(p, byte) { return -1 }
+            Advance(p)
+        }
+    }
+    return -1
+}
+
+// Copy the name at the cursor into the output bytes; returns its offset.
+ReadName :: (p: *Parser) -> s64 {
+    offset := p.byte_count
+    while p.at < p.length && IsNameByte(Peek(p, 0)) {
+        if !PutByte(p, Peek(p, 0)) { return -1 }
+        Advance(p)
+    }
+    return offset
+}
+
+NameIs :: (p: *Parser, offset: s64, length: s64, word: string) -> bool {
+    if length != word.count { return false }
+    index: s64 = 0
+    while index < length {
+        if p.bytes[offset + index] != word[index] { return false }
+        index += 1
+    }
+    return true
+}
+
+StartsString :: (p: *Parser) -> bool {
+    byte := Peek(p, 0)
+    if byte == cast(u8)34 || byte == cast(u8)39 { return true }
+    next := Peek(p, 1)
+    return (byte == cast(u8)114 || byte == cast(u8)82) && (next == cast(u8)34 || next == cast(u8)39)
+}
+
+// Items of a list or tuple up to the closing byte; returns the item count.
+ParseItems :: (p: *Parser, close: u8, missing: s64) -> s64 {
+    count: s64 = 0
+    while true {
+        SkipBlank(p, true)
+        if Peek(p, 0) == close {
+            Advance(p)
+            return count
+        }
+        if ParseExpression(p) < 0 { return -1 }
+        count += 1
+        SkipBlank(p, true)
+        if Peek(p, 0) == cast(u8)44 {
+            Advance(p)
+        } else if Peek(p, 0) != close {
+            unused Fail(p, missing)
+            return -1
+        }
+    }
+    return -1
+}
+
+ParseOperand :: (p: *Parser) -> s64 {
+    SkipBlank(p, p.depth > 0)
+    if p.depth >= MaximumDepth {
+        unused Fail(p, TooDeep)
+        return -1
+    }
+    byte := Peek(p, 0)
+    if (byte == cast(u8)102 || byte == cast(u8)70) && (Peek(p, 1) == cast(u8)34 || Peek(p, 1) == cast(u8)39) {
+        unused Fail(p, UnsupportedFString)
+        return -1
+    }
+    if StartsString(p) { return ParseString(p) }
+    if byte == cast(u8)91 || byte == cast(u8)40 {
+        Advance(p)
+        p.depth += 1
+        node := AddNodeRecord(p, ifx byte == cast(u8)91 then ListNode else TupleNode, 0, 0, 0, 0)
+        if node < 0 { return -1 }
+        count := ParseItems(p, ifx byte == cast(u8)91 then cast(u8)93 else cast(u8)41,
+                            ifx byte == cast(u8)91 then ExpectedListEnd else ExpectedArgumentEnd)
+        p.depth -= 1
+        if count < 0 { return -1 }
+        p.nodes[node * NodeFields + 1] = count
+        return node
+    }
+    if IsDigit(byte) {
+        value: s64 = 0
+        while IsDigit(Peek(p, 0)) {
+            if value > 92233720368547758 {
+                unused Fail(p, IntegerTooLarge)
+                return -1
+            }
+            value = value * 10 + cast(s64)Peek(p, 0) - 48
+            Advance(p)
+        }
+        if IsNameByte(Peek(p, 0)) {
+            unused Fail(p, UnexpectedCharacter)
+            return -1
+        }
+        return AddNodeRecord(p, IntegerNode, value, 0, 0, 0)
+    }
+    if IsNameStart(byte) {
+        offset := ReadName(p)
+        if offset < 0 { return -1 }
+        length := p.byte_count - offset
+        if NameIs(p, offset, length, "None") { return AddNodeRecord(p, NoneNode, 0, 0, 0, 0) }
+        if NameIs(p, offset, length, "True") { return AddNodeRecord(p, TrueNode, 0, 0, 0, 0) }
+        if NameIs(p, offset, length, "False") { return AddNodeRecord(p, FalseNode, 0, 0, 0, 0) }
+        return AddNodeRecord(p, NameNode, offset, length, 0, 0)
+    }
+    if p.at >= p.length || byte == cast(u8)10 || byte == cast(u8)41 || byte == cast(u8)93 || byte == cast(u8)44 {
+        unused Fail(p, ExpectedExpression)
+    } else {
+        unused Fail(p, UnexpectedCharacter)
+    }
+    return -1
+}
+
+// operand ('+' operand)*, left-associative.
+ParseExpression :: (p: *Parser) -> s64 {
+    start := p.node_count
+    if ParseOperand(p) < 0 { return -1 }
+    while true {
+        SkipBlank(p, p.depth > 0)
+        if Peek(p, 0) != cast(u8)43 { return start }
+        Advance(p)
+        // Insert an AddNode before the left operand by shifting it right.
+        if AddNodeRecord(p, AddNode, 0, 0, 0, 0) < 0 { return -1 }
+        moved := p.node_count - 1
+        while moved > start {
+            for field: 0..NodeFields - 1 {
+                p.nodes[moved * NodeFields + field] = p.nodes[(moved - 1) * NodeFields + field]
+            }
+            moved -= 1
+        }
+        p.nodes[start * NodeFields] = AddNode
+        for field: 1..NodeFields - 1 { p.nodes[start * NodeFields + field] = 0 }
+        if ParseOperand(p) < 0 { return -1 }
+    }
+    return -1
+}
+
+ParseCall :: (p: *Parser, name: s64, name_length: s64, line: s64, column: s64) -> bool {
+    call := AddNodeRecord(p, CallNode, name, name_length, 0, 0)
+    location := AddNodeRecord(p, LocationNode, line, column, 0, 0)
+    if call < 0 || location < 0 { return false }
+    Advance(p)
+    p.depth += 1
+    count: s64 = 0
+    while true {
+        SkipBlank(p, true)
+        if Peek(p, 0) == cast(u8)41 {
+            Advance(p)
+            p.depth -= 1
+            p.nodes[call * NodeFields + 3] = count
+            p.nodes[location * NodeFields + 3] = p.line
+            p.nodes[location * NodeFields + 4] = p.at - p.line_start + 1
+            return true
+        }
+        // A keyword argument is NAME '=' (not '=='); anything else is positional.
+        keyword := false
+        if IsNameStart(Peek(p, 0)) {
+            look := p.at
+            while look < p.length && IsNameByte(p.text[look]) { look += 1 }
+            while look < p.length && (p.text[look] == cast(u8)32 || p.text[look] == cast(u8)9) { look += 1 }
+            keyword = look < p.length && p.text[look] == cast(u8)61 && (look + 1 >= p.length || p.text[look + 1] != cast(u8)61)
+        }
+        if keyword {
+            offset := ReadName(p)
+            if offset < 0 { return false }
+            if AddNodeRecord(p, KeywordNode, offset, p.byte_count - offset, 0, 0) < 0 { return false }
+            SkipBlank(p, true)
+            Advance(p)
+        } else {
+            if AddNodeRecord(p, PositionalNode, 0, 0, 0, 0) < 0 { return false }
+        }
+        if ParseExpression(p) < 0 { return false }
+        count += 1
+        SkipBlank(p, true)
+        if Peek(p, 0) == cast(u8)44 {
+            Advance(p)
+        } else if Peek(p, 0) != cast(u8)41 {
+            return Fail(p, ExpectedArgumentEnd)
+        }
+    }
+    return false
+}
+
+ParseStatement :: (p: *Parser) -> bool {
+    line := p.line
+    column := p.at - p.line_start + 1
+    if !IsNameStart(Peek(p, 0)) {
+        return Fail(p, ifx StartsString(p) || IsDigit(Peek(p, 0)) || Peek(p, 0) == cast(u8)91 then UnsupportedStatement else UnexpectedCharacter)
+    }
+    name_at := p.at
+    offset := ReadName(p)
+    if offset < 0 { return false }
+    length := p.byte_count - offset
+    if NameIs(p, offset, length, "def") || NameIs(p, offset, length, "for") || NameIs(p, offset, length, "if") ||
+       NameIs(p, offset, length, "load") || NameIs(p, offset, length, "return") || NameIs(p, offset, length, "lambda") ||
+       NameIs(p, offset, length, "while") || NameIs(p, offset, length, "pass") {
+        p.at = name_at
+        return Fail(p, UnsupportedStatement)
+    }
+    SkipBlank(p, false)
+    if Peek(p, 0) == cast(u8)40 { return ParseCall(p, offset, length, line, column) }
+    if Peek(p, 0) == cast(u8)61 && Peek(p, 1) != cast(u8)61 {
+        if AddNodeRecord(p, AssignNode, offset, length, 0, 0) < 0 { return false }
+        if AddNodeRecord(p, LocationNode, line, column, line, column + length) < 0 { return false }
+        Advance(p)
+        return ParseExpression(p) >= 0
+    }
+    return Fail(p, ExpectedCallOrAssignment)
+}
+
+// Parses source into nodes and bytes. Returns the node count, or -1 with
+// error = [code, line, column]; -2 for invalid arguments.
+#program_export
+xcoder_parse_rules :: (source: *u8, source_length: s64, nodes: *s64, node_capacity: s64,
+                       bytes: *u8, byte_capacity: s64, error: *s64) -> s64 {
+    if source_length < 0 || node_capacity < 0 || byte_capacity < 0 || error == null || nodes == null ||
+       bytes == null || (source_length > 0 && source == null) { return -2 }
+    p: Parser
+    p.text = B.TextFromBytes(B.BytesFromPointer(source, cast(u64)source_length))
+    p.length = source_length
+    p.line = 1
+    p.nodes = nodes
+    p.node_capacity = node_capacity
+    p.bytes = bytes
+    p.byte_capacity = byte_capacity
+    pp := *p
+    while true {
+        SkipBlank(pp, true)
+        // Statements may also be separated by semicolons.
+        while Peek(pp, 0) == cast(u8)59 {
+            Advance(pp)
+            SkipBlank(pp, true)
+        }
+        if pp.at >= pp.length { return pp.node_count }
+        if !ParseStatement(pp) {
+            error[0] = pp.error
+            error[1] = pp.error_line
+            error[2] = pp.error_column
+            return -1
+        }
+        SkipBlank(pp, false)
+        byte := Peek(pp, 0)
+        if pp.at < pp.length && byte != cast(u8)10 && byte != cast(u8)59 {
+            unused Fail(pp, ExpectedStatementEnd)
+            error[0] = pp.error
+            error[1] = pp.error_line
+            error[2] = pp.error_column
+            return -1
+        }
+    }
+    return -1
+}

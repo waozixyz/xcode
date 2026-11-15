@@ -1,4 +1,3 @@
-use starlark::Error as StarlarkError;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -46,8 +45,19 @@ pub enum Error {
         example: String,
         location: Option<ErrorLocation>,
     },
-    #[error("starlark error: {0}")]
-    Starlark(StarlarkError),
+    /// A rules file that does not parse or evaluate, at the statement or
+    /// position where it failed. The text keeps the `path:line:column:
+    /// starlark error:` shape that callers parse for the location.
+    #[error(
+        "{}:{}:{}: starlark error: error: {message}",
+        location.path,
+        location.range.start.line,
+        location.range.start.column
+    )]
+    Syntax {
+        message: String,
+        location: ErrorLocation,
+    },
 }
 
 impl Error {
@@ -79,22 +89,7 @@ impl Error {
         match self {
             Error::ExampleDidNotMatch { location, .. }
             | Error::ExampleDidMatch { location, .. } => location.clone(),
-            Error::Starlark(err) => err.span().map(|span| {
-                let resolved = span.resolve_span();
-                ErrorLocation {
-                    path: span.filename().to_string(),
-                    range: TextRange {
-                        start: TextPosition {
-                            line: resolved.begin.line + 1,
-                            column: resolved.begin.column + 1,
-                        },
-                        end: TextPosition {
-                            line: resolved.end.line + 1,
-                            column: resolved.end.column + 1,
-                        },
-                    },
-                }
-            }),
+            Error::Syntax { location, .. } => Some(location.clone()),
             _ => None,
         }
     }
