@@ -1,11 +1,17 @@
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::LazyLock;
 
 use codex_exec_server::ExecutorFileSystem;
+#[cfg(test)]
 use tree_sitter::Parser;
+#[cfg(test)]
 use tree_sitter::Query;
+#[cfg(test)]
 use tree_sitter::QueryCursor;
+#[cfg(test)]
 use tree_sitter::StreamingIterator;
+#[cfg(test)]
 use tree_sitter_bash::LANGUAGE as BASH;
 
 use crate::ApplyPatchAction;
@@ -22,7 +28,6 @@ use crate::unified_diff_from_chunks;
 use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use std::str::Utf8Error;
-use tree_sitter::LanguageError;
 
 const APPLY_PATCH_COMMANDS: [&str; 2] = ["apply_patch", "applypatch"];
 
@@ -44,7 +49,6 @@ pub enum MaybeApplyPatch {
 #[derive(Debug, PartialEq)]
 pub enum ExtractHeredocError {
     CommandDidNotStartWithApplyPatch,
-    FailedToLoadBashGrammar(LanguageError),
     HeredocNotUtf8(Utf8Error),
     FailedToParsePatchIntoAst,
     FailedToFindHeredocBody,
@@ -273,6 +277,34 @@ async fn try_verify_apply_patch_args(
 fn extract_apply_patch_from_bash(
     src: &str,
 ) -> std::result::Result<(String, Option<String>), ExtractHeredocError> {
+    // The Ziran recognizer in `native/apply_patch.zi` accepts exactly the two
+    // forms the tree-sitter query below describes; the tests keep that query
+    // as the oracle.
+    let mut found = [0i64; 5];
+    // SAFETY: `src` and `found` outlive the call; Ziran writes five values.
+    let matched =
+        unsafe { xcoder_apply_patch_heredoc(src.as_ptr(), src.len() as i64, found.as_mut_ptr()) };
+    if matched != 1 {
+        return Err(ExtractHeredocError::CommandDidNotStartWithApplyPatch);
+    }
+    let text = |start: i64, end: i64| src.get(start as usize..end as usize).map(str::to_string);
+    let heredoc = text(found[0], found[1]).ok_or(ExtractHeredocError::FailedToFindHeredocBody)?;
+    let cd_path = match found[2] {
+        0 => None,
+        _ => Some(text(found[3], found[4]).ok_or(ExtractHeredocError::FailedToFindHeredocBody)?),
+    };
+    Ok((heredoc, cd_path))
+}
+
+unsafe extern "C" {
+    fn xcoder_apply_patch_heredoc(script: *const u8, script_length: i64, result: *mut i64) -> i64;
+}
+
+/// The tree-sitter query the heredoc form was recognized with before Ziran.
+#[cfg(test)]
+fn tree_sitter_extract_apply_patch_from_bash(
+    src: &str,
+) -> std::result::Result<(String, Option<String>), ExtractHeredocError> {
     // This function uses a Tree-sitter query to recognize one of two
     // whole-script forms, each expressed as a single top-level statement:
     //
@@ -343,9 +375,8 @@ fn extract_apply_patch_from_bash(
 
     let lang = BASH.into();
     let mut parser = Parser::new();
-    parser
-        .set_language(&lang)
-        .map_err(ExtractHeredocError::FailedToLoadBashGrammar)?;
+    #[expect(clippy::expect_used)]
+    parser.set_language(&lang).expect("load bash grammar");
     let tree = parser
         .parse(src, None)
         .ok_or(ExtractHeredocError::FailedToParsePatchIntoAst)?;
@@ -412,6 +443,128 @@ mod tests {
     use std::path::PathBuf;
     use std::string::ToString;
     use tempfile::tempdir;
+
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            items[((self.0 >> 33) % items.len() as u64) as usize]
+        }
+    }
+
+    fn random_heredoc_script(rng: &mut Lcg) -> String {
+        // Partly quoted delimiters (E'OF') are left out: tree-sitter's heredoc
+        // scanner ends them inconsistently, while Ziran follows Bash (E'OF' is EOF).
+        let delimiter = rng.pick(&["EOF", "'EOF'", "\"EOF\"", "PATCH"]);
+        let bare = delimiter.replace(['\'', '"'], "");
+        let operator = rng.pick(&["<<", "<<", "<<-", "<< ", "<<<"]);
+        let cd = rng.pick(&[
+            "",
+            "",
+            "cd src && ",
+            "cd 'a b' && ",
+            "cd \"a b\" && ",
+            "cd \"$HOME\" && ",
+            "cd ~/x && ",
+            "cd -P x && ",
+            "cd a b && ",
+            "cd x || ",
+            "cd x; ",
+            "cd x | ",
+            "cd x &&\n",
+            "cd \"\" && ",
+        ]);
+        let name = rng.pick(&[
+            "apply_patch",
+            "apply_patch",
+            "applypatch",
+            "apply-patch",
+            "echo",
+        ]);
+        let after_start = rng.pick(&["", "", "", " ", " && echo hi", "\t"]);
+        // Realistic bodies and exact end lines: tree-sitter's heredoc scanner
+        // ends bodies at look-alike or indented lines inconsistently (see the
+        // unit tests below for how Ziran, like Bash, treats those).
+        let body = rng.pick(&[
+            "*** Begin Patch\n*** End Patch",
+            "*** Begin Patch\n+line\n*** End Patch\n",
+            "*** Begin Patch\n*** Add File: a\n+$(not run)\n+`x`\n*** End Patch",
+            "",
+        ]);
+        let end = "";
+        let trailing = rng.pick(&["", "", "\n", "\n\n", "\necho done", "\n  "]);
+        let leading = rng.pick(&["", "", "\n", "  ", "# c\n"]);
+        format!(
+            "{leading}{cd}{name} {operator}{delimiter}{after_start}\n{body}\n{end}{bare}{trailing}"
+        )
+    }
+
+    #[test]
+    fn heredoc_bodies_end_only_at_the_exact_delimiter_line() {
+        let body = |script: &str| {
+            extract_apply_patch_from_bash(script)
+                .ok()
+                .map(|found| found.0)
+        };
+        // A line that merely starts with the delimiter does not end the body.
+        assert_eq!(
+            body("apply_patch <<EOF\n+EOFX\nEOF").as_deref(),
+            Some("+EOFX")
+        );
+        // Indented delimiters end it only with <<-, which strips leading tabs.
+        assert_eq!(
+            body("apply_patch <<EOF\n+a\n\tEOF\nEOF").as_deref(),
+            Some("+a\n\tEOF")
+        );
+        assert_eq!(body("apply_patch <<-EOF\n+a\n\tEOF").as_deref(), Some("+a"));
+        // A heredoc that never ends is not this form.
+        assert_eq!(body("apply_patch <<EOF\n+a\n"), None);
+        // Anything after the end line, or a different shape, does not match.
+        assert_eq!(body("apply_patch <<EOF\n+a\nEOF\necho done"), None);
+        assert_eq!(body("cd a b && apply_patch <<EOF\n+a\nEOF"), None);
+        assert_eq!(body("cd \"$HOME\" && apply_patch <<EOF\n+a\nEOF"), None);
+    }
+
+    #[test]
+    fn ziran_heredoc_form_matches_the_tree_sitter_query() {
+        let mut rng = Lcg(0x4e2e_d0c5);
+        let (mut matched, mut unreliable) = (0, 0);
+        for _ in 0..20_000 {
+            let script = random_heredoc_script(&mut rng);
+            // parse_patch trims the heredoc body, so leading and trailing
+            // whitespace is not part of its meaning.
+            let trimmed =
+                |found: std::result::Result<(String, Option<String>), ExtractHeredocError>| {
+                    found.ok().map(|(body, cd)| (body.trim().to_string(), cd))
+                };
+            let ziran = trimmed(extract_apply_patch_from_bash(&script));
+            let tree_sitter = trimmed(tree_sitter_extract_apply_patch_from_bash(&script));
+            let mut parser = Parser::new();
+            parser.set_language(&BASH.into()).unwrap();
+            let tree = parser.parse(&script, None).unwrap();
+            // tree-sitter ends a heredoc at any line that merely starts with the
+            // delimiter (`EOFX`), leaving ERROR or MISSING nodes; Ziran reads on,
+            // as Bash does. Its answer for those scripts is not a reference.
+            if tree.root_node().has_error() {
+                unreliable += 1;
+                continue;
+            }
+            if ziran != tree_sitter {
+                let tree = tree.root_node().to_sexp();
+                panic!("{script:?}: Ziran {ziran:?}, tree-sitter {tree_sitter:?}, tree {tree}");
+            }
+            matched += usize::from(ziran.is_some());
+        }
+        assert!(matched > 1_000, "only {matched} generated scripts matched");
+        assert!(
+            unreliable < 5_000,
+            "{unreliable} scripts had tree-sitter errors"
+        );
+    }
 
     /// Helper to construct a patch with the given body.
     fn wrap_patch(body: &str) -> String {
