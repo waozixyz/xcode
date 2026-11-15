@@ -43,11 +43,7 @@ pub(crate) async fn derive_new_contents_from_chunks(
         })?;
 
     let path_text = path.inferred_native_path_string();
-    let mut source_file = SourceFile::parse(&original_contents);
-    let original_lines = source_file.line_texts();
-    let replacements = compute_replacements(&original_lines, &path_text, chunks)?;
-    source_file.apply_replacements(&replacements);
-    let new_contents = source_file.into_contents();
+    let new_contents = apply_chunks(&original_contents, &path_text, chunks)?;
     Ok(AppliedPatch {
         original_contents,
         new_contents,
@@ -57,6 +53,157 @@ pub(crate) async fn derive_new_contents_from_chunks(
 /// Compute a list of replacements needed to transform `original_lines` into the
 /// new lines, given the patch `chunks`. Each replacement is returned as
 /// `(start_index, old_len, new_lines)`.
+/// The patched contents of `original` (displayed as `path` in errors).
+///
+/// Runs in Ziran (`native/apply_patch.zi`): lines are offsets into `original`
+/// and the result is written once, instead of copying every line into a
+/// `String` several times.
+pub(crate) fn apply_chunks(
+    original: &str,
+    path: &str,
+    chunks: &[UpdateFileChunk],
+) -> std::result::Result<String, ApplyPatchError> {
+    let mut strings: Vec<&str> = Vec::new();
+    let mut records: Vec<i64> = Vec::with_capacity(chunks.len() * 8);
+    let mut pairs: Vec<i64> = Vec::new();
+    let mut replacement_capacity = 0usize;
+    let mut inserted = 0usize;
+    for chunk in chunks {
+        let context = match &chunk.change_context {
+            Some(line) => {
+                strings.push(line);
+                strings.len() as i64 - 1
+            }
+            None => -1,
+        };
+        let old_first = strings.len();
+        strings.extend(chunk.old_lines.iter().map(String::as_str));
+        let new_first = strings.len();
+        strings.extend(chunk.new_lines.iter().map(String::as_str));
+        inserted += chunk
+            .new_lines
+            .iter()
+            .map(|line| line.len() + 2)
+            .sum::<usize>();
+        let pair_first = pairs.len() / 2;
+        for &(old, new) in &chunk.context_line_indices {
+            pairs.extend([old as i64, new as i64]);
+        }
+        replacement_capacity += chunk.context_line_indices.len() + 1;
+        records.extend([
+            context,
+            old_first as i64,
+            chunk.old_lines.len() as i64,
+            new_first as i64,
+            chunk.new_lines.len() as i64,
+            pair_first as i64,
+            chunk.context_line_indices.len() as i64,
+            i64::from(chunk.is_end_of_file),
+        ]);
+    }
+    let too_large = |length: usize| length > i32::MAX as usize;
+    if too_large(original.len()) || strings.iter().any(|line| too_large(line.len())) {
+        return rust_apply_chunks(original, path, chunks);
+    }
+    let line_capacity = original
+        .bytes()
+        .filter(|byte| matches!(byte, b'\n' | b'\r'))
+        .count()
+        + 1;
+    let mut line_data = vec![std::ptr::null::<u8>(); line_capacity];
+    let mut line_lengths = vec![0i64; line_capacity];
+    let mut line_endings = vec![0i32; line_capacity];
+    let string_data = strings.iter().map(|line| line.as_ptr()).collect::<Vec<_>>();
+    let string_lengths = strings
+        .iter()
+        .map(|line| line.len() as i64)
+        .collect::<Vec<_>>();
+    let mut replacements = vec![0i64; replacement_capacity * 4];
+    // Kept lines never grow; each inserted line and a final line that had no
+    // ending gain at most two ending bytes.
+    let output_capacity = original.len() + inserted + 2;
+    let mut output = Vec::<u8>::with_capacity(output_capacity);
+    let mut failed_chunk = -1i64;
+    // SAFETY: every table outlives the call and has the length passed for it;
+    // Ziran writes at most `output_capacity` bytes into `output`.
+    let written = unsafe {
+        xcoder_apply_chunks(
+            original.as_ptr(),
+            original.len() as i64,
+            line_data.as_mut_ptr(),
+            line_lengths.as_mut_ptr(),
+            line_endings.as_mut_ptr(),
+            line_capacity as i64,
+            string_data.as_ptr(),
+            string_lengths.as_ptr(),
+            strings.len() as i64,
+            records.as_ptr(),
+            chunks.len() as i64,
+            pairs.as_ptr(),
+            replacements.as_mut_ptr(),
+            replacement_capacity as i64,
+            output.as_mut_ptr(),
+            output_capacity as i64,
+            &mut failed_chunk,
+        )
+    };
+    let failed = || &chunks[usize::try_from(failed_chunk).unwrap_or_default()];
+    match written {
+        written if written >= 0 => {
+            // SAFETY: Ziran initialised exactly `written` bytes.
+            unsafe { output.set_len(written as usize) };
+            // Whole lines of valid UTF-8 joined by ASCII endings stay valid.
+            String::from_utf8(output).or_else(|_| rust_apply_chunks(original, path, chunks))
+        }
+        -1 => Err(ApplyPatchError::ComputeReplacements(format!(
+            "Failed to find context '{}' in {path}",
+            failed().change_context.as_deref().unwrap_or_default()
+        ))),
+        -2 => Err(ApplyPatchError::ComputeReplacements(format!(
+            "Failed to find expected lines in {}:\n{}",
+            path,
+            failed().old_lines.join("\n"),
+        ))),
+        _ => rust_apply_chunks(original, path, chunks),
+    }
+}
+
+unsafe extern "C" {
+    fn xcoder_apply_chunks(
+        contents: *const u8,
+        contents_length: i64,
+        line_data: *mut *const u8,
+        line_lengths: *mut i64,
+        line_endings: *mut i32,
+        line_capacity: i64,
+        strings: *const *const u8,
+        string_lengths: *const i64,
+        string_count: i64,
+        chunks: *const i64,
+        chunk_count: i64,
+        pairs: *const i64,
+        replacements: *mut i64,
+        replacement_capacity: i64,
+        output: *mut u8,
+        output_capacity: i64,
+        failed_chunk: *mut i64,
+    ) -> i64;
+}
+
+/// The original Rust pipeline: the fallback when Ziran refuses its input (text
+/// above 2 GiB) and the oracle its parity tests compare against.
+pub(crate) fn rust_apply_chunks(
+    original: &str,
+    path: &str,
+    chunks: &[UpdateFileChunk],
+) -> std::result::Result<String, ApplyPatchError> {
+    let mut source_file = SourceFile::parse(original);
+    let original_lines = source_file.line_texts();
+    let replacements = compute_replacements(&original_lines, path, chunks)?;
+    source_file.apply_replacements(&replacements);
+    Ok(source_file.into_contents())
+}
+
 fn compute_replacements(
     original_lines: &[String],
     path: &str,

@@ -2,6 +2,7 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 
 ## Unreleased
 
+- `apply_patch` applies an update in Ziran from start to end: it splits the file into line offsets, finds every hunk, and writes the new contents once, keeping each line's ending, instead of copying every line into a string several times. A 20-hunk update of a 50,000-line file takes 3.2 ms instead of 7.7 ms; results and error messages match the Rust code on 3,000 generated patches.
 - `apply_patch` finds where each hunk goes with a Ziran matcher (`native/apply_patch.zi`) that borrows the file's lines instead of copying them. Answers are identical to the Rust matcher it replaces (checked against it on thousands of generated cases); on a 50,000-line file the whitespace- and punctuation-tolerant searches and searches that find nothing are 4-5x faster, exact matches cost about 0.4 ms more. `make benchmark-apply-patch` measures it.
 - Parallel tool cells no longer fail at random with "Text file busy": starting a freshly compiled cell retries while another thread's fork still holds the file.
 - The upstream Codex version check runs on its own thread, so a slow network never delays Xcoder exiting; the offline local tests turn it off.

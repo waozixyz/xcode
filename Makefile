@@ -63,7 +63,7 @@ benchmark-plan:
 benchmark-memory:
 	python3 scripts/benchmark-memory.py --cli build/bin/xcoder --calls 150 --idle-seconds 5 --release-wait 30 --environment XCODER_IDLE_RELEASE_SECONDS=15 --output build/memory/benchmark.json
 benchmark-apply-patch:
-	$(CARGO) test --manifest-path codex-rs/Cargo.toml --release -p codex-apply-patch --lib -- --ignored --nocapture seek_bench
+	$(CARGO) test --manifest-path codex-rs/Cargo.toml --release -p codex-apply-patch --lib -- --ignored --nocapture bench
 benchmark-fuzzy:
 	$(CARGO) run --manifest-path codex-rs/Cargo.toml --release -p codex-utils-fuzzy-match --example fuzzy_bench
 

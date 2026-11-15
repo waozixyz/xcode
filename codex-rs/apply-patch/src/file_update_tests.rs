@@ -276,3 +276,187 @@ g
 "#
     );
 }
+
+/// Deterministic pseudo-random source, so failures reproduce exactly.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.0 >> 33
+    }
+
+    fn below(&mut self, bound: usize) -> usize {
+        if bound == 0 {
+            0
+        } else {
+            (self.next() % bound as u64) as usize
+        }
+    }
+}
+
+const WORDS: &[&str] = &[
+    "a",
+    "b",
+    "fn x()",
+    "  indented",
+    "\t}",
+    "é",
+    "数据",
+    "—",
+    "“q”",
+    "",
+];
+
+fn random_text(rng: &mut Lcg) -> String {
+    (0..rng.below(3))
+        .map(|_| WORDS[rng.below(WORDS.len())])
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn random_file(rng: &mut Lcg) -> String {
+    let mut contents = String::new();
+    for _ in 0..rng.below(14) {
+        contents.push_str(&random_text(rng));
+        contents.push_str(["\n", "\n", "\r\n", "\r"][rng.below(4)]);
+    }
+    if rng.below(3) == 0 {
+        contents.push_str(&random_text(rng));
+    }
+    contents
+}
+
+fn file_lines(contents: &str) -> Vec<String> {
+    contents.split(['\n', '\r']).map(str::to_string).collect()
+}
+
+fn random_chunk(rng: &mut Lcg, lines: &[String]) -> UpdateFileChunk {
+    let old_lines = if rng.below(6) == 0 || lines.is_empty() {
+        Vec::new()
+    } else {
+        let from = rng.below(lines.len());
+        let count = 1 + rng.below((lines.len() - from).min(4));
+        let mut old = lines[from..from + count].to_vec();
+        match rng.below(5) {
+            0 => old.push(String::new()),
+            1 => old[0] = format!("  {} ", old[0]),
+            2 => old.push(random_text(rng)),
+            _ => {}
+        }
+        old
+    };
+    let mut new_lines = (0..rng.below(4))
+        .map(|_| random_text(rng))
+        .collect::<Vec<_>>();
+    if rng.below(4) == 0 {
+        new_lines.push(String::new());
+    }
+    let mut context_line_indices = Vec::new();
+    let (mut old, mut new) = (0, 0);
+    while rng.below(3) != 0 && old < old_lines.len() + 1 {
+        old += rng.below(2);
+        new += rng.below(2);
+        context_line_indices.push((old, new));
+        old += 1;
+        new += 1;
+    }
+    UpdateFileChunk {
+        change_context: (rng.below(4) == 0 && !lines.is_empty())
+            .then(|| lines[rng.below(lines.len())].clone()),
+        old_lines,
+        new_lines,
+        context_line_indices,
+        is_end_of_file: rng.below(5) == 0,
+    }
+}
+
+#[test]
+fn ziran_update_agrees_with_the_rust_pipeline_on_generated_patches() {
+    let mut rng = Lcg(0xa991_7e57);
+    let mut applied = 0;
+    for _ in 0..3000 {
+        let contents = random_file(&mut rng);
+        let lines = file_lines(&contents);
+        let chunks = (0..rng.below(4))
+            .map(|_| random_chunk(&mut rng, &lines))
+            .collect::<Vec<_>>();
+        let ziran = apply_chunks(&contents, "file.txt", &chunks);
+        let rust = rust_apply_chunks(&contents, "file.txt", &chunks);
+        assert_eq!(
+            format!("{ziran:?}"),
+            format!("{rust:?}"),
+            "contents={contents:?} chunks={chunks:?}"
+        );
+        applied += usize::from(rust.is_ok());
+    }
+    assert!(applied > 1000, "only {applied} generated patches applied");
+}
+
+#[test]
+fn ziran_update_agrees_on_line_endings_and_empty_files() {
+    let append = UpdateFileChunk {
+        change_context: None,
+        old_lines: Vec::new(),
+        new_lines: vec!["tail".to_string()],
+        context_line_indices: Vec::new(),
+        is_end_of_file: true,
+    };
+    for contents in ["", "\n", "x", "x\r\ny", "a\rb\rc", "\r\n\r\n", "one\ntwo\n"] {
+        for chunks in [Vec::new(), vec![append.clone()]] {
+            assert_eq!(
+                format!("{:?}", apply_chunks(contents, "f", &chunks)),
+                format!("{:?}", rust_apply_chunks(contents, "f", &chunks)),
+                "contents={contents:?}"
+            );
+        }
+    }
+}
+
+/// `cargo test -p codex-apply-patch --release --lib -- --ignored --nocapture update_bench`
+#[test]
+#[ignore = "benchmark"]
+fn update_bench() {
+    let contents = (0..50_000)
+        .map(|index| format!("    let value_{index} = compute({index});\n"))
+        .collect::<String>();
+    let chunks = (0..20)
+        .map(|chunk| {
+            let at = chunk * 2_400 + 17;
+            UpdateFileChunk {
+                change_context: None,
+                old_lines: vec![format!("    let value_{at} = compute({at});")],
+                new_lines: vec![
+                    format!("    let value_{at} = compute({at}) + 1;"),
+                    String::new(),
+                ],
+                context_line_indices: Vec::new(),
+                is_end_of_file: false,
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        apply_chunks(&contents, "f", &chunks).unwrap(),
+        rust_apply_chunks(&contents, "f", &chunks).unwrap()
+    );
+    for (label, update) in [
+        (
+            "rust ",
+            rust_apply_chunks
+                as fn(&str, &str, &[UpdateFileChunk]) -> Result<String, ApplyPatchError>,
+        ),
+        ("ziran", apply_chunks),
+    ] {
+        let started = std::time::Instant::now();
+        for _ in 0..20 {
+            std::hint::black_box(update(&contents, "f", &chunks).unwrap());
+        }
+        println!(
+            "update 50,000 lines, 20 hunks {label} {:>7.2} ms",
+            started.elapsed().as_secs_f64() * 1000.0 / 20.0
+        );
+    }
+}
