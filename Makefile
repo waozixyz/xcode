@@ -51,7 +51,7 @@ install:
 
 JAVASCRIPT_HOST ?= $(HOME)/.codex/packages/standalone/current/bin/codex-code-mode-host.javascript
 JAVASCRIPT_CLI ?= $(HOME)/.codex/packages/standalone/current/bin/codex-upstream
-.PHONY: benchmark-source benchmark-plan benchmark-fuzzy benchmark-memory
+.PHONY: benchmark-source benchmark-plan benchmark-fuzzy benchmark-memory benchmark-apply-patch
 benchmark-json:
 	python3 scripts/benchmark-runtime.py --native-host build/bin/codex-code-mode-host --javascript-host "$(JAVASCRIPT_HOST)" --diagnose-json
 benchmark-source:
@@ -62,6 +62,8 @@ benchmark-plan:
 # footprint and wake time after the idle release.
 benchmark-memory:
 	python3 scripts/benchmark-memory.py --cli build/bin/xcoder --calls 150 --idle-seconds 5 --release-wait 30 --environment XCODER_IDLE_RELEASE_SECONDS=15 --output build/memory/benchmark.json
+benchmark-apply-patch:
+	$(CARGO) test --manifest-path codex-rs/Cargo.toml --release -p codex-apply-patch --lib -- --ignored --nocapture seek_bench
 benchmark-fuzzy:
 	$(CARGO) run --manifest-path codex-rs/Cargo.toml --release -p codex-utils-fuzzy-match --example fuzzy_bench
 

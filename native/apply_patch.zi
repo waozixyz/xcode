@@ -1,0 +1,148 @@
+// Locate a patch hunk's lines in a file, exactly as codex-apply-patch's
+// seek_sequence did in Rust. Lines arrive as UTF-8 pointers and byte lengths
+// borrowed from the caller; nothing is copied or allocated.
+using U :: #import "std/utf8";
+using B :: #import "std/byte_text_linux";
+
+libc :: #system_library "libc";
+CompareRaw :: (left: *u8, right: *u8, count: usize) -> s32 #foreign libc "memcmp";
+
+// Unicode White_Space, the set Rust's str::trim and char::is_whitespace use.
+IsWhiteSpace :: (point: u32) -> bool {
+    if point < cast(u32)128 {
+        return point == cast(u32)32 || (point >= cast(u32)9 && point <= cast(u32)13)
+    }
+    return point == cast(u32)133 || point == cast(u32)160 || point == cast(u32)5760 ||
+           (point >= cast(u32)8192 && point <= cast(u32)8202) ||
+           point == cast(u32)8232 || point == cast(u32)8233 || point == cast(u32)8239 ||
+           point == cast(u32)8287 || point == cast(u32)12288
+}
+
+IsAsciiSpace :: (byte: u8) -> bool {
+    return byte == cast(u8)32 || (byte >= cast(u8)9 && byte <= cast(u8)13)
+}
+
+// Typographic punctuation and odd spaces compared as their ASCII forms.
+Normal :: (point: u32) -> u32 {
+    if point < cast(u32)160 { return point }
+    if (point >= cast(u32)8208 && point <= cast(u32)8213) || point == cast(u32)8722 { return cast(u32)45 }
+    if point >= cast(u32)8216 && point <= cast(u32)8219 { return cast(u32)39 }
+    if point >= cast(u32)8220 && point <= cast(u32)8223 { return cast(u32)34 }
+    if point == cast(u32)160 || (point >= cast(u32)8194 && point <= cast(u32)8202) ||
+       point == cast(u32)8239 || point == cast(u32)8287 || point == cast(u32)12288 { return cast(u32)32 }
+    return point
+}
+
+Text :: (data: *u8, length: s64) -> string {
+    return B.TextFromBytes(B.BytesFromPointer(data, cast(u64)length))
+}
+
+// First byte after leading whitespace in text[0:end].
+TrimStart :: (text: string, end: s32) -> s32 {
+    at: s32 = 0
+    while at < end {
+        byte := text[at]
+        if byte < cast(u8)128 {
+            if !IsAsciiSpace(byte) { return at }
+            at += 1
+        } else {
+            decoded := U.Decode(text, at)
+            if !IsWhiteSpace(decoded.value) { return at }
+            at = decoded.after
+        }
+    }
+    return end
+}
+
+// End of text once trailing whitespace is removed, scanning back from the end.
+TrimEnd :: (text: string, end: s32) -> s32 {
+    at := end
+    while at > 0 {
+        byte := text[at - 1]
+        if byte < cast(u8)128 {
+            if !IsAsciiSpace(byte) { return at }
+            at -= 1
+        } else {
+            lead := at - 1
+            while lead > 0 && (text[lead] & cast(u8)192) == cast(u8)128 { lead -= 1 }
+            if !IsWhiteSpace(U.Decode(text, lead).value) { return at }
+            at = lead
+        }
+    }
+    return 0
+}
+
+SameBytes :: (left: *u8, a: s32, a_end: s32, right: *u8, b: s32, b_end: s32) -> bool {
+    count := a_end - a
+    if count != b_end - b { return false }
+    if count == 0 { return true }
+    return CompareRaw(*left[a], *right[b], cast(usize)count) == 0
+}
+
+SameNormal :: (left: string, a: s32, a_end: s32, right: string, b: s32, b_end: s32) -> bool {
+    i := a
+    j := b
+    while i < a_end && j < b_end {
+        first := left[i]
+        second := right[j]
+        if first < cast(u8)128 && second < cast(u8)128 {
+            if first != second { return false }
+            i += 1
+            j += 1
+        } else {
+            one := U.Decode(left, i)
+            two := U.Decode(right, j)
+            if Normal(one.value) != Normal(two.value) { return false }
+            i = one.after
+            j = two.after
+        }
+    }
+    return i >= a_end && j >= b_end
+}
+
+// Mode 0 exact, 1 trim_end, 2 trim, 3 trim and normalized punctuation.
+SameLine :: (left: *u8, left_length: s64, right: *u8, right_length: s64, mode: s32) -> bool {
+    a_end := cast(s32)left_length
+    b_end := cast(s32)right_length
+    if mode == 0 { return SameBytes(left, 0, a_end, right, 0, b_end) }
+    one := Text(left, left_length)
+    two := Text(right, right_length)
+    a_end = TrimEnd(one, a_end)
+    b_end = TrimEnd(two, b_end)
+    if mode == 1 { return SameBytes(left, 0, a_end, right, 0, b_end) }
+    a := TrimStart(one, a_end)
+    b := TrimStart(two, b_end)
+    if mode == 2 { return SameBytes(left, a, a_end, right, b, b_end) }
+    return SameNormal(one, a, a_end, two, b, b_end)
+}
+
+// The first index at or after start where every pattern line matches, trying
+// each mode over the whole range before relaxing to the next; -1 when none
+// matches, -2 for invalid arguments.
+#program_export
+xcoder_seek_sequence :: (lines: **u8, line_lengths: *s64, line_count: s64, pattern: **u8, pattern_lengths: *s64, pattern_count: s64, start: s64, eof: s32) -> s64 {
+    if line_count < 0 || pattern_count < 0 || start < 0 { return -2 }
+    if pattern_count == 0 { return start }
+    if pattern_count > line_count { return -1 }
+    if lines == null || line_lengths == null || pattern == null || pattern_lengths == null { return -2 }
+    last := line_count - pattern_count
+    search := start
+    if eof != 0 && last > start { search = last }
+    mode: s32 = 0
+    while mode < 4 {
+        index := search
+        while index <= last {
+            matched := true
+            offset: s64 = 0
+            while matched && offset < pattern_count {
+                line := index + offset
+                matched = SameLine(lines[line], line_lengths[line], pattern[offset], pattern_lengths[offset], mode)
+                offset += 1
+            }
+            if matched { return index }
+            index += 1
+        }
+        mode += 1
+    }
+    return -1
+}
