@@ -47,7 +47,7 @@ pub fn dangerous_command_match_for_platform(
     dangerous_command_match_with_depth(command, /*wrapper_depth*/ 0, platform)
 }
 
-fn dangerous_command_match_with_depth(
+pub(crate) fn dangerous_command_match_with_depth(
     command: &[String],
     wrapper_depth: usize,
     platform: DangerousCommandPlatform,

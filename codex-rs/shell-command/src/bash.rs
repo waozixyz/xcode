@@ -104,6 +104,14 @@ pub fn try_parse_word_only_commands_sequence(tree: &Tree, src: &str) -> Option<V
 /// both accept a script they return the same words, and it never accepts a
 /// script tree-sitter rejects (checked by the parity tests below).
 pub fn parse_shell_script_into_commands(script: &str) -> Option<Vec<Vec<String>>> {
+    run_ziran_commands(xcoder_parse_plain_commands, script)
+}
+
+type ZiranCommands =
+    unsafe extern "C" fn(*const u8, i64, *mut u8, i64, *mut i64, i64, *mut i64, i64) -> i64;
+
+/// Runs one of the Ziran shell scanners and decodes the commands it found.
+fn run_ziran_commands(scanner: ZiranCommands, script: &str) -> Option<Vec<Vec<String>>> {
     // Every word byte, word and command comes from at least one script byte.
     let capacity = script.len() + 1;
     let mut bytes = vec![0u8; capacity];
@@ -111,7 +119,7 @@ pub fn parse_shell_script_into_commands(script: &str) -> Option<Vec<Vec<String>>
     let mut command_words = vec![0i64; capacity];
     // SAFETY: each buffer outlives the call and has the capacity passed for it.
     let commands = unsafe {
-        xcoder_parse_plain_commands(
+        scanner(
             script.as_ptr(),
             script.len() as i64,
             bytes.as_mut_ptr(),
@@ -122,7 +130,17 @@ pub fn parse_shell_script_into_commands(script: &str) -> Option<Vec<Vec<String>>
             capacity as i64,
         )
     };
-    let commands = usize::try_from(commands).ok()?;
+    decode_commands(commands, &bytes, &word_ends, &command_words)
+}
+
+/// Decodes `count` commands from a Ziran scanner's output tables.
+fn decode_commands(
+    count: i64,
+    bytes: &[u8],
+    word_ends: &[i64],
+    command_words: &[i64],
+) -> Option<Vec<Vec<String>>> {
+    let commands = usize::try_from(count).ok()?;
     let mut word = 0;
     let mut start = 0;
     let mut parsed = Vec::with_capacity(commands);
@@ -150,6 +168,16 @@ unsafe extern "C" {
         word_capacity: i64,
         command_words: *mut i64,
         command_capacity: i64,
+    ) -> i64;
+    fn xcoder_literal_commands(
+        script: *const u8,
+        script_length: i64,
+        bytes: *mut u8,
+        capacity: i64,
+        word_ends: *mut i64,
+        command_words: *mut i64,
+        stack_bytes: *mut u8,
+        stack_word_ends: *mut i64,
     ) -> i64;
 }
 
@@ -184,6 +212,38 @@ pub fn parse_shell_lc_plain_commands(command: &[String]) -> Option<Vec<Vec<Strin
 /// for identifying dangerous literal commands, but must not be used to prove
 /// that a command is safe.
 pub(crate) fn parse_shell_lc_literal_commands(command: &[String]) -> Option<Vec<Vec<String>>> {
+    let (_, script) = extract_bash_command(command)?;
+    // The Ziran scanner (`native/shell.zi`) finds every command tree-sitter
+    // finds, however nested, and emits them in post-order; reversed, that is
+    // the order of the tree-sitter walk below, which the tests keep as oracle.
+    let capacity = script.len() + 1;
+    let mut bytes = vec![0u8; capacity];
+    let mut word_ends = vec![0i64; capacity];
+    let mut command_words = vec![0i64; capacity];
+    let mut stack_bytes = vec![0u8; capacity];
+    let mut stack_word_ends = vec![0i64; capacity];
+    // SAFETY: each buffer outlives the call and has `capacity` elements.
+    let count = unsafe {
+        xcoder_literal_commands(
+            script.as_ptr(),
+            script.len() as i64,
+            bytes.as_mut_ptr(),
+            capacity as i64,
+            word_ends.as_mut_ptr(),
+            command_words.as_mut_ptr(),
+            stack_bytes.as_mut_ptr(),
+            stack_word_ends.as_mut_ptr(),
+        )
+    };
+    let mut commands = decode_commands(count, &bytes, &word_ends, &command_words)?;
+    commands.reverse();
+    Some(commands)
+}
+
+/// The tree-sitter extraction that dangerous-command detection used before
+/// Ziran; the parity tests compare against it.
+#[cfg(test)]
+pub(crate) fn tree_sitter_literal_commands(command: &[String]) -> Option<Vec<Vec<String>>> {
     let (_, script) = extract_bash_command(command)?;
     let tree = try_parse_shell(script)?;
     let root = tree.root_node();
@@ -267,6 +327,7 @@ fn parse_plain_command_from_node(cmd: tree_sitter::Node, src: &str) -> Option<Ve
     Some(words)
 }
 
+#[cfg(test)]
 fn parse_literal_command_from_node(cmd: Node<'_>, src: &str) -> Option<Vec<String>> {
     if cmd.kind() != "command" {
         return None;
@@ -288,6 +349,7 @@ fn parse_literal_command_from_node(cmd: Node<'_>, src: &str) -> Option<Vec<Strin
     found_command_name.then_some(words)
 }
 
+#[cfg(test)]
 fn parse_literal_shell_word(node: Node<'_>, src: &str) -> Option<String> {
     match node.kind() {
         "word" | "number" if is_literal_word_or_number(node, src) => {
@@ -554,6 +616,174 @@ mod tests {
         println!("accepted {accepted}, rejected only by Ziran {stricter}");
     }
 
+    fn bash(script: &str) -> Vec<String> {
+        vec!["bash".to_string(), "-lc".to_string(), script.to_string()]
+    }
+
+    /// Dangerous-command detection must stay at least as strict: when the
+    /// commands tree-sitter extracts make a script dangerous, Ziran's must
+    /// too. Returns (identical command lists, Ziran-only dangerous) or a problem.
+    fn literal_parity(script: &str) -> Result<(bool, bool), String> {
+        use crate::command_safety::is_dangerous_command::DangerousCommandPlatform;
+        use crate::command_safety::is_dangerous_command::dangerous_command_match_with_depth;
+        let command = bash(script);
+        let dangerous = |commands: &Option<Vec<Vec<String>>>| {
+            commands.as_ref().is_some_and(|commands| {
+                commands.iter().any(|command| {
+                    dangerous_command_match_with_depth(command, 1, DangerousCommandPlatform::host())
+                        .is_some()
+                })
+            })
+        };
+        let expected = tree_sitter_literal_commands(&command);
+        let found = parse_shell_lc_literal_commands(&command);
+        // A script Bash itself refuses to parse never runs, so nothing in it is
+        // dangerous whatever tree-sitter recovered from it. Neither does text
+        // Bash reads as the body of a heredoc that runs to the end of the
+        // script (tree-sitter ends heredocs at lines like `EOF; }`).
+        let bash_accepts = || {
+            std::process::Command::new("bash")
+                .args(["-n", "-c", script])
+                .output()
+                .is_ok_and(|output| {
+                    output.status.success()
+                        && !String::from_utf8_lossy(&output.stderr).contains("here-document")
+                })
+        };
+        if dangerous(&expected) && !dangerous(&found) && bash_accepts() {
+            return Err(format!(
+                "Ziran misses the dangerous command in {script:?}: found {found:?}, tree-sitter {expected:?}"
+            ));
+        }
+        Ok((
+            found == expected,
+            dangerous(&found) && !dangerous(&expected),
+        ))
+    }
+
+    const COMPLEX_PIECES: &[&str] = &[
+        "rm -rf /tmp/x",
+        "git reset --hard",
+        "ls -l",
+        "echo hi",
+        "FOO=1 rm -f a",
+        "sudo rm -r b",
+        "$(rm -rf c)",
+        "`rm d`",
+        "\"$(git clean -fdx)\"",
+        "<(ls)",
+        "x=$(rm e)",
+        "cat > out",
+        // Heredoc delimiters end their line, as in real scripts; text glued
+        // after a delimiter makes tree-sitter end the body where Bash does not.
+        "cat <<'EOF'\nrm -rf not_a_command\nEOF\n",
+        "cat <<EOF\n$(rm -rf heredoc)\nEOF\n",
+        "2>&1",
+        "&>/dev/null",
+        "# rm -rf comment",
+        "'rm -rf quoted'",
+        "find . -delete",
+        "xargs rm",
+        "a=b",
+        "${x:-$(rm f)}",
+        "$((1 + 2))",
+        "\"$HOME\"",
+        "-g\"*.py\"",
+        "!",
+        "time ls",
+        "{ rm g; }",
+        "( rm h )",
+    ];
+    const COMPLEX_JOINS: &[&str] = &[
+        "; ", " && ", " || ", " | ", "\n", " & ", " ", "\n\n", " |& ",
+    ];
+
+    fn random_complex_script(rng: &mut Lcg) -> String {
+        let mut script = String::new();
+        for _ in 0..1 + rng.below(5) {
+            let piece = COMPLEX_PIECES[rng.below(COMPLEX_PIECES.len())];
+            let wrapped = match rng.below(9) {
+                0 => format!("if {piece}; then {piece}; fi"),
+                1 => format!("for i in a b; do {piece}; done"),
+                2 => format!("while {piece}; do :; done"),
+                3 => format!("case $x in a) {piece};; b|c) {piece};; esac"),
+                4 => format!("f() {{ {piece}; }}"),
+                5 => format!("function g {{ {piece}; }}"),
+                6 => format!("( {piece} )"),
+                7 => format!("echo $({piece})"),
+                _ => piece.to_string(),
+            };
+            script.push_str(&wrapped);
+            script.push_str(COMPLEX_JOINS[rng.below(COMPLEX_JOINS.len())]);
+        }
+        script
+    }
+
+    #[test]
+    fn ziran_finds_every_literal_command_tree_sitter_finds() {
+        let mut rng = Lcg(0xd4_9e70_05);
+        let mut problems = std::collections::BTreeSet::new();
+        let (mut compared, mut equal, mut extra) = (0, 0, 0);
+        let mut extra_examples = Vec::new();
+        let mut scripts = (0..20_000)
+            .map(|_| random_complex_script(&mut rng))
+            .collect::<Vec<_>>();
+        // The plain-command generator adds simple and adversarial word forms.
+        scripts.extend((0..20_000).map(|_| random_script(&mut rng)));
+        for script in scripts {
+            match literal_parity(&script) {
+                Ok((same, flagged_only_by_ziran)) => {
+                    compared += 1;
+                    equal += usize::from(same);
+                    if flagged_only_by_ziran {
+                        extra += 1;
+                        if extra_examples.len() < 5 {
+                            extra_examples.push(script.clone());
+                        }
+                    }
+                }
+                Err(problem) => {
+                    problems.insert(problem);
+                }
+            }
+        }
+        let shown = problems.iter().take(12).cloned().collect::<Vec<_>>();
+        assert!(
+            problems.is_empty(),
+            "{} parity problems:\n{}",
+            problems.len(),
+            shown.join("\n")
+        );
+        println!(
+            "compared {compared}, identical command lists {equal}, dangerous only for Ziran {extra}: {extra_examples:?}"
+        );
+    }
+
+    /// `XCODER_SHELL_DEBUG='script' cargo test -p codex-shell-command --lib --
+    /// --ignored --nocapture shell_debug`: both extractions of one script.
+    #[test]
+    #[ignore = "debugging aid"]
+    fn shell_debug() {
+        let script = std::env::var("XCODER_SHELL_DEBUG").expect("XCODER_SHELL_DEBUG");
+        let command = bash(&script);
+        println!(
+            "ziran plain {:?}",
+            parse_shell_script_into_commands(&script)
+        );
+        println!(
+            "ziran literal {:?}",
+            parse_shell_lc_literal_commands(&command)
+        );
+        println!(
+            "tree-sitter literal {:?}",
+            tree_sitter_literal_commands(&command)
+        );
+        println!(
+            "tree {:?}",
+            try_parse_shell(&script).map(|tree| tree.root_node().to_sexp())
+        );
+    }
+
     /// `XCODER_SHELL_CORPUS=commands.jsonl cargo test -p codex-shell-command
     /// --lib -- --ignored --nocapture shell_corpus`: one JSON string per line.
     #[test]
@@ -562,6 +792,8 @@ mod tests {
         let path = std::env::var("XCODER_SHELL_CORPUS").expect("XCODER_SHELL_CORPUS");
         let corpus = std::fs::read_to_string(path).expect("read corpus");
         let (mut total, mut accepted, mut stricter) = (0, 0, 0);
+        let mut literal_problems = Vec::new();
+        let mut flagged_only_by_ziran = 0;
         for line in corpus.lines() {
             let Ok(script) = serde_json::from_str::<String>(line) else {
                 continue;
@@ -573,8 +805,29 @@ mod tests {
                 println!("rejected only by Ziran: {script:?}");
             }
             accepted += usize::from(ziran.is_some());
+            match literal_parity(&script) {
+                Err(problem) => literal_problems.push(problem),
+                Ok((_, true)) => {
+                    flagged_only_by_ziran += 1;
+                    let command = bash(&script);
+                    println!(
+                        "dangerous only for Ziran: {:?}\n  Ziran {:?}\n  tree-sitter {:?}",
+                        script.chars().take(160).collect::<String>(),
+                        parse_shell_lc_literal_commands(&command),
+                        tree_sitter_literal_commands(&command)
+                    );
+                }
+                Ok(_) => {}
+            }
         }
-        println!("{total} scripts, {accepted} plain, {stricter} rejected only by Ziran");
+        println!(
+            "{total} scripts, {accepted} plain, {stricter} rejected only by Ziran, {flagged_only_by_ziran} dangerous only for Ziran"
+        );
+        assert!(
+            literal_problems.is_empty(),
+            "{}",
+            literal_problems.join("\n")
+        );
     }
 
     #[test]

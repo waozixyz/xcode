@@ -237,3 +237,874 @@ xcoder_parse_plain_commands :: (script: *u8, script_length: s64, bytes: *u8, byt
     }
     return sp.command_count
 }
+
+// ---------------------------------------------------------------------------
+// Literal commands for dangerous-command detection. Unlike the plain check
+// above, this accepts any shell syntax and must find every command, however
+// nested: in lists, pipelines, subshells, groups, if/while/until/for/case
+// bodies, function bodies, $(...), backticks, <(...) and >(...), double quotes
+// and unquoted heredoc bodies. Each command yields its literal words (after
+// leading assignments, without redirection targets); a command whose name is
+// not literal yields nothing. Commands are emitted in post-order, nested
+// commands before the command that contains them. Scripts whose compound
+// commands do not fit together (`if then rm`) fail, as the shell would refuse
+// to run them.
+//
+// Words are collected on a stack: a command's words stay contiguous while
+// commands nested in its arguments push and pop above them, and are copied to
+// the output only when the command ends.
+
+Extract :: struct {
+    text: string
+    length: s64
+    at: s64
+    // Word stack.
+    stack_bytes: *u8
+    stack_byte_count: s64
+    stack_word_ends: *s64
+    stack_word_count: s64
+    capacity: s64
+    // Output.
+    bytes: *u8
+    byte_count: s64
+    word_ends: *s64
+    word_count: s64
+    command_words: *s64
+    command_count: s64
+    failed: s64
+    depth: s64
+    // Compound-command structure: an expected closer per open keyword, and
+    // how many commands each has seen since its last keyword.
+    keywords: *s64
+    keyword_commands: *s64
+    keyword_count: s64
+    // Heredocs started on the current line, read when the line ends.
+    heredoc_starts: *s64
+    heredoc_lengths: *s64
+    heredoc_flags: *s64
+    heredoc_count: s64
+    delimiters: *u8
+    delimiter_count: s64
+}
+
+MaximumNesting :: 200
+KeywordCapacity :: 256
+HeredocCapacity :: 16
+DelimiterCapacity :: 1024
+
+// Keyword states on the structure stack.
+AfterIf :: 1        // condition commands, then `then`
+AfterThen :: 2      // body, then elif / else / fi
+AfterElse :: 3      // body, then fi
+AfterLoop :: 4      // while/until condition, then `do`
+AfterHeader :: 5    // for/select header done, `do` next
+AfterDo :: 6        // body, then done
+InBrace :: 7        // body, then }
+// Keyword codes reported by a command position.
+NoKeyword :: 0
+IfWord :: 1
+ThenWord :: 2
+ElifWord :: 3
+ElseWord :: 4
+FiWord :: 5
+WhileWord :: 6
+DoWord :: 7
+DoneWord :: 8
+OpenBrace :: 9
+CloseBrace :: 10
+PrefixWord :: 11    // ! time coproc: prefixes of the next command
+
+XPeek :: (x: *Extract, ahead: s64) -> u8 {
+    if x.at + ahead >= x.length { return cast(u8)0 }
+    return x.text[x.at + ahead]
+}
+
+XFail :: (x: *Extract) -> bool {
+    if x.failed == 0 { x.failed = NotPlain }
+    return false
+}
+
+IsOperatorByte :: (byte: u8) -> bool {
+    return byte == cast(u8)124 || byte == cast(u8)38 || byte == cast(u8)59 || byte == cast(u8)40 ||
+           byte == cast(u8)41 || byte == cast(u8)60 || byte == cast(u8)62
+}
+
+XWordEnd :: (byte: u8) -> bool {
+    return byte == cast(u8)0 || IsBlank(byte) || byte == cast(u8)10 || IsOperatorByte(byte)
+}
+
+StackPut :: (x: *Extract, byte: u8) -> bool {
+    if x.stack_byte_count >= x.capacity {
+        x.failed = Invalid
+        return false
+    }
+    x.stack_bytes[x.stack_byte_count] = byte
+    x.stack_byte_count += 1
+    return true
+}
+
+// A command whose words start at stack word `first` ended: copy them to the
+// output as one command and pop them.
+Emit :: (x: *Extract, first: s64, byte_start: s64) -> bool {
+    count := x.stack_word_count - first
+    if count > 0 {
+        word := first
+        from := byte_start
+        while word < x.stack_word_count {
+            end := x.stack_word_ends[word]
+            while from < end {
+                if x.byte_count >= x.capacity {
+                    x.failed = Invalid
+                    return false
+                }
+                x.bytes[x.byte_count] = x.stack_bytes[from]
+                x.byte_count += 1
+                from += 1
+            }
+            if x.word_count >= x.capacity {
+                x.failed = Invalid
+                return false
+            }
+            x.word_ends[x.word_count] = x.byte_count
+            x.word_count += 1
+            word += 1
+        }
+        if x.command_count >= x.capacity {
+            x.failed = Invalid
+            return false
+        }
+        x.command_words[x.command_count] = count
+        x.command_count += 1
+    }
+    x.stack_word_count = first
+    x.stack_byte_count = byte_start
+    return true
+}
+
+// The structure stack counts one more complete command at the current level.
+CountCommand :: (x: *Extract) {
+    if x.keyword_count > 0 { x.keyword_commands[x.keyword_count - 1] += 1 }
+}
+
+PushKeyword :: (x: *Extract, state: s64) -> bool {
+    if x.keyword_count >= KeywordCapacity { return XFail(x) }
+    x.keywords[x.keyword_count] = state
+    x.keyword_commands[x.keyword_count] = 0
+    x.keyword_count += 1
+    return true
+}
+
+// Applies a keyword at command position to the structure stack; `base` is
+// where the enclosing list's own keywords start.
+ApplyKeyword :: (x: *Extract, keyword: s64, base: s64) -> bool {
+    top: s64 = 0
+    seen: s64 = 0
+    if x.keyword_count > base {
+        top = x.keywords[x.keyword_count - 1]
+        seen = x.keyword_commands[x.keyword_count - 1]
+    }
+    if keyword == IfWord { return PushKeyword(x, AfterIf) }
+    if keyword == WhileWord { return PushKeyword(x, AfterLoop) }
+    if keyword == OpenBrace { return PushKeyword(x, InBrace) }
+    if keyword == ThenWord {
+        if top != AfterIf || seen == 0 { return XFail(x) }
+        x.keywords[x.keyword_count - 1] = AfterThen
+        x.keyword_commands[x.keyword_count - 1] = 0
+        return true
+    }
+    if keyword == ElifWord || keyword == ElseWord {
+        if top != AfterThen || seen == 0 { return XFail(x) }
+        x.keywords[x.keyword_count - 1] = ifx keyword == ElifWord then AfterIf else AfterElse
+        x.keyword_commands[x.keyword_count - 1] = 0
+        return true
+    }
+    if keyword == DoWord {
+        if !((top == AfterLoop && seen > 0) || top == AfterHeader) { return XFail(x) }
+        x.keywords[x.keyword_count - 1] = AfterDo
+        x.keyword_commands[x.keyword_count - 1] = 0
+        return true
+    }
+    // Closers: the compound command they end counts as a command outside.
+    closes := (keyword == FiWord && (top == AfterThen || top == AfterElse)) ||
+              (keyword == DoneWord && top == AfterDo) || (keyword == CloseBrace && top == InBrace)
+    if !closes || seen == 0 { return XFail(x) }
+    x.keyword_count -= 1
+    CountCommand(x)
+    return true
+}
+
+SkipSingle :: (x: *Extract) -> bool {
+    x.at += 1
+    while XPeek(x, 0) != cast(u8)39 {
+        if x.at >= x.length { return XFail(x) }
+        x.at += 1
+    }
+    x.at += 1
+    return true
+}
+
+SkipAnsiC :: (x: *Extract) -> bool {
+    x.at += 2
+    while XPeek(x, 0) != cast(u8)39 {
+        if x.at >= x.length { return XFail(x) }
+        if XPeek(x, 0) == cast(u8)92 { x.at += 1 }
+        x.at += 1
+    }
+    x.at += 1
+    return true
+}
+
+StartsExpansion :: (byte: u8) -> bool {
+    return byte == cast(u8)95 || (byte >= cast(u8)48 && byte <= cast(u8)57) || (byte >= cast(u8)65 && byte <= cast(u8)90) ||
+           (byte >= cast(u8)97 && byte <= cast(u8)122) || byte == cast(u8)123 || byte == cast(u8)40 ||
+           byte == cast(u8)64 || byte == cast(u8)42 || byte == cast(u8)35 || byte == cast(u8)63 || byte == cast(u8)36 ||
+           byte == cast(u8)33 || byte == cast(u8)45
+}
+
+// A nested script: the list up to `)` with its own structure stack level.
+XNested :: (x: *Extract) -> bool {
+    if !XList(x, cast(u8)41) { return false }
+    if XPeek(x, 0) != cast(u8)41 { return XFail(x) }
+    x.at += 1
+    return true
+}
+
+// The cursor is on `$`: handles $(...), $((...)), ${...}, $'...' and simple
+// expansions, extracting commands from substitutions.
+XDollar :: (x: *Extract) -> bool {
+    next := XPeek(x, 1)
+    if next == cast(u8)40 {
+        if XPeek(x, 2) == cast(u8)40 {
+            x.at += 3
+            return XBalanced(x, cast(u8)40, cast(u8)41, 2)
+        }
+        x.at += 2
+        return XNested(x)
+    }
+    if next == cast(u8)123 {
+        x.at += 2
+        return XBalanced(x, cast(u8)123, cast(u8)125, 1)
+    }
+    if next == cast(u8)39 { return SkipAnsiC(x) }
+    x.at += 1
+    return true
+}
+
+// Skips to the closer that balances `open`, starting `level` deep, while
+// extracting commands from substitutions, backticks and quotes inside.
+XBalanced :: (x: *Extract, open: u8, close: u8, level: s64) -> bool {
+    remaining := level
+    while remaining > 0 {
+        if x.at >= x.length { return XFail(x) }
+        byte := XPeek(x, 0)
+        if byte == cast(u8)92 {
+            x.at += 2
+        } else if byte == cast(u8)39 && open == cast(u8)123 {
+            if !SkipSingle(x) { return false }
+        } else if byte == cast(u8)34 {
+            if !XDouble(x) { return false }
+        } else if byte == cast(u8)36 {
+            if !XDollar(x) { return false }
+        } else if byte == cast(u8)96 {
+            if !XBacktick(x) { return false }
+        } else {
+            if byte == open { remaining += 1 }
+            if byte == close { remaining -= 1 }
+            x.at += 1
+        }
+    }
+    return true
+}
+
+XDouble :: (x: *Extract) -> bool {
+    x.at += 1
+    while XPeek(x, 0) != cast(u8)34 {
+        if x.at >= x.length { return XFail(x) }
+        byte := XPeek(x, 0)
+        if byte == cast(u8)92 {
+            x.at += 2
+        } else if byte == cast(u8)36 {
+            if !XDollar(x) { return false }
+        } else if byte == cast(u8)96 {
+            if !XBacktick(x) { return false }
+        } else {
+            x.at += 1
+        }
+    }
+    x.at += 1
+    return true
+}
+
+// `...` at the cursor: its contents are a script of their own.
+XBacktick :: (x: *Extract) -> bool {
+    x.at += 1
+    start := x.at
+    while XPeek(x, 0) != cast(u8)96 {
+        if x.at >= x.length { return XFail(x) }
+        if XPeek(x, 0) == cast(u8)92 { x.at += 1 }
+        x.at += 1
+    }
+    end := x.at
+    x.at += 1
+    if x.depth >= MaximumNesting { return XFail(x) }
+    inner: Extract = x.*
+    inner.text = x.text[start:end]
+    inner.length = end - start
+    inner.at = 0
+    inner.depth = x.depth + 1
+    inner.heredoc_count = 0
+    inner.delimiter_count = 0
+    ok := XList(*inner, cast(u8)0)
+    x.stack_byte_count = inner.stack_byte_count
+    x.stack_word_count = inner.stack_word_count
+    x.byte_count = inner.byte_count
+    x.word_count = inner.word_count
+    x.command_count = inner.command_count
+    if !ok {
+        x.failed = inner.failed
+        return false
+    }
+    return true
+}
+
+// One word at the cursor. Pushes it on the word stack when it is literal (as
+// the plain check defines it) and `keep`. Returns -1 on failure, 1 when it
+// was pushed, 0 otherwise.
+XWord :: (x: *Extract, keep: bool) -> s64 {
+    // Decide literalness first, so commands nested in a non-literal word
+    // push above the stack, not into the middle of this word.
+    probe := x.at
+    literal := true
+    first := true
+    while probe < x.length && !XWordEnd(x.text[probe]) && literal {
+        byte := x.text[probe]
+        if byte == cast(u8)39 {
+            probe += 1
+            while probe < x.length && x.text[probe] != cast(u8)39 { probe += 1 }
+            if probe >= x.length { literal = false }
+            probe += 1
+            first = true
+        } else if byte == cast(u8)34 {
+            probe += 1
+            while literal && probe < x.length && x.text[probe] != cast(u8)34 {
+                inner := x.text[probe]
+                if inner == cast(u8)96 { literal = false }
+                // `$` is literal unless it can start an expansion.
+                if inner == cast(u8)36 && probe + 1 < x.length && StartsExpansion(x.text[probe + 1]) { literal = false }
+                if inner == cast(u8)92 {
+                    after := ifx probe + 1 < x.length then x.text[probe + 1] else cast(u8)0
+                    if after == cast(u8)36 || after == cast(u8)96 || after == cast(u8)34 || after == cast(u8)92 ||
+                       after == cast(u8)10 || after == cast(u8)0 { literal = false }
+                }
+                probe += 1
+            }
+            if probe >= x.length { literal = false }
+            probe += 1
+            first = true
+        } else if IsUnsafeBare(byte) || (first && byte == cast(u8)61) {
+            literal = false
+        } else {
+            probe += 1
+            first = false
+        }
+    }
+    // tree-sitter does not read a lone `-` as a word.
+    if literal && probe == x.at + 1 && x.text[x.at] == cast(u8)45 { literal = false }
+    if literal {
+        if keep {
+            while !XWordEnd(XPeek(x, 0)) {
+                byte := XPeek(x, 0)
+                if byte == cast(u8)39 || byte == cast(u8)34 {
+                    x.at += 1
+                    while XPeek(x, 0) != byte {
+                        if !StackPut(x, XPeek(x, 0)) { return -1 }
+                        x.at += 1
+                    }
+                    x.at += 1
+                } else {
+                    if !StackPut(x, byte) { return -1 }
+                    x.at += 1
+                }
+            }
+            if x.stack_word_count >= x.capacity {
+                x.failed = Invalid
+                return -1
+            }
+            x.stack_word_ends[x.stack_word_count] = x.stack_byte_count
+            x.stack_word_count += 1
+            return 1
+        }
+        x.at = probe
+        return 0
+    }
+    // Not literal: walk it for the commands hidden in substitutions.
+    while !XWordEnd(XPeek(x, 0)) {
+        byte := XPeek(x, 0)
+        if byte == cast(u8)39 {
+            if !SkipSingle(x) { return -1 }
+        } else if byte == cast(u8)34 {
+            if !XDouble(x) { return -1 }
+        } else if byte == cast(u8)36 {
+            if !XDollar(x) { return -1 }
+        } else if byte == cast(u8)96 {
+            if !XBacktick(x) { return -1 }
+        } else if byte == cast(u8)92 {
+            x.at += 2
+            if x.at > x.length { x.at = x.length }
+        } else {
+            x.at += 1
+        }
+    }
+    return 0
+}
+
+XSkipBlanks :: (x: *Extract) {
+    scanning := true
+    while scanning {
+        byte := XPeek(x, 0)
+        if IsBlank(byte) || byte == cast(u8)13 {
+            x.at += 1
+        } else if byte == cast(u8)92 && XPeek(x, 1) == cast(u8)10 {
+            x.at += 2
+        } else {
+            scanning = false
+        }
+    }
+}
+
+XDelimiterByte :: (x: *Extract, byte: u8) -> bool {
+    if x.delimiter_count >= DelimiterCapacity { return XFail(x) }
+    x.delimiters[x.delimiter_count] = byte
+    x.delimiter_count += 1
+    return true
+}
+
+// Reads the heredoc bodies started on the line that just ended; unquoted ones
+// can run substitutions.
+XHeredocs :: (x: *Extract) -> bool {
+    index: s64 = 0
+    while index < x.heredoc_count {
+        word_start := x.heredoc_starts[index]
+        word_length := x.heredoc_lengths[index]
+        quoted := (x.heredoc_flags[index] & 1) != 0
+        strip_tabs := (x.heredoc_flags[index] & 2) != 0
+        found := false
+        while !found && x.at < x.length {
+            line := x.at
+            if strip_tabs { while XPeek(x, 0) == cast(u8)9 { x.at += 1 } }
+            body_line := x.at
+            while x.at < x.length && XPeek(x, 0) != cast(u8)10 { x.at += 1 }
+            line_end := x.at
+            if line_end - body_line == word_length {
+                same := true
+                offset: s64 = 0
+                while same && offset < word_length {
+                    same = x.text[body_line + offset] == x.delimiters[word_start + offset]
+                    offset += 1
+                }
+                found = same
+            }
+            if !found && !quoted {
+                x.at = line
+                while x.at < line_end {
+                    byte := XPeek(x, 0)
+                    if byte == cast(u8)92 {
+                        x.at += 2
+                    } else if byte == cast(u8)36 {
+                        if !XDollar(x) { return false }
+                    } else if byte == cast(u8)96 {
+                        if !XBacktick(x) { return false }
+                    } else {
+                        x.at += 1
+                    }
+                }
+                if x.at < line_end { x.at = line_end }
+            }
+            if XPeek(x, 0) == cast(u8)10 { x.at += 1 }
+        }
+        index += 1
+    }
+    x.heredoc_count = 0
+    x.delimiter_count = 0
+    return true
+}
+
+// A redirection at the cursor (after its optional fd number). The target word
+// never becomes an argument.
+XRedirect :: (x: *Extract) -> bool {
+    byte := XPeek(x, 0)
+    if byte == cast(u8)60 && XPeek(x, 1) == cast(u8)60 && XPeek(x, 2) != cast(u8)60 {
+        x.at += 2
+        flags: s64 = 0
+        if XPeek(x, 0) == cast(u8)45 {
+            flags = 2
+            x.at += 1
+        }
+        XSkipBlanks(x)
+        word_start := x.at
+        quoted := false
+        delimiter_start := x.delimiter_count
+        while !XWordEnd(XPeek(x, 0)) {
+            c := XPeek(x, 0)
+            if c == cast(u8)39 || c == cast(u8)34 || c == cast(u8)92 { quoted = true }
+            if c == cast(u8)39 || c == cast(u8)34 {
+                x.at += 1
+                while x.at < x.length && XPeek(x, 0) != c {
+                    if !XDelimiterByte(x, XPeek(x, 0)) { return false }
+                    x.at += 1
+                }
+                x.at += 1
+            } else {
+                if c == cast(u8)92 { x.at += 1 }
+                if !XDelimiterByte(x, XPeek(x, 0)) { return false }
+                x.at += 1
+            }
+        }
+        if x.at == word_start { return XFail(x) }
+        if x.heredoc_count >= HeredocCapacity { return XFail(x) }
+        x.heredoc_starts[x.heredoc_count] = delimiter_start
+        x.heredoc_lengths[x.heredoc_count] = x.delimiter_count - delimiter_start
+        x.heredoc_flags[x.heredoc_count] = flags | (ifx quoted then 1 else 0)
+        x.heredoc_count += 1
+        return true
+    }
+    if (byte == cast(u8)60 || byte == cast(u8)62) && XPeek(x, 1) == cast(u8)40 {
+        x.at += 2
+        return XNested(x)
+    }
+    x.at += 1
+    while XPeek(x, 0) == cast(u8)60 || XPeek(x, 0) == cast(u8)62 || XPeek(x, 0) == cast(u8)38 ||
+          XPeek(x, 0) == cast(u8)124 { x.at += 1 }
+    XSkipBlanks(x)
+    if XWordEnd(XPeek(x, 0)) { return XFail(x) }
+    return XWord(x, false) >= 0
+}
+
+IsName :: (x: *Extract, start: s64, end: s64, word: string) -> bool {
+    if end - start != word.count { return false }
+    offset: s64 = 0
+    while offset < word.count {
+        if x.text[start + offset] != word[offset] { return false }
+        offset += 1
+    }
+    return true
+}
+
+KeywordAt :: (x: *Extract, a: s64, b: s64) -> s64 {
+    if IsName(x, a, b, "if") { return IfWord }
+    if IsName(x, a, b, "then") { return ThenWord }
+    if IsName(x, a, b, "elif") { return ElifWord }
+    if IsName(x, a, b, "else") { return ElseWord }
+    if IsName(x, a, b, "fi") { return FiWord }
+    if IsName(x, a, b, "while") || IsName(x, a, b, "until") { return WhileWord }
+    if IsName(x, a, b, "do") { return DoWord }
+    if IsName(x, a, b, "done") { return DoneWord }
+    if IsName(x, a, b, "{") { return OpenBrace }
+    if IsName(x, a, b, "}") { return CloseBrace }
+    if IsName(x, a, b, "!") || IsName(x, a, b, "time") || IsName(x, a, b, "coproc") { return PrefixWord }
+    return NoKeyword
+}
+
+// The raw extent of the bare text at the cursor, without consuming it.
+BareEnd :: (x: *Extract) -> s64 {
+    end := x.at
+    while end < x.length && !XWordEnd(x.text[end]) && x.text[end] != cast(u8)39 && x.text[end] != cast(u8)34 &&
+          x.text[end] != cast(u8)36 && x.text[end] != cast(u8)96 && x.text[end] != cast(u8)92 { end += 1 }
+    return end
+}
+
+// NAME= or NAME+= (or NAME[...]=) at the cursor.
+AssignmentAhead :: (x: *Extract) -> bool {
+    at := x.at
+    first := x.text[at]
+    if !(first == cast(u8)95 || (first >= cast(u8)65 && first <= cast(u8)90) || (first >= cast(u8)97 && first <= cast(u8)122)) {
+        return false
+    }
+    while at < x.length {
+        c := x.text[at]
+        if c == cast(u8)95 || (c >= cast(u8)48 && c <= cast(u8)57) || (c >= cast(u8)65 && c <= cast(u8)90) ||
+           (c >= cast(u8)97 && c <= cast(u8)122) {
+            at += 1
+        } else if c == cast(u8)91 {
+            while at < x.length && x.text[at] != cast(u8)93 { at += 1 }
+            at += 1
+        } else {
+            return c == cast(u8)61 || (c == cast(u8)43 && at + 1 < x.length && x.text[at + 1] == cast(u8)61)
+        }
+    }
+    return false
+}
+
+// One command at the cursor: a simple command, a subshell, or a keyword
+// (reported through `keyword`).
+XCommand :: (x: *Extract, keyword: *s64) -> bool {
+    keyword.* = NoKeyword
+    first_word := x.stack_word_count
+    byte_start := x.stack_byte_count
+    named := false
+    dropped := false
+    any := false
+    while true {
+        XSkipBlanks(x)
+        byte := XPeek(x, 0)
+        if byte == cast(u8)0 || byte == cast(u8)10 || byte == cast(u8)59 ||
+           (byte == cast(u8)38 && XPeek(x, 1) != cast(u8)62) || byte == cast(u8)124 || byte == cast(u8)41 {
+            if byte == cast(u8)0 && x.at < x.length { return XFail(x) }
+            break
+        }
+        if byte == cast(u8)35 {
+            while x.at < x.length && XPeek(x, 0) != cast(u8)10 { x.at += 1 }
+            break
+        }
+        digits := x.at
+        while digits < x.length && x.text[digits] >= cast(u8)48 && x.text[digits] <= cast(u8)57 { digits += 1 }
+        if byte == cast(u8)40 {
+            // A subshell or arithmetic command; redirections may follow it.
+            if named { return XFail(x) }
+            if XPeek(x, 1) == cast(u8)40 {
+                x.at += 2
+                if !XBalanced(x, cast(u8)40, cast(u8)41, 2) { return false }
+            } else {
+                x.at += 1
+                if !XNested(x) { return false }
+            }
+            any = true
+            named = true
+            dropped = true
+        } else if digits < x.length && (x.text[digits] == cast(u8)60 || x.text[digits] == cast(u8)62) {
+            x.at = digits
+            if !XRedirect(x) { return false }
+            any = true
+        } else if byte == cast(u8)38 && XPeek(x, 1) == cast(u8)62 {
+            if !XRedirect(x) { return false }
+            any = true
+        } else if !named && AssignmentAhead(x) {
+            if XWord(x, false) < 0 { return false }
+            any = true
+        } else if !named {
+            name_end := BareEnd(x)
+            found := ifx XWordEnd(XPeek(x, name_end - x.at)) then KeywordAt(x, x.at, name_end) else NoKeyword
+            if found != NoKeyword && !any {
+                x.at = name_end
+                keyword.* = found
+                return true
+            }
+            if !any && (IsName(x, x.at, name_end, "for") || IsName(x, x.at, name_end, "select") ||
+                        IsName(x, x.at, name_end, "case") || IsName(x, x.at, name_end, "function")) &&
+               XWordEnd(XPeek(x, name_end - x.at)) {
+                is_case := IsName(x, x.at, name_end, "case")
+                is_function := IsName(x, x.at, name_end, "function")
+                x.at = name_end
+                return XHeader(x, is_case, is_function, keyword)
+            }
+            literal := XWord(x, true)
+            if literal < 0 { return false }
+            named = true
+            any = true
+            dropped = literal == 0
+            // NAME() starts a function definition; its body follows.
+            XSkipBlanks(x)
+            if XPeek(x, 0) == cast(u8)40 && XPeek(x, 1) == cast(u8)41 {
+                x.stack_word_count = first_word
+                x.stack_byte_count = byte_start
+                x.at += 2
+                return true
+            }
+        } else {
+            if XWord(x, !dropped) < 0 { return false }
+        }
+    }
+    if dropped {
+        x.stack_word_count = first_word
+        x.stack_byte_count = byte_start
+    }
+    if any { CountCommand(x) }
+    return Emit(x, first_word, byte_start)
+}
+
+// After `for`/`select NAME in words`, `case WORD in`, or `function NAME`:
+// skip the header, extracting substitutions; the body parses as commands.
+XHeader :: (x: *Extract, is_case: bool, is_function: bool, keyword: *s64) -> bool {
+    first_word := x.stack_word_count
+    byte_start := x.stack_byte_count
+    while true {
+        XSkipBlanks(x)
+        byte := XPeek(x, 0)
+        if byte == cast(u8)0 || byte == cast(u8)10 || byte == cast(u8)59 { break }
+        if is_function && (byte == cast(u8)40 || byte == cast(u8)123) { break }
+        if byte == cast(u8)40 && XPeek(x, 1) == cast(u8)40 {
+            x.at += 2
+            if !XBalanced(x, cast(u8)40, cast(u8)41, 2) { return false }
+        } else if IsOperatorByte(byte) {
+            break
+        } else {
+            name_end := BareEnd(x)
+            ends_case := is_case && IsName(x, x.at, name_end, "in")
+            if XWord(x, false) < 0 { return false }
+            if ends_case { break }
+        }
+    }
+    x.stack_word_count = first_word
+    x.stack_byte_count = byte_start
+    if is_case {
+        if !XCase(x) { return false }
+        CountCommand(x)
+        return true
+    }
+    if is_function {
+        if XPeek(x, 0) == cast(u8)40 && XPeek(x, 1) == cast(u8)41 { x.at += 2 }
+        return true
+    }
+    // for/select: `do` must follow.
+    return PushKeyword(x, AfterHeader)
+}
+
+// The items of a case statement up to `esac`.
+XCase :: (x: *Extract) -> bool {
+    while true {
+        scanning := true
+        while scanning {
+            XSkipBlanks(x)
+            if XPeek(x, 0) == cast(u8)10 {
+                x.at += 1
+                if !XHeredocs(x) { return false }
+            } else if XPeek(x, 0) == cast(u8)35 {
+                while x.at < x.length && XPeek(x, 0) != cast(u8)10 { x.at += 1 }
+            } else {
+                scanning = false
+            }
+        }
+        if x.at >= x.length { return XFail(x) }
+        name_end := BareEnd(x)
+        if IsName(x, x.at, name_end, "esac") && XWordEnd(XPeek(x, name_end - x.at)) {
+            x.at = name_end
+            return true
+        }
+        if XPeek(x, 0) == cast(u8)40 { x.at += 1 }
+        while XPeek(x, 0) != cast(u8)41 {
+            if x.at >= x.length { return XFail(x) }
+            XSkipBlanks(x)
+            if XPeek(x, 0) == cast(u8)124 {
+                x.at += 1
+            } else if XPeek(x, 0) != cast(u8)41 {
+                if XWordEnd(XPeek(x, 0)) { return XFail(x) }
+                if XWord(x, false) < 0 { return false }
+            }
+        }
+        x.at += 1
+        if !XList(x, cast(u8)0) { return false }
+        if XPeek(x, 0) == cast(u8)59 {
+            x.at += 1
+            while XPeek(x, 0) == cast(u8)59 || XPeek(x, 0) == cast(u8)38 { x.at += 1 }
+        }
+    }
+    return true
+}
+
+// A command list up to `close` (0 for the end of the text or a case item, or
+// `)`), checking that its compound commands fit together.
+XList :: (x: *Extract, close: u8) -> bool {
+    if x.depth >= MaximumNesting { return XFail(x) }
+    x.depth += 1
+    base := x.keyword_count
+    // `need` is set after && || | |& (a command must follow, newlines allowed);
+    // `after_command` says a separator ; or & may come next.
+    need := false
+    after_command := false
+    while true {
+        XSkipBlanks(x)
+        byte := XPeek(x, 0)
+        stop := x.at >= x.length || (close != cast(u8)0 && byte == close) || byte == cast(u8)41 ||
+                (byte == cast(u8)59 && (XPeek(x, 1) == cast(u8)59 || XPeek(x, 1) == cast(u8)38))
+        if !stop && close == cast(u8)0 && x.keyword_count == base {
+            name_end := BareEnd(x)
+            stop = IsName(x, x.at, name_end, "esac") && XWordEnd(XPeek(x, name_end - x.at))
+        }
+        if stop {
+            if need { return XFail(x) }
+            if x.at >= x.length && !XHeredocs(x) { return false }
+            if byte == cast(u8)41 && close != cast(u8)41 { return XFail(x) }
+            if x.keyword_count != base { return XFail(x) }
+            x.depth -= 1
+            return true
+        }
+        if byte == cast(u8)10 {
+            x.at += 1
+            if !XHeredocs(x) { return false }
+            if !need { after_command = false }
+        } else if (byte == cast(u8)38 && XPeek(x, 1) == cast(u8)38) || (byte == cast(u8)124 && XPeek(x, 1) == cast(u8)124) ||
+                  (byte == cast(u8)124 && XPeek(x, 1) == cast(u8)38) {
+            if !after_command || need { return XFail(x) }
+            x.at += 2
+            need = true
+            after_command = false
+        } else if byte == cast(u8)124 {
+            if !after_command || need { return XFail(x) }
+            x.at += 1
+            need = true
+            after_command = false
+        } else if byte == cast(u8)59 || (byte == cast(u8)38 && XPeek(x, 1) != cast(u8)62) {
+            if !after_command || need { return XFail(x) }
+            x.at += 1
+            after_command = false
+        } else {
+            before := x.at
+            keyword: s64 = NoKeyword
+            if !XCommand(x, *keyword) { return false }
+            // Whatever came satisfies a pending && || |: a command, or the
+            // start of a compound command. A command, a closing keyword or a
+            // prefix (time, !) may be followed by a separator; an opening or
+            // middle keyword (if then else elif while do {) may not.
+            need = false
+            after_command = keyword == NoKeyword || keyword == FiWord || keyword == DoneWord ||
+                            keyword == CloseBrace || keyword == PrefixWord
+            if keyword != NoKeyword && keyword != PrefixWord {
+                if (keyword == ThenWord || keyword == ElifWord || keyword == ElseWord || keyword == FiWord ||
+                    keyword == DoWord || keyword == DoneWord || keyword == CloseBrace) && x.keyword_count <= base {
+                    return XFail(x)
+                }
+                if !ApplyKeyword(x, keyword, base) { return false }
+            }
+            if x.at == before { return XFail(x) }
+        }
+    }
+    return true
+}
+
+// Returns the number of literal commands (post-order), -1 when the script
+// cannot be parsed, -2 for invalid arguments or buffers too small. The stack
+// buffers need the same capacity as the output ones.
+#program_export
+xcoder_literal_commands :: (script: *u8, script_length: s64, bytes: *u8, capacity: s64,
+                            word_ends: *s64, command_words: *s64,
+                            stack_bytes: *u8, stack_word_ends: *s64) -> s64 {
+    if script_length < 0 || (script_length > 0 && script == null) || bytes == null || word_ends == null ||
+       command_words == null || stack_bytes == null || stack_word_ends == null || capacity <= script_length {
+        return Invalid
+    }
+    starts: [16]s64
+    lengths: [16]s64
+    flags: [16]s64
+    delimiters: [1024]u8
+    keywords: [256]s64
+    keyword_commands: [256]s64
+    x: Extract
+    x.text = B.TextFromBytes(B.BytesFromPointer(script, cast(u64)script_length))
+    x.length = script_length
+    x.capacity = capacity
+    x.bytes = bytes
+    x.word_ends = word_ends
+    x.command_words = command_words
+    x.stack_bytes = stack_bytes
+    x.stack_word_ends = stack_word_ends
+    x.keywords = *keywords[0]
+    x.keyword_commands = *keyword_commands[0]
+    x.heredoc_starts = *starts[0]
+    x.heredoc_lengths = *lengths[0]
+    x.heredoc_flags = *flags[0]
+    x.delimiters = *delimiters[0]
+    if !XList(*x, cast(u8)0) {
+        return ifx x.failed == 0 then NotPlain else x.failed
+    }
+    return x.command_count
+}
