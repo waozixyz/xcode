@@ -98,9 +98,59 @@ pub fn try_parse_word_only_commands_sequence(tree: &Tree, src: &str) -> Option<V
 }
 
 /// Parses a shell script consisting only of plain commands joined by safe operators.
+///
+/// Runs the Ziran recognizer in `native/shell.zi`, which is at least as strict
+/// as the tree-sitter walk in [`try_parse_word_only_commands_sequence`]: when
+/// both accept a script they return the same words, and it never accepts a
+/// script tree-sitter rejects (checked by the parity tests below).
 pub fn parse_shell_script_into_commands(script: &str) -> Option<Vec<Vec<String>>> {
-    let tree = try_parse_shell(script)?;
-    try_parse_word_only_commands_sequence(&tree, script)
+    // Every word byte, word and command comes from at least one script byte.
+    let capacity = script.len() + 1;
+    let mut bytes = vec![0u8; capacity];
+    let mut word_ends = vec![0i64; capacity];
+    let mut command_words = vec![0i64; capacity];
+    // SAFETY: each buffer outlives the call and has the capacity passed for it.
+    let commands = unsafe {
+        xcoder_parse_plain_commands(
+            script.as_ptr(),
+            script.len() as i64,
+            bytes.as_mut_ptr(),
+            capacity as i64,
+            word_ends.as_mut_ptr(),
+            capacity as i64,
+            command_words.as_mut_ptr(),
+            capacity as i64,
+        )
+    };
+    let commands = usize::try_from(commands).ok()?;
+    let mut word = 0;
+    let mut start = 0;
+    let mut parsed = Vec::with_capacity(commands);
+    for &count in &command_words[..commands] {
+        let mut words = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let end = word_ends[word] as usize;
+            // Words are whole UTF-8 runs of the script: quotes and separators are ASCII.
+            words.push(String::from_utf8(bytes[start..end].to_vec()).ok()?);
+            start = end;
+            word += 1;
+        }
+        parsed.push(words);
+    }
+    Some(parsed)
+}
+
+unsafe extern "C" {
+    fn xcoder_parse_plain_commands(
+        script: *const u8,
+        script_length: i64,
+        bytes: *mut u8,
+        byte_capacity: i64,
+        word_ends: *mut i64,
+        word_capacity: i64,
+        command_words: *mut i64,
+        command_capacity: i64,
+    ) -> i64;
 }
 
 pub fn extract_bash_command(command: &[String]) -> Option<(&str, &str)> {
@@ -318,7 +368,213 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     fn parse_seq(src: &str) -> Option<Vec<Vec<String>>> {
-        parse_shell_script_into_commands(src)
+        let parsed = parse_shell_script_into_commands(src);
+        assert_parity(src, &parsed);
+        parsed
+    }
+
+    /// The tree-sitter walk that plain-command parsing used before Ziran.
+    fn tree_sitter_plain(src: &str) -> Option<Vec<Vec<String>>> {
+        let tree = try_parse_shell(src)?;
+        try_parse_word_only_commands_sequence(&tree, src)
+    }
+
+    /// The Ziran recognizer may reject more than tree-sitter, never less, and
+    /// never returns different words. Returns whether only Ziran rejected.
+    fn assert_parity(src: &str, ziran: &Option<Vec<Vec<String>>>) -> bool {
+        if let Some(problem) = parity_problem(src, ziran) {
+            panic!("{problem}");
+        }
+        ziran.is_none() && tree_sitter_plain(src).is_some()
+    }
+
+    fn parity_problem(src: &str, ziran: &Option<Vec<Vec<String>>>) -> Option<String> {
+        let tree = || try_parse_shell(src).map(|tree| tree.root_node().to_sexp());
+        match (ziran, tree_sitter_plain(src)) {
+            (Some(ziran), Some(tree_sitter)) if *ziran != tree_sitter => Some(format!(
+                "different words for {src:?}: Ziran {ziran:?}, tree-sitter {tree_sitter:?}"
+            )),
+            (Some(ziran), None) => Some(format!(
+                "Ziran accepted {src:?} as {ziran:?}; tree-sitter rejects it: {:?}",
+                tree()
+            )),
+            _ => None,
+        }
+    }
+
+    struct Lcg(u64);
+
+    impl Lcg {
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((self.0 >> 33) % bound as u64) as usize
+        }
+    }
+
+    const PIECES: &[&str] = &[
+        "ls",
+        "git",
+        "status",
+        "-l",
+        "--opt=val",
+        "a=b",
+        "x+=1",
+        "10",
+        "-1",
+        "./a.out",
+        "path/to",
+        "'single quoted'",
+        "'it''s'",
+        "\"plain\"",
+        "\"a b\"",
+        "\"$HOME\"",
+        "\"\\n\"",
+        "\"a\\\"b\"",
+        "\"`id`\"",
+        "$HOME",
+        "${x}",
+        "$(id)",
+        "`id`",
+        "*.rs",
+        "?",
+        "[ab]",
+        "{a,b}",
+        "~",
+        "~/x",
+        "\\x",
+        "#comment",
+        "!",
+        "hi!",
+        "=x",
+        "if",
+        "then",
+        "fi",
+        "for",
+        "do",
+        "done",
+        "time",
+        "{",
+        "}",
+        "[[",
+        "]]",
+        "-g\"*.py\"",
+        "a'b'c",
+        "é",
+        "数据",
+        "%",
+        "@",
+        "+",
+        ",",
+        ":",
+        ".",
+        "^",
+        "a^b",
+    ];
+    const JOINS: &[&str] = &[
+        " ", " ", " ", "  ", "\t", " && ", " || ", "; ", ";", " | ", "\n", " & ", " > out",
+        " < in", " 2>&1", " |& ", " ;; ", "(", ")", " &&\n", "\\\n", "\r\n", "",
+    ];
+
+    // Pieces and joins a plain script is made of, drawn twice as often so that
+    // both the accepting and the rejecting paths are exercised.
+    const SAFE_PIECES: &[&str] = &[
+        "ls",
+        "git",
+        "status",
+        "-l",
+        "--opt=val",
+        "a=b",
+        "10",
+        "-1",
+        "./a.out",
+        "path/to",
+        "'single quoted'",
+        "\"plain\"",
+        "\"a b\"",
+        "-g\"*.py\"",
+        "a'b'c",
+        "é",
+        "数据",
+        "%",
+        "@",
+        "+",
+        ",",
+        ":",
+        ".",
+        "-",
+        "--",
+    ];
+    const SAFE_JOINS: &[&str] = &[
+        " ", " ", " ", "\t", " && ", " || ", "; ", " | ", "\n", " &&\n",
+    ];
+
+    fn random_script(rng: &mut Lcg) -> String {
+        let mut script = String::new();
+        for _ in 0..1 + rng.below(8) {
+            let (pieces, joins) = if rng.below(3) == 0 {
+                (PIECES, JOINS)
+            } else {
+                (SAFE_PIECES, SAFE_JOINS)
+            };
+            script.push_str(pieces[rng.below(pieces.len())]);
+            script.push_str(joins[rng.below(joins.len())]);
+        }
+        script
+    }
+
+    #[test]
+    fn ziran_plain_commands_are_never_looser_than_tree_sitter() {
+        let mut rng = Lcg(0x5afe_5be1);
+        let (mut accepted, mut stricter) = (0, 0);
+        let mut problems = std::collections::BTreeSet::new();
+        for _ in 0..50_000 {
+            let script = random_script(&mut rng);
+            let ziran = parse_shell_script_into_commands(&script);
+            if let Some(problem) = parity_problem(&script, &ziran) {
+                problems.insert(problem);
+                continue;
+            }
+            stricter += usize::from(ziran.is_none() && tree_sitter_plain(&script).is_some());
+            accepted += usize::from(ziran.is_some());
+        }
+        let shown = problems.iter().take(15).cloned().collect::<Vec<_>>();
+        assert!(
+            problems.is_empty(),
+            "{} parity problems:\n{}",
+            problems.len(),
+            shown.join("\n")
+        );
+        assert!(
+            accepted > 3_000,
+            "only {accepted} generated scripts were plain"
+        );
+        println!("accepted {accepted}, rejected only by Ziran {stricter}");
+    }
+
+    /// `XCODER_SHELL_CORPUS=commands.jsonl cargo test -p codex-shell-command
+    /// --lib -- --ignored --nocapture shell_corpus`: one JSON string per line.
+    #[test]
+    #[ignore = "needs a local corpus of real commands"]
+    fn shell_corpus() {
+        let path = std::env::var("XCODER_SHELL_CORPUS").expect("XCODER_SHELL_CORPUS");
+        let corpus = std::fs::read_to_string(path).expect("read corpus");
+        let (mut total, mut accepted, mut stricter) = (0, 0, 0);
+        for line in corpus.lines() {
+            let Ok(script) = serde_json::from_str::<String>(line) else {
+                continue;
+            };
+            total += 1;
+            let ziran = parse_shell_script_into_commands(&script);
+            if assert_parity(&script, &ziran) {
+                stricter += 1;
+                println!("rejected only by Ziran: {script:?}");
+            }
+            accepted += usize::from(ziran.is_some());
+        }
+        println!("{total} scripts, {accepted} plain, {stricter} rejected only by Ziran");
     }
 
     #[test]

@@ -1,6 +1,4 @@
 use crate::bash::extract_bash_command;
-use crate::bash::try_parse_shell;
-use crate::bash::try_parse_word_only_commands_sequence;
 use crate::powershell::extract_powershell_command;
 use codex_protocol::parse_command::ParsedCommand;
 use shlex::split as shlex_split;
@@ -1995,8 +1993,7 @@ fn parse_shell_lc_commands(original: &[String]) -> Option<Vec<ParsedCommand>> {
 
 /// Parses command metadata from a Bash-compatible shell script.
 pub fn parse_shell_script(script: &str) -> Vec<ParsedCommand> {
-    if let Some(tree) = try_parse_shell(script)
-        && let Some(all_commands) = try_parse_word_only_commands_sequence(&tree, script)
+    if let Some(all_commands) = crate::bash::parse_shell_script_into_commands(script)
         && !all_commands.is_empty()
     {
         let script_tokens = shlex_split(script).unwrap_or_else(|| vec![script.to_string()]);

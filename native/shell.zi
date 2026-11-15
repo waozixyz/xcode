@@ -1,0 +1,239 @@
+// Recognizes shell scripts that are only plain commands joined by `&&`, `||`,
+// `;`, `|` and newlines, and returns their words. This is the proof that a
+// script has no hidden effects before its commands are checked against safe
+// lists, so it is deliberately conservative: anything that could expand,
+// redirect, substitute, assign, background or start a compound command makes
+// the whole script "not plain".
+//
+// A word is made of bare text, '...' and "..." parts with no whitespace
+// between them. Bare text may not contain { } * ? [ ] \ ~ ^ # $ ` ! or start
+// with '='. "..." parts may not contain $, ` or a backslash before $ ` " \ or a
+// newline; other backslashes stay as written, as the shell keeps them.
+using B :: #import "std/byte_text_linux";
+
+NotPlain :: -1
+Invalid :: -2
+
+Scanner :: struct {
+    text: string
+    length: s64
+    at: s64
+    bytes: *u8
+    byte_count: s64
+    byte_capacity: s64
+    word_ends: *s64
+    word_count: s64
+    word_capacity: s64
+    command_words: *s64
+    command_count: s64
+    command_capacity: s64
+    failed: s64
+}
+
+Peek :: (s: *Scanner, ahead: s64) -> u8 {
+    if s.at + ahead >= s.length { return cast(u8)0 }
+    return s.text[s.at + ahead]
+}
+
+Fail :: (s: *Scanner, code: s64) -> bool {
+    if s.failed == 0 { s.failed = code }
+    return false
+}
+
+IsBlank :: (byte: u8) -> bool { return byte == cast(u8)32 || byte == cast(u8)9 }
+
+// Bytes that end a bare word: whitespace, newline and the shell metacharacters.
+IsWordEnd :: (byte: u8) -> bool {
+    return byte == cast(u8)0 || IsBlank(byte) || byte == cast(u8)10 || byte == cast(u8)124 ||
+           byte == cast(u8)38 || byte == cast(u8)59 || byte == cast(u8)40 || byte == cast(u8)41 ||
+           byte == cast(u8)60 || byte == cast(u8)62
+}
+
+// Bytes that could expand, glob, escape or comment inside bare text.
+IsUnsafeBare :: (byte: u8) -> bool {
+    return byte == cast(u8)123 || byte == cast(u8)125 || byte == cast(u8)42 || byte == cast(u8)63 ||
+           byte == cast(u8)91 || byte == cast(u8)93 || byte == cast(u8)92 || byte == cast(u8)126 ||
+           byte == cast(u8)94 || byte == cast(u8)35 || byte == cast(u8)36 || byte == cast(u8)96 ||
+           byte == cast(u8)33 || byte == cast(u8)13
+}
+
+Put :: (s: *Scanner, byte: u8) -> bool {
+    if s.byte_count >= s.byte_capacity { return Fail(s, Invalid) }
+    s.bytes[s.byte_count] = byte
+    s.byte_count += 1
+    return true
+}
+
+// One word at the cursor, written to the output bytes. False when the word is
+// not plain; a command name (`bare_only`) may not contain quoted parts.
+ReadWord :: (s: *Scanner, bare_only: bool) -> bool {
+    start := s.byte_count
+    first := true
+    while !IsWordEnd(Peek(s, 0)) {
+        byte := Peek(s, 0)
+        if (byte == cast(u8)39 || byte == cast(u8)34) && bare_only { return Fail(s, NotPlain) }
+        if byte == cast(u8)39 {
+            s.at += 1
+            while Peek(s, 0) != cast(u8)39 {
+                if s.at >= s.length { return Fail(s, NotPlain) }
+                if !Put(s, Peek(s, 0)) { return false }
+                s.at += 1
+            }
+            s.at += 1
+            first = true
+        } else if byte == cast(u8)34 {
+            s.at += 1
+            while Peek(s, 0) != cast(u8)34 {
+                if s.at >= s.length { return Fail(s, NotPlain) }
+                inner := Peek(s, 0)
+                if inner == cast(u8)36 || inner == cast(u8)96 { return Fail(s, NotPlain) }
+                if inner == cast(u8)92 {
+                    next := Peek(s, 1)
+                    if next == cast(u8)36 || next == cast(u8)96 || next == cast(u8)34 || next == cast(u8)92 ||
+                       next == cast(u8)10 || s.at + 1 >= s.length { return Fail(s, NotPlain) }
+                }
+                if !Put(s, inner) { return false }
+                s.at += 1
+            }
+            s.at += 1
+            first = true
+        } else {
+            // Each bare segment is its own word part to tree-sitter, and a
+            // part starting with `=` is not literal (Zsh equals expansion).
+            if IsUnsafeBare(byte) || (first && byte == cast(u8)61) { return Fail(s, NotPlain) }
+            if !Put(s, byte) { return false }
+            s.at += 1
+            first = false
+        }
+    }
+    if s.word_count >= s.word_capacity { return Fail(s, Invalid) }
+    s.word_ends[s.word_count] = s.byte_count
+    s.word_count += 1
+    return true
+}
+
+// The command name is `word`, or starts with it followed by a byte that
+// cannot continue a name: tree-sitter's lexer reads `if%` as the keyword `if`.
+WordIs :: (s: *Scanner, start: s64, end: s64, word: string) -> bool {
+    if end - start < word.count { return false }
+    offset: s64 = 0
+    while offset < word.count {
+        if s.bytes[start + offset] != word[offset] { return false }
+        offset += 1
+    }
+    if end - start == word.count { return true }
+    next := s.bytes[start + word.count]
+    continues := next == cast(u8)95 || (next >= cast(u8)48 && next <= cast(u8)57) ||
+                 (next >= cast(u8)65 && next <= cast(u8)90) || (next >= cast(u8)97 && next <= cast(u8)122) ||
+                 next >= cast(u8)128
+    return !continues
+}
+
+// Shell reserved words, which start compound commands instead of naming one.
+IsReserved :: (s: *Scanner, a: s64, b: s64) -> bool {
+    return WordIs(s, a, b, "if") || WordIs(s, a, b, "then") || WordIs(s, a, b, "else") ||
+           WordIs(s, a, b, "elif") || WordIs(s, a, b, "fi") || WordIs(s, a, b, "case") ||
+           WordIs(s, a, b, "esac") || WordIs(s, a, b, "for") || WordIs(s, a, b, "select") ||
+           WordIs(s, a, b, "while") || WordIs(s, a, b, "until") || WordIs(s, a, b, "do") ||
+           WordIs(s, a, b, "done") || WordIs(s, a, b, "function") || WordIs(s, a, b, "in") ||
+           WordIs(s, a, b, "time") || WordIs(s, a, b, "coproc") || WordIs(s, a, b, "{") ||
+           WordIs(s, a, b, "}") || WordIs(s, a, b, "[[") || WordIs(s, a, b, "]]")
+}
+
+// In command position tree-sitter reads any word with `=` as a variable
+// assignment (`NAME=value`, and even `--opt=value`).
+IsAssignment :: (s: *Scanner, start: s64, end: s64) -> bool {
+    at := start
+    while at < end {
+        if s.bytes[at] == cast(u8)61 { return true }
+        at += 1
+    }
+    return false
+}
+
+SkipBlanks :: (s: *Scanner) {
+    while IsBlank(Peek(s, 0)) { s.at += 1 }
+}
+
+SkipBlanksAndNewlines :: (s: *Scanner) {
+    while IsBlank(Peek(s, 0)) || Peek(s, 0) == cast(u8)10 { s.at += 1 }
+}
+
+// One command: words up to an operator, newline or the end.
+ReadCommand :: (s: *Scanner) -> bool {
+    first_word := s.word_count
+    while !IsWordEnd(Peek(s, 0)) {
+        if !ReadWord(s, s.word_count == first_word) { return false }
+        SkipBlanks(s)
+    }
+    count := s.word_count - first_word
+    if count == 0 { return Fail(s, NotPlain) }
+    name_start: s64 = 0
+    if first_word > 0 { name_start = s.word_ends[first_word - 1] }
+    name_end := s.word_ends[first_word]
+    // tree-sitter lexes a leading digit (or -digit) as a number, never as a command name.
+    first := s.bytes[name_start]
+    second := ifx name_end - name_start > 1 then s.bytes[name_start + 1] else cast(u8)0
+    numeric := (first >= cast(u8)48 && first <= cast(u8)57) ||
+               (first == cast(u8)45 && second >= cast(u8)48 && second <= cast(u8)57)
+    // A command name of dashes alone is an operator-like token to tree-sitter.
+    dashes := true
+    dash_at := name_start
+    while dashes && dash_at < name_end {
+        dashes = s.bytes[dash_at] == cast(u8)45
+        dash_at += 1
+    }
+    if numeric || dashes || IsReserved(s, name_start, name_end) || IsAssignment(s, name_start, name_end) { return Fail(s, NotPlain) }
+    if s.command_count >= s.command_capacity { return Fail(s, Invalid) }
+    s.command_words[s.command_count] = count
+    s.command_count += 1
+    return true
+}
+
+// Returns the command count, -1 when the script is not plain, -2 for invalid
+// arguments or buffers too small. Word k ends at word_ends[k] in bytes;
+// command c has command_words[c] words.
+#program_export
+xcoder_parse_plain_commands :: (script: *u8, script_length: s64, bytes: *u8, byte_capacity: s64,
+                                word_ends: *s64, word_capacity: s64,
+                                command_words: *s64, command_capacity: s64) -> s64 {
+    if script_length < 0 || (script_length > 0 && script == null) || bytes == null || word_ends == null ||
+       command_words == null { return Invalid }
+    s: Scanner
+    s.text = B.TextFromBytes(B.BytesFromPointer(script, cast(u64)script_length))
+    s.length = script_length
+    s.bytes = bytes
+    s.byte_capacity = byte_capacity
+    s.word_ends = word_ends
+    s.word_capacity = word_capacity
+    s.command_words = command_words
+    s.command_capacity = command_capacity
+    sp := *s
+    SkipBlanksAndNewlines(sp)
+    while sp.at < sp.length {
+        if !ReadCommand(sp) { return sp.failed }
+        SkipBlanks(sp)
+        if sp.at >= sp.length { return sp.command_count }
+        byte := Peek(sp, 0)
+        next := Peek(sp, 1)
+        if (byte == cast(u8)38 && next == cast(u8)38) || (byte == cast(u8)124 && next == cast(u8)124) {
+            sp.at += 2
+            SkipBlanksAndNewlines(sp)
+            if sp.at >= sp.length { return NotPlain }
+        } else if byte == cast(u8)124 {
+            if next == cast(u8)38 { return NotPlain }
+            sp.at += 1
+            SkipBlanksAndNewlines(sp)
+            if sp.at >= sp.length { return NotPlain }
+        } else if byte == cast(u8)59 {
+            if next == cast(u8)59 || next == cast(u8)38 { return NotPlain }
+            sp.at += 1
+            SkipBlanksAndNewlines(sp)
+        } else if byte == cast(u8)10 {
+            SkipBlanksAndNewlines(sp)
+        } else {
+            return NotPlain
+        }
+    }
+    return sp.command_count
+}
