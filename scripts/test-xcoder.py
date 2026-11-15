@@ -84,7 +84,8 @@ def main():
     if args.prebuilt_tests and not args.existing_binaries:
         raise ValueError('--prebuilt-tests requires --existing-binaries')
     if manifest is None:
-        targets = ['native-test'] if args.existing_binaries else ['native-test', 'all']
+        # The native cell test runs the packaged host, so build it first.
+        targets = ['native-test'] if args.existing_binaries else ['all', 'native-test']
         subprocess.run(['make', *targets, 'UI_FEATURES=' + args.ui_features],
                        cwd=ROOT, env=env, check=True)
     tested = fingerprints()
