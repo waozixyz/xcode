@@ -509,10 +509,30 @@ pub(crate) fn cell(
             Ok(())
         });
     }
-    let child = command
-        .spawn()
+    let child = spawn_written_executable(&mut command)
         .map_err(|error| format!("start native cell sandbox: {error}"))?;
     Ok((child, channels))
+}
+
+/// Spawns an executable that was just written, retrying `ETXTBSY`.
+///
+/// Every file is opened close-on-exec, but a thread that forks at the same
+/// moment holds a copy of the writer's descriptor until its own `exec`, so a
+/// freshly written cell can briefly be "busy" while parallel cells start.
+fn spawn_written_executable(command: &mut Command) -> std::io::Result<Child> {
+    const ATTEMPTS: u64 = 20;
+    let mut attempt = 1;
+    loop {
+        match command.spawn() {
+            Err(error)
+                if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < ATTEMPTS =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(2 * attempt));
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
 }
 
 pub(crate) fn kill_process_group(process_group: u32) {

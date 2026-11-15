@@ -2,6 +2,9 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 
 ## Unreleased
 
+- Parallel tool cells no longer fail at random with "Text file busy": starting a freshly compiled cell retries while another thread's fork still holds the file.
+- The upstream Codex version check runs on its own thread, so a slow network never delays Xcoder exiting; the offline local tests turn it off.
+
 ## 0.1.0 — 2026-11-14
 
 First Xcoder release: Codex with native Ziran tool execution, for Linux x86_64.

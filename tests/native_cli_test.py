@@ -191,7 +191,7 @@ supports_websockets = false
                        XDG_CACHE_HOME=str(directory / 'cache'), XCODER_RUNTIME_DIR=str(directory / 'runtime'),
                        NO_PROXY='127.0.0.1,localhost', RUST_LOG='warn',
                        XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
-                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1')
+                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0')
             try:
                 command = [str(CLI), 'exec', '--ephemeral', '--skip-git-repo-check',
                            '--sandbox', 'workspace-write', '--json', 'Run the native local fixture.']
@@ -324,7 +324,7 @@ supports_websockets = false
                        XDG_CACHE_HOME=str(directory / 'cache'), XCODER_RUNTIME_DIR=str(directory / 'runtime'),
                        NO_PROXY='127.0.0.1,localhost', RUST_LOG='warn', SHELL='/bin/bash',
                        XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
-                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1')
+                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0')
             try:
                 result = subprocess.run(
                     [str(CLI), 'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'workspace-write',

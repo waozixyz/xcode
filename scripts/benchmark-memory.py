@@ -256,7 +256,7 @@ trust_level = "trusted"
                            XDG_CONFIG_HOME=str(home / '.config'), XDG_CACHE_HOME=str(home / '.cache'),
                            XCODER_RUNTIME_DIR=str(directory / 'r'), RUST_LOG='error',
                            NO_PROXY='127.0.0.1,localhost', HARMONY_SOURCE_SESSION='xcoder-offline-benchmark',
-                           HARMONY_MODEL_INPUT_DISABLE='1', XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'))
+                           HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0', XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'))
         if args.trace_library:
             environment.update(LD_PRELOAD=str(args.trace_library.resolve()),
                                XCODER_ALLOC_TRACE=str(directory / 'alloc-trace.txt'))

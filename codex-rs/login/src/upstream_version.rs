@@ -70,20 +70,35 @@ fn check_enabled() -> bool {
     std::env::var(CHECK_ENV_VAR).map_or(true, |value| value.trim() != "0")
 }
 
-/// Starts a background check when the cache is stale. Needs a Tokio runtime;
-/// a failed check leaves the cache and the reported version unchanged.
+/// Starts a background check when the cache is stale; a failed check leaves
+/// the cache and the reported version unchanged.
+///
+/// The check runs on its own detached thread and runtime, so a slow network
+/// (or a DNS lookup that never returns) can never delay the process exiting.
 pub fn refresh_in_background(codex_home: PathBuf) {
     if !check_enabled() || !needs_refresh(read_cache(&codex_home).as_ref(), now_seconds()) {
         return;
     }
-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    runtime.spawn(async move {
-        if let Err(error) = refresh(&codex_home).await {
-            tracing::debug!("upstream Codex version check failed: {error}");
-        }
-    });
+    let spawned = std::thread::Builder::new()
+        .name("xcoder-upstream-version".to_string())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    tracing::debug!("upstream Codex version check failed: {error}");
+                    return;
+                }
+            };
+            if let Err(error) = runtime.block_on(refresh(&codex_home)) {
+                tracing::debug!("upstream Codex version check failed: {error}");
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::debug!("upstream Codex version check failed: {error}");
+    }
 }
 
 async fn refresh(codex_home: &Path) -> Result<(), String> {
