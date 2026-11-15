@@ -110,11 +110,16 @@ impl ToolArgumentDiffConsumer for ApplyPatchArgumentDiffConsumer {
 
 impl ApplyPatchArgumentDiffConsumer {
     fn push_delta(&mut self, call_id: String, delta: &str) -> Option<PatchApplyUpdatedEvent> {
-        let hunks = self.parser.push_delta(delta).ok()?;
+        // Hunks change only when a line completes; most deltas are a few
+        // characters, so skip rebuilding an identical snapshot for them.
+        if !self.parser.feed(delta).ok()? {
+            return None;
+        }
+        let hunks = self.parser.hunks();
         if hunks.is_empty() {
             return None;
         }
-        let changes = convert_apply_patch_hunks_to_protocol(&hunks);
+        let changes = convert_apply_patch_hunks_to_protocol(hunks);
         let event = PatchApplyUpdatedEvent { call_id, changes };
         let now = Instant::now();
         match self.last_sent_at {

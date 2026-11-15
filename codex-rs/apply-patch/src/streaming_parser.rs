@@ -137,18 +137,35 @@ impl StreamingPatchParser {
     }
 
     pub fn push_delta(&mut self, delta: &str) -> Result<Vec<Hunk>, ParseError> {
-        for ch in delta.chars() {
-            if ch == '\n' {
-                let mut line = std::mem::take(&mut self.line_buffer);
-                line.truncate(line.strip_suffix('\r').map_or(line.len(), str::len));
-                self.line_number += 1;
-                self.process_line(&line)?;
-            } else {
-                self.line_buffer.push(ch);
-            }
-        }
-
+        self.feed(delta)?;
         Ok(self.state.hunks.clone())
+    }
+
+    /// Feeds `delta` and reports whether it completed at least one line. The
+    /// hunks (see [`Self::hunks`]) change only when a line completes, so a
+    /// caller streaming many small deltas can skip unchanged snapshots
+    /// instead of cloning every hunk on every delta.
+    pub fn feed(&mut self, delta: &str) -> Result<bool, ParseError> {
+        let mut rest = delta;
+        let mut completed = false;
+        while let Some(newline) = rest.find('\n') {
+            self.line_buffer.push_str(&rest[..newline]);
+            rest = &rest[newline + 1..];
+            let mut line = std::mem::take(&mut self.line_buffer);
+            if line.ends_with('\r') {
+                line.pop();
+            }
+            self.line_number += 1;
+            completed = true;
+            self.process_line(&line)?;
+        }
+        self.line_buffer.push_str(rest);
+        Ok(completed)
+    }
+
+    /// The hunks parsed from the lines completed so far.
+    pub fn hunks(&self) -> &[Hunk] {
+        &self.state.hunks
     }
 
     pub fn finish(&mut self) -> Result<Vec<Hunk>, ParseError> {
@@ -449,6 +466,22 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn feed_reports_completed_lines_and_matches_push_delta() {
+        let patch = "*** Begin Patch\r\n*** Add File: a.txt\n+one\n+two\n*** End Patch\n";
+        let mut fed = StreamingPatchParser::default();
+        let mut pushed = StreamingPatchParser::default();
+        for (index, ch) in patch.char_indices() {
+            let piece = &patch[index..index + ch.len_utf8()];
+            assert_eq!(fed.feed(piece).unwrap(), ch == '\n', "at byte {index}");
+            assert_eq!(fed.hunks(), pushed.push_delta(piece).unwrap().as_slice());
+        }
+        let mut whole = StreamingPatchParser::default();
+        assert!(whole.feed(patch).unwrap());
+        assert_eq!(whole.hunks(), fed.hunks());
+        assert_eq!(whole.finish().unwrap(), fed.finish().unwrap());
     }
 
     #[test]
