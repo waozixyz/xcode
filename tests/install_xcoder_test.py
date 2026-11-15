@@ -26,17 +26,21 @@ class PackageCutoverTest(unittest.TestCase):
         entry = self.root / 'codex'
         compatibility = self.root / 'codex-upstream'
         native = self.root / 'xcoder'
-        shutil.copy2('/usr/bin/sleep', entry)
-        shutil.copy2('/usr/bin/true', native)
+        # A plain shell, not coreutils: multi-call coreutils builds (uutils)
+        # refuse to run under another file name.
+        shell = os.path.realpath('/bin/sh')
+        shutil.copy2(shell, entry)
+        shutil.copy2(shell, native)
         inode = entry.stat().st_ino
-        process = subprocess.Popen([str(entry), '60'])
+        # The shell stays the running process while its child sleeps.
+        process = subprocess.Popen([str(entry), '-c', 'sleep 60; :'])
         try:
             publish(entry, native, compatibility)
             self.assertEqual(compatibility.stat().st_ino, inode)
             self.assertEqual(Path(os.readlink(f'/proc/{process.pid}/exe')), compatibility)
             self.assertIsNone(process.poll())
-            subprocess.run([str(entry)], check=True, timeout=5)
-            subprocess.run([f'/proc/{process.pid}/exe', '0'], check=True, timeout=5)
+            subprocess.run([str(entry), '-c', ':'], check=True, timeout=5)
+            subprocess.run([f'/proc/{process.pid}/exe', '-c', ':'], check=True, timeout=5)
         finally:
             process.terminate()
             process.wait(timeout=5)
