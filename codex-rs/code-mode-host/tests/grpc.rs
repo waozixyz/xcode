@@ -21,25 +21,20 @@ use codex_code_mode::ToolDefinition;
 use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode::WaitOutcome;
 use codex_code_mode::WaitRequest;
-#[cfg(unix)]
 use codex_code_mode_host::GrpcCodeModeHost;
 use codex_code_mode_protocol::grpc;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
-#[cfg(unix)]
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHostServer;
 use codex_protocol::ToolName;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
-#[cfg(unix)]
 use tokio::net::UnixListener;
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
-#[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_util::sync::CancellationToken;
 use tonic::Code;
-#[cfg(unix)]
 use tonic::transport::Server;
 
 #[path = "grpc/admission_tests.rs"]
@@ -1489,7 +1484,6 @@ async fn cached_session_recovers_after_a_remote_host_restarts() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn unix_socket_endpoints_execute_code_mode_cells() -> Result<()> {
     let directory = tempfile::tempdir().context("create Unix socket directory")?;

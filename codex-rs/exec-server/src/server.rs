@@ -9,7 +9,7 @@ mod request_dispatcher;
 mod session_registry;
 mod transport;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "server/process_otel_tests.rs"]
 mod process_otel_tests;
 

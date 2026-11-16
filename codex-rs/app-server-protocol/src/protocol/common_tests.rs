@@ -104,7 +104,6 @@ fn client_response_jsonrpc_parts_preserve_legacy_interrupt() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn client_response_jsonrpc_parts_preserve_serialization_errors() {
     use std::ffi::OsString;

@@ -23,8 +23,6 @@ pub fn emit_session_start_metrics(config: &Config, telemetry: &SessionTelemetry)
             );
         }
     }
-    #[cfg(windows)]
-    crate::windows_system_config::emit_namespace_squatting_probe();
 }
 
 /// Report saved opt-outs even when a higher-precedence session setting overrides them.

@@ -43,10 +43,8 @@ use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
-#[cfg(unix)]
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::sse;
-#[cfg(unix)]
 use core_test_support::responses::sse_failed;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::TestCodex;
@@ -109,7 +107,6 @@ async fn dual_write_prepares_both_roots_without_importing_old_notes() -> anyhow:
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn memories_startup_removes_symlinked_extensions_before_seeding() -> anyhow::Result<()> {
     let server = start_mock_server().await;
@@ -138,7 +135,6 @@ async fn memories_startup_removes_symlinked_extensions_before_seeding() -> anyho
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn memories_startup_fails_consolidation_when_worker_creates_extension_symlink()
 -> anyhow::Result<()> {
@@ -236,7 +232,7 @@ async fn memories_startup_phase2_scopes_stop_hooks() -> anyhow::Result<()> {
         .await?;
         seed_required_memory_artifacts(&root).await?;
 
-        let python = if cfg!(windows) { "python" } else { "python3" };
+        let python = "python3";
         let hook_script = home.path().join("memory_hook.py");
         let hook_log = home.path().join("stop");
         let notify_log = home.path().join("notify");

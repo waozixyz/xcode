@@ -72,7 +72,6 @@ fn seatbelt_policy_arg(args: &[String]) -> &str {
         .expect("seatbelt args should include policy text")
 }
 
-#[cfg(unix)]
 fn restricted_write_policy(paths: &[&Path]) -> FileSystemSandboxPolicy {
     let mut entries = vec![FileSystemSandboxEntry::new(
         FileSystemPath::Special {
@@ -1158,7 +1157,6 @@ fn unreadable_globs_treat_unclosed_character_classes_as_literals() {
     assert!(!regex.is_match("/tmp/repo/local.env"));
 }
 
-#[cfg(unix)]
 #[test]
 fn unreadable_glob_policy_includes_canonicalized_static_prefix() {
     use std::os::unix::fs::symlink;
@@ -2124,7 +2122,6 @@ fn create_seatbelt_args_with_read_only_git_and_codex_subpaths() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn create_seatbelt_args_rejects_symlinked_writable_root() {
     use std::os::unix::fs::symlink;
@@ -2229,7 +2226,6 @@ fn seatbelt_prevents_writable_root_replacement() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn create_seatbelt_args_uses_literal_non_directory_writable_roots() {
     let tmp = TempDir::new().expect("tempdir");

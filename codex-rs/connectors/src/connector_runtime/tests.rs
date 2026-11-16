@@ -8,7 +8,6 @@ use codex_protocol::mcp::McpServerInfo;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde::Serialize;
-#[cfg(unix)]
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -483,7 +482,6 @@ fn connector_runtime_without_cache_publishes_without_writing() {
     assert!(!codex_home.exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn codex_apps_tools_cache_scopes_non_utf8_home_disk_paths() {
     let codex_home = PathBuf::from(std::ffi::OsString::from_vec(

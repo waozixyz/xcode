@@ -26,35 +26,10 @@ pub(crate) async fn prefer_device_login() -> bool {
     {
         return true;
     }
-    #[cfg(not(windows))]
     let browser_available = webbrowser::Browser::is_available;
-    #[cfg(windows)]
-    let browser_available = has_http_handler;
     !tokio::task::spawn_blocking(browser_available)
         .await
         .unwrap_or(false)
-}
-
-#[cfg(windows)]
-fn has_http_handler() -> bool {
-    use windows_sys::Win32::Foundation::S_FALSE;
-    use windows_sys::Win32::UI::Shell::ASSOCF_IS_PROTOCOL;
-    use windows_sys::Win32::UI::Shell::ASSOCSTR_COMMAND;
-    use windows_sys::Win32::UI::Shell::AssocQueryStringW;
-
-    let mut chars = 0;
-    // A null output buffer asks Windows for the size of the registered HTTP command.
-    let result = unsafe {
-        AssocQueryStringW(
-            ASSOCF_IS_PROTOCOL,
-            ASSOCSTR_COMMAND,
-            windows_sys::w!("http"),
-            std::ptr::null(),
-            std::ptr::null_mut(),
-            &mut chars,
-        )
-    };
-    result == S_FALSE && chars > 1
 }
 
 pub(crate) async fn needs_device_login(

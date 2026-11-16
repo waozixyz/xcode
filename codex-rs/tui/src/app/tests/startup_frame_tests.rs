@@ -171,38 +171,6 @@ async fn owned_startup_preserves_loading_until_resume_replay_is_applied() -> Res
 }
 
 #[tokio::test]
-async fn owned_startup_renders_visible_decisions_and_overview_before_pending_events() -> Result<()>
-{
-    for overview in [false, true] {
-        let (mut app, events, _ops) = make_test_app_with_channels().await;
-        app.app_event_tx
-            .send(AppEvent::BeginInitialHistoryReplayBuffer);
-        if overview {
-            let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
-            app.chat_widget.show_bottom_pane_view(Box::new(view));
-        } else {
-            let preset = codex_utils_approval_presets::builtin_approval_presets()
-                .into_iter()
-                .find(|preset| preset.id == "auto")
-                .expect("auto preset");
-            app.chat_widget
-                .open_windows_sandbox_enable_prompt(preset, /*profile_selection*/ None);
-        }
-        let mut tui = crate::tui::test_support::make_test_tui()?;
-        tui.set_owned_screen(/*owned*/ true)?;
-        assert!(!events.is_empty());
-        app.render_startup_frame(&mut tui, &events)?;
-        assert!(frame_text(&tui).contains(if overview {
-            "Agent command center"
-        } else {
-            "sandbox"
-        }));
-        tui.set_owned_screen(/*owned*/ false)?;
-    }
-    Ok(())
-}
-
-#[tokio::test]
 async fn inline_startup_still_renders_with_pending_history() -> Result<()> {
     let (mut app, events, _ops) = make_test_app_with_channels().await;
     app.app_event_tx
@@ -212,5 +180,22 @@ async fn inline_startup_still_renders_with_pending_history() -> Result<()> {
     let mut tui = crate::tui::test_support::make_test_tui()?;
     app.render_startup_frame(&mut tui, &events)?;
     assert!(frame_text(&tui).contains("inline startup draft"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn owned_startup_renders_visible_decisions_and_overview_before_pending_events() -> Result<()>
+{
+    let (mut app, events, _ops) = make_test_app_with_channels().await;
+    app.app_event_tx
+        .send(AppEvent::BeginInitialHistoryReplayBuffer);
+    let view = app.agents_overview_view(Vec::new(), /*selected_thread_id*/ None);
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    assert!(!events.is_empty());
+    app.render_startup_frame(&mut tui, &events)?;
+    assert!(frame_text(&tui).contains("Agent command center"));
+    tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }

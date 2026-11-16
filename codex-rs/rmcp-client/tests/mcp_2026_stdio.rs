@@ -52,7 +52,6 @@ async fn exercise_stdio_server(
     } else {
         root.path().to_path_buf()
     };
-    #[cfg(unix)]
     let server = if use_executor {
         server
     } else {
@@ -187,7 +186,6 @@ async fn exercise_stdio_server(
         })
     );
     assert_eq!(elicitation_count.load(Ordering::Relaxed), 1);
-    #[cfg(unix)]
     if !use_executor {
         assert_eq!(
             std::fs::read_to_string(root.path().join("argv0"))?,

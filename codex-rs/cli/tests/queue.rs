@@ -19,11 +19,9 @@ enum QueueResponse {
     Success,
     ResumeRejected,
     MethodNotFound,
-    #[cfg(unix)]
     UnknownMethodVariant,
 }
 
-#[cfg(unix)]
 fn socket_test_home() -> Result<TempDir> {
     // macOS temporary paths can exceed the Unix socket path limit.
     #[cfg(target_os = "macos")]
@@ -90,7 +88,6 @@ where
             "id": request["id"],
             "error": { "code": -32601, "message": "Method not found" },
         }),
-        #[cfg(unix)]
         QueueResponse::UnknownMethodVariant => json!({
             "id": request["id"],
             "error": {
@@ -258,7 +255,6 @@ async fn run_remote_queue_command(response: QueueResponse) -> Result<(Output, Va
     Ok((output, server.await??))
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn remote_session_commands_with_workload_identity_use_server_auth() -> Result<()> {
     use std::time::Duration;
@@ -620,7 +616,6 @@ fn remote_session_commands_validate_config() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn queue_rejects_local_daemon_that_does_not_support_queueing() -> Result<()> {
     let codex_home = socket_test_home()?;
@@ -661,7 +656,6 @@ async fn queue_rejects_local_daemon_that_does_not_support_queueing() -> Result<(
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn queue_rejects_overrides_that_bypass_local_daemon() -> Result<()> {
     let codex_home = socket_test_home()?;

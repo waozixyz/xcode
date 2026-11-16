@@ -3,7 +3,6 @@ use codex_feedback::CODEX_APPS_TOOLS_CACHE_ATTACHMENT_FILENAME;
 use codex_feedback::DOCTOR_REPORT_ATTACHMENT_FILENAME;
 use codex_feedback::FEEDBACK_DIAGNOSTICS_ATTACHMENT_FILENAME;
 use codex_feedback::FeedbackDiagnostics;
-use codex_feedback::WINDOWS_SANDBOX_LOG_ATTACHMENT_FILENAME;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -208,7 +207,6 @@ pub(crate) fn feedback_consent_params(
     category: FeedbackCategory,
     rollout_path: Option<std::path::PathBuf>,
     auto_review_rollout_filename: Option<String>,
-    include_windows_sandbox_log: bool,
     can_save: bool,
     feedback_diagnostics: &FeedbackDiagnostics,
 ) -> super::SelectionViewParams {
@@ -264,15 +262,6 @@ pub(crate) fn feedback_consent_params(
         ])
         .into(),
     ];
-    if include_windows_sandbox_log {
-        header_lines.push(
-            Line::from(vec![
-                "  • ".into(),
-                WINDOWS_SANDBOX_LOG_ATTACHMENT_FILENAME.into(),
-            ])
-            .into(),
-        );
-    }
     if let Some(path) = rollout_path.as_deref()
         && let Some(name) = path.file_name().map(|s| s.to_string_lossy().to_string())
     {
@@ -384,47 +373,6 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    #[test]
-    fn feedback_upload_consent_lists_doctor_report() {
-        let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let params = feedback_consent_params(
-            tx,
-            FeedbackCategory::Bug,
-            Some(std::path::PathBuf::from("rollout.jsonl")),
-            Some("auto-review-rollout.jsonl".to_string()),
-            /*include_windows_sandbox_log*/ false,
-            /*can_save*/ true,
-            &FeedbackDiagnostics::default(),
-        );
-
-        let rendered = render_renderable(params.header.as_ref(), /*width*/ 60);
-
-        insta::assert_snapshot!("feedback_upload_consent_lists_doctor_report", rendered);
-    }
-
-    #[test]
-    fn feedback_upload_consent_lists_windows_sandbox_log_when_included() {
-        let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
-        let tx = AppEventSender::new(tx_raw);
-        let params = feedback_consent_params(
-            tx,
-            FeedbackCategory::Bug,
-            Some(std::path::PathBuf::from("rollout.jsonl")),
-            Some("auto-review-rollout.jsonl".to_string()),
-            /*include_windows_sandbox_log*/ true,
-            /*can_save*/ true,
-            &FeedbackDiagnostics::default(),
-        );
-
-        let rendered = render_renderable(params.header.as_ref(), /*width*/ 60);
-
-        insta::assert_snapshot!(
-            "feedback_upload_consent_lists_windows_sandbox_log_when_included",
-            rendered
-        );
     }
 
     #[test]
@@ -564,5 +512,23 @@ mod tests {
             assert!(rendered.contains("Please open an issue using the following URL:"));
             assert!(rendered.contains("thread-4"));
         }
+    }
+
+    #[test]
+    fn feedback_upload_consent_lists_doctor_report() {
+        let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let params = feedback_consent_params(
+            tx,
+            FeedbackCategory::Bug,
+            Some(std::path::PathBuf::from("rollout.jsonl")),
+            Some("auto-review-rollout.jsonl".to_string()),
+            /*can_save*/ true,
+            &FeedbackDiagnostics::default(),
+        );
+
+        let rendered = render_renderable(params.header.as_ref(), /*width*/ 60);
+
+        insta::assert_snapshot!("feedback_upload_consent_lists_doctor_report", rendered);
     }
 }

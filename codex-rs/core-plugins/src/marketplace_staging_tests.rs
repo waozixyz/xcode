@@ -127,7 +127,6 @@ fn cleanup_reclaims_unpublished_and_aged_legacy_clones() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn cleanup_does_not_follow_symlinks() -> Result<()> {
     let home = tempfile::tempdir()?;

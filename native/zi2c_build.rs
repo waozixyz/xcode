@@ -34,8 +34,15 @@ fn compile_ziran(module: &str, library: &str, packages: &[&str]) -> PathBuf {
     let root = ziran_root();
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("native");
     println!("cargo:rerun-if-env-changed=ZIRAN");
-    for file in [module, "native/zi2c_build.rs", "ziran.toml", "ziran.lock", "ziran.local.toml"] {
+    for file in [module, "native/zi2c_build.rs", "ziran.toml", "ziran.lock"] {
         println!("cargo:rerun-if-changed={}", root.join(file).display());
+    }
+    // Cargo reruns a script on every build while a watched file is missing,
+    // which recompiled most of the workspace each time; watch the optional
+    // local override only while it exists (touch ziran.toml after adding it).
+    let local = root.join("ziran.local.toml");
+    if local.exists() {
+        println!("cargo:rerun-if-changed={}", local.display());
     }
     for package in packages {
         let resolved = ziran(&root, ["pkg", "path", package])

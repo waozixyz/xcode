@@ -5,10 +5,7 @@ use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_request_permissions_sse_response;
 use app_test_support::write_models_cache_with_models;
-use codex_app_server_protocol::AdditionalPermissionProfile;
 use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::CommandExecutionApprovalDecision;
-use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
 use codex_app_server_protocol::JSONRPCMessage;
@@ -138,49 +135,9 @@ text(await tools.exec_command({{cmd: "{command}"}}));"#,
         }),
     )
     .await?;
-    let mut command_approved = false;
+    let _command_approved = false;
     loop {
         match timeout(DEFAULT_READ_TIMEOUT, app.read_next_message()).await?? {
-            JSONRPCMessage::Request(request)
-                if cfg!(windows) && !strict_auto_review && !command_approved =>
-            {
-                // Without a Windows sandbox backend, command approval is still required.
-                // Check the grant before approving so stale same-cell permissions still fail.
-                let ServerRequest::CommandExecutionRequestApproval {
-                    request_id,
-                    params: command_params,
-                } = ServerRequest::try_from(request)?
-                else {
-                    anyhow::bail!("expected Windows command approval");
-                };
-                assert_eq!(
-                    (
-                        command_params.thread_id,
-                        command_params.turn_id,
-                        command_params.environment_id,
-                        command_params.cwd,
-                        command_params.additional_permissions,
-                    ),
-                    (
-                        thread.id.clone(),
-                        turn.id.clone(),
-                        params.environment_id.clone(),
-                        Some(params.cwd.clone()),
-                        Some(AdditionalPermissionProfile {
-                            network: params.permissions.network.clone(),
-                            file_system: params.permissions.file_system.clone(),
-                        }),
-                    ),
-                );
-                app.send_response(
-                    request_id,
-                    serde_json::to_value(CommandExecutionRequestApprovalResponse {
-                        decision: CommandExecutionApprovalDecision::Accept,
-                    })?,
-                )
-                .await?;
-                command_approved = true;
-            }
             JSONRPCMessage::Request(request) => {
                 anyhow::bail!(
                     "the approved command must not ask for another approval: {request:?}"

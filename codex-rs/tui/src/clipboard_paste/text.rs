@@ -144,7 +144,7 @@ while ($null -ne [Console]::ReadLine()) {
         .map_err(|_| "could not start Windows clipboard reader".into())
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 async fn read_command(
     child: &mut tokio::process::Child,
     deadline: Instant,

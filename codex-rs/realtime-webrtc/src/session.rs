@@ -83,11 +83,7 @@ impl RealtimeWebrtcSession {
     /// Check package availability without loading native code or touching any audio device.
     /// Linux packages may pair a musl application with a GNU helper; startup checks host loading.
     pub fn is_supported() -> bool {
-        cfg!(any(
-            target_os = "macos",
-            target_os = "linux",
-            all(windows, target_env = "msvc")
-        )) && codex_install_context::InstallContext::current()
+        codex_install_context::InstallContext::current()
             .package_layout
             .as_ref()
             .is_some_and(|package| package_has_runtime(package.package_dir.as_path()))
@@ -180,8 +176,6 @@ fn package_has_runtime(package: &std::path::Path) -> bool {
     let voice = package.join("codex-resources/voice");
     let (helper, runtime) = if cfg!(target_os = "macos") {
         ("bin/codex-voice-host", "lib/libgstreamer-1.0.0.dylib")
-    } else if cfg!(windows) {
-        ("bin/codex-voice-host.exe", "bin/gstreamer-1.0-0.dll")
     } else {
         ("bin/codex-voice-host", "lib/libgstreamer-1.0.so.0")
     };

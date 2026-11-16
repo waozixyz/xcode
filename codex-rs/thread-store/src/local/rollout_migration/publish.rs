@@ -17,9 +17,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use codex_protocol::ThreadId;
@@ -103,10 +101,8 @@ pub(super) async fn decompress_rollout_to_path(
         let mut decoder = zstd::stream::read::Decoder::new(input)?;
         let mut options = std::fs::OpenOptions::new();
         options.create(true).truncate(true).write(true);
-        #[cfg(unix)]
         options.mode(0o600);
         let mut output = options.open(plain_path)?;
-        #[cfg(unix)]
         output.set_permissions(Permissions::from_mode(0o600))?;
         io::copy(&mut decoder, &mut output)?;
         output.flush()
@@ -256,7 +252,6 @@ pub(super) async fn write_migration_journal(path: &Path) -> ThreadStoreResult<()
 }
 
 pub(super) async fn sync_parent_directory(path: &Path) -> ThreadStoreResult<()> {
-    #[cfg(unix)]
     {
         let parent = path
             .parent()
@@ -266,10 +261,6 @@ pub(super) async fn sync_parent_directory(path: &Path) -> ThreadStoreResult<()> 
             .await
             .map_err(migration_error)?
             .map_err(migration_error)?;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
     }
     Ok(())
 }

@@ -24,7 +24,7 @@ use codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG;
 use codex_git_utils::git_config_override_env;
 use codex_protocol::shell_environment::scrub_non_inheritable_env_vars;
 
-const DISABLED_HOOKS_PATH: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
+const DISABLED_HOOKS_PATH: &str = "/dev/null";
 
 #[derive(Clone, Copy)]
 pub(crate) enum GitOperation {
@@ -72,8 +72,6 @@ where
 {
     let output = git_output(cwd, GitOperation::Metadata, args)?;
     let bytes = output.stdout.strip_suffix(b"\n").unwrap_or(&output.stdout);
-    #[cfg(windows)]
-    let bytes = bytes.strip_suffix(b"\r").unwrap_or(bytes);
     git_path_from_bytes(bytes)
 }
 
@@ -81,16 +79,9 @@ pub(crate) fn git_path_from_bytes(bytes: &[u8]) -> Result<PathBuf> {
     if bytes.is_empty() {
         bail!("git returned an empty path");
     }
-    #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
         Ok(PathBuf::from(std::ffi::OsString::from_vec(bytes.to_vec())))
-    }
-    #[cfg(not(unix))]
-    {
-        Ok(PathBuf::from(
-            std::str::from_utf8(bytes).context("git path is not valid UTF-8")?,
-        ))
     }
 }
 

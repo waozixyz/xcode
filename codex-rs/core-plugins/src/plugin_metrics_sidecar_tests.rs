@@ -178,7 +178,6 @@ fn reserved_output_env_is_absent_without_sidecar_and_cannot_be_overridden() {
     assert!(!path.exists());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn sidecar_reads_the_original_file_after_path_replacement() {
     let sidecar = create_sidecar();

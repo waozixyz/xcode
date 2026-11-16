@@ -404,7 +404,6 @@ async fn new_config(
         sleep_tool_mode: Default::default(),
         runtime_auth_mode: Default::default(),
         features: Default::default(),
-        prefer_mxc: false,
 
         runtime_feature_defaults: Default::default(),
         suppress_unstable_features_warning: false,

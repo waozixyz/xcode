@@ -4,7 +4,6 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[cfg(unix)]
 use anyhow::Context;
 use anyhow::Result;
 use app_test_support::TestAppServer;
@@ -84,7 +83,6 @@ wire_api = "responses"
         for name in [
             "zellij", "tmux", "which", "where", "npm", "rg", "git", "curl", "cmd.exe",
         ] {
-            #[cfg(unix)]
             {
                 let executable = bin.join(name);
                 codex_utils_cargo_bin::write_executable(
@@ -92,16 +90,7 @@ wire_api = "responses"
                     "#!/bin/sh\nprintf 'helper ran\\n' >> \"$CODEX_TEST_HELPER_MARKER\"\nexit 0\n",
                 )?;
             }
-            #[cfg(windows)]
-            std::fs::write(
-                bin.join(format!("{name}.cmd")),
-                "@echo helper ran>>\"%CODEX_TEST_HELPER_MARKER%\"\r\n@exit /b 0\r\n",
-            )?;
         }
-        // Windows selects rg.exe explicitly, so rg.cmd cannot satisfy discovery.
-        // An invalid image still counts as found: doctor must not execute it.
-        #[cfg(windows)]
-        std::fs::write(bin.join("rg.exe"), "not an executable image")?;
         let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         )))?;
@@ -153,10 +142,6 @@ wire_api = "responses"
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "Windows doctor fixture does not discover the synthetic Git executable"
-)]
 fn startup_and_doctor_do_not_execute_path_helpers() -> Result<()> {
     let fixture = Fixture::new()?;
     // Non-TTY dumb-terminal startup exits immediately after terminal detection.
@@ -461,8 +446,6 @@ extends = ":read-only"
     )?;
     let output = fixture.command()?.args(["doctor", "--json"]).output()?;
     let report: Value = serde_json::from_slice(&output.stdout)?;
-    #[cfg(windows)]
-    assert_eq!(report["checks"]["sandbox.filesystem_paths"]["status"], "ok");
     let mut details = report["checks"]["sandbox.filesystem_paths"]["details"].clone();
     // Snapshot outcomes and provenance independently of helper startup speed.
     details
@@ -479,11 +462,7 @@ extends = ":read-only"
             .replace('\\', "/");
         *value = Value::String(detail);
     }
-    let snapshot_name = if cfg!(windows) {
-        "doctor_configured_filesystem_paths_windows"
-    } else {
-        "doctor_configured_filesystem_paths"
-    };
+    let snapshot_name = "doctor_configured_filesystem_paths";
     insta::assert_snapshot!(snapshot_name, serde_json::to_string_pretty(&details)?);
     Ok(())
 }
@@ -501,16 +480,12 @@ fn filesystem_probe_does_not_load_configuration() -> Result<()> {
             .args(["doctor", "--probe-filesystem-path"])
             .arg(path)
             .output()?;
-        assert_eq!(
-            output.status.code(),
-            Some(if cfg!(windows) { 5 } else { expected })
-        );
+        assert_eq!(output.status.code(), Some(expected));
         assert!(output.stdout.is_empty());
     }
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn interactive_tmux_startup_does_not_execute_workspace_helpers() -> Result<()> {
     let fixture = Fixture::new()?;

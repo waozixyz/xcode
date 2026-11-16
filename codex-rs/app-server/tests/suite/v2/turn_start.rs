@@ -120,9 +120,6 @@ use super::analytics::mount_analytics_capture;
 use super::analytics::wait_for_analytics_event;
 use super::analytics::wait_for_matching_analytics_event;
 
-#[cfg(windows)]
-const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
-#[cfg(not(windows))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const TEST_ORIGINATOR: &str = "codex_vscode";
 const MULTI_AGENT_V2_NAMESPACE: &str = "collaboration";
@@ -3647,7 +3644,6 @@ async fn turn_start_explicit_local_environment_updates_legacy_cwd_between_turns(
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn turn_start_permission_profile_rebinds_runtime_workspace_roots_between_turns() -> Result<()>
 {
@@ -5558,7 +5554,7 @@ async fn run_turn_start_file_change_approval_rejection_v2(
     Ok(())
 }
 
-#[cfg_attr(not(windows), test_case(None; "started"))]
+#[test_case (None ; "started")]
 #[test_case(Some(json!({"cmd": "echo unreachable", "workdir": "missing-work-directory", "tty": false})); "pipe_launch_failure")]
 #[test_case(Some(json!({"cmd": "echo unreachable\u{0}", "tty": true, "login": false})); "pty_launch_failure")]
 #[tokio::test]
@@ -5708,7 +5704,6 @@ async fn command_execution_notifications_include_process_id(
     Ok(())
 }
 
-#[cfg_attr(windows, ignore = "plugin attribution fixture is Unix-only")]
 #[test_case(CommandExecutionStatus::Completed; "completed")]
 #[test_case(CommandExecutionStatus::Failed; "launch_failure")]
 #[tokio::test]

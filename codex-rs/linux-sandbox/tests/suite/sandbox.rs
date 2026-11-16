@@ -8,7 +8,6 @@ use codex_core::exec::process_exec_tool_call;
 use codex_core::exec_env::create_env;
 use codex_core::sandboxing::SandboxPermissions;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::Result;
 use codex_protocol::error::SandboxErr;
@@ -196,7 +195,6 @@ async fn run_cmd_result_with_permission_profile_for_cwd(
         network: None,
         network_environment_id: None,
         sandbox_permissions: SandboxPermissions::UseDefault,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         justification: None,
         arg0: None,
     };
@@ -206,9 +204,7 @@ async fn run_cmd_result_with_permission_profile_for_cwd(
         params,
         &permission_profile,
         &sandbox_cwd,
-        std::slice::from_ref(&sandbox_cwd),
         &codex_linux_sandbox_exe,
-        /*codex_self_exe*/ &None,
         use_legacy_landlock,
         /*stdout_stream*/ None,
     )
@@ -834,7 +830,6 @@ async fn assert_network_blocked(cmd: &[&str]) {
         network: None,
         network_environment_id: None,
         sandbox_permissions: SandboxPermissions::UseDefault,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         justification: None,
         arg0: None,
     };
@@ -845,9 +840,7 @@ async fn assert_network_blocked(cmd: &[&str]) {
         params,
         &permission_profile,
         &sandbox_cwd,
-        std::slice::from_ref(&sandbox_cwd),
         &codex_linux_sandbox_exe,
-        /*codex_self_exe*/ &None,
         /*use_legacy_landlock*/ false,
         /*stdout_stream*/ None,
     )

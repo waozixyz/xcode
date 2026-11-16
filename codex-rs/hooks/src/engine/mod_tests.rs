@@ -136,16 +136,7 @@ fn managed_hooks_for_current_platform(
 ) -> ManagedHooksRequirementsToml {
     let managed_dir = managed_dir.as_ref().to_path_buf();
     ManagedHooksRequirementsToml {
-        managed_dir: if cfg!(windows) {
-            None
-        } else {
-            Some(managed_dir.clone())
-        },
-        windows_managed_dir: if cfg!(windows) {
-            Some(managed_dir)
-        } else {
-            None
-        },
+        managed_dir: Some(managed_dir.clone()),
         hooks: Box::new(hooks),
     }
 }
@@ -156,7 +147,6 @@ fn pre_tool_use_hook_events(command: impl Into<String>) -> HookEventsToml {
             matcher: Some("^Bash$".to_string()),
             hooks: vec![HookHandlerConfig::Command {
                 command: command.into(),
-                command_windows: None,
                 timeout_sec: Some(10),
                 r#async: false,
                 status_message: Some("checking".to_string()),
@@ -584,7 +574,6 @@ with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: format!("python3 {}", script_path.display()),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -697,7 +686,6 @@ async fn requirements_managed_hooks_execute_windows_command_override() {
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "exit 17".to_string(),
-                    command_windows: Some("exit /B 19".to_string()),
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -754,7 +742,7 @@ async fn requirements_managed_hooks_execute_windows_command_override() {
         .await;
 
     assert!(!outcome.should_block);
-    let expected_exit_code = if cfg!(windows) { 19 } else { 17 };
+    let expected_exit_code = 17;
     assert_eq!(outcome.hook_events.len(), 1);
     assert_eq!(outcome.hook_events[0].run.status, HookRunStatus::Failed);
     assert_eq!(
@@ -779,7 +767,6 @@ fn unknown_requirement_source_hooks_stay_managed() {
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "python3 /tmp/managed.py".to_string(),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -850,7 +837,6 @@ fn user_disablement_filters_non_managed_hooks_but_not_managed_hooks() {
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "python3 /tmp/managed.py".to_string(),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -1099,7 +1085,6 @@ fn requirements_managed_hooks_load_when_managed_dir_is_missing() {
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "echo hi".to_string(),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -1842,7 +1827,6 @@ fn bundled_cleanup_trust_does_not_extend_to_other_handlers() {
         },
         HookHandlerConfig::Command {
             command: "echo cleanup".to_string(),
-            command_windows: None,
             timeout_sec: None,
             r#async: false,
             status_message: None,
@@ -2017,7 +2001,6 @@ fn disabled_hooks_feature_keeps_builtin_cleanup_but_not_trusted_plugin_hooks() {
     source.plugin_root = AbsolutePathBuf::try_from(temp.path()).expect("plugin root");
     source.hooks.stop[0].hooks.push(HookHandlerConfig::Command {
         command: "echo ordinary hook".to_string(),
-        command_windows: None,
         timeout_sec: None,
         r#async: false,
         status_message: None,
@@ -2086,7 +2069,6 @@ print(json.dumps({
                 matcher: Some("Bash".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: format!("python3 {}", script_path.display()),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: None,
@@ -2213,7 +2195,6 @@ fn plugin_hook_sources_expand_plugin_placeholders() {
                     command:
                         "run ${PLUGIN_ROOT} ${CLAUDE_PLUGIN_ROOT} ${PLUGIN_DATA} ${CLAUDE_PLUGIN_DATA}"
                             .to_string(),
-                    command_windows: None,
                     timeout_sec: Some(5),
                     r#async: false,
                     status_message: None,

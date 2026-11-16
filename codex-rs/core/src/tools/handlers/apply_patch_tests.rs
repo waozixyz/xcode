@@ -1,7 +1,6 @@
 use super::*;
 use codex_apply_patch::MaybeApplyPatchVerified;
 use codex_exec_server::LOCAL_FS;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -264,108 +263,6 @@ async fn approval_keys_include_move_destination() {
 }
 
 #[test]
-fn write_permissions_for_paths_skip_dirs_already_writable_under_workspace_root() {
-    let tmp = TempDir::new().expect("tmp");
-    let cwd_path = tmp.path();
-    let cwd = cwd_path.abs();
-    let nested = cwd_path.join("nested");
-    std::fs::create_dir_all(&nested).expect("create nested dir");
-    let file_path = AbsolutePathBuf::try_from(nested.join("file.txt"))
-        .expect("nested file path should be absolute");
-    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
-        &[],
-        /*exclude_tmpdir_env_var*/ true,
-        /*exclude_slash_tmp*/ false,
-    );
-
-    let permissions = write_permissions_for_paths(
-        &[file_path.into()],
-        &PatchSandboxRoute::Platform(WindowsSandboxLevel::Disabled)
-            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
-            .expect("prepare patch matching"),
-    )
-    .expect("derive write permissions");
-
-    assert_eq!(permissions, None);
-}
-
-#[test]
-fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
-    let tmp = TempDir::new().expect("tmp");
-    let cwd = tmp.path().join("workspace");
-    let outside = tmp.path().join("outside");
-    std::fs::create_dir_all(&cwd).expect("create cwd");
-    std::fs::create_dir_all(&outside).expect("create outside dir");
-    let file_path = AbsolutePathBuf::try_from(outside.join("file.txt"))
-        .expect("outside file path should be absolute");
-    let cwd_abs = cwd.abs();
-    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
-        &[],
-        /*exclude_tmpdir_env_var*/ true,
-        /*exclude_slash_tmp*/ true,
-    );
-
-    let permissions = write_permissions_for_paths(
-        &[file_path.into()],
-        &PatchSandboxRoute::Platform(WindowsSandboxLevel::Disabled)
-            .prepare_matching(&sandbox_policy, &local_context(&cwd_abs.into()))
-            .expect("prepare patch matching"),
-    )
-    .expect("derive write permissions");
-    let expected_outside = outside.abs();
-
-    assert_eq!(
-        permissions
-            .and_then(|profile| profile.file_system)
-            .and_then(|fs| fs.legacy_read_write_roots())
-            .and_then(|roots| roots.write),
-        Some(vec![expected_outside])
-    );
-}
-
-#[test]
-fn write_permissions_for_paths_do_not_widen_workspace_root_target() {
-    let tmp = TempDir::new().expect("tmp");
-    let cwd = tmp.path().join("workspace").abs();
-    std::fs::create_dir_all(&cwd).expect("create workspace");
-    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
-        &[],
-        /*exclude_tmpdir_env_var*/ true,
-        /*exclude_slash_tmp*/ true,
-    );
-    let permissions = write_permissions_for_paths(
-        &[cwd.clone().into()],
-        &PatchSandboxRoute::Platform(WindowsSandboxLevel::Disabled)
-            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
-            .expect("prepare patch matching"),
-    )
-    .expect("derive write permissions");
-
-    assert_eq!(permissions, None);
-}
-
-#[test]
-fn write_permissions_for_paths_do_not_regrant_an_already_writable_parent() {
-    let tmp = TempDir::new().expect("tmp");
-    let cwd = tmp.path().abs();
-    let file_path = cwd.join("protected.txt");
-    let sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry::new(cwd.clone().into(), FileSystemAccessMode::Write),
-        FileSystemSandboxEntry::new(file_path.clone().into(), FileSystemAccessMode::Read),
-    ]);
-
-    let permissions = write_permissions_for_paths(
-        &[file_path.into()],
-        &PatchSandboxRoute::Platform(WindowsSandboxLevel::Disabled)
-            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
-            .expect("prepare patch matching"),
-    )
-    .expect("derive write permissions");
-
-    assert_eq!(permissions, None);
-}
-
-#[test]
 fn write_permissions_for_windows_paths_uses_executor_uris() {
     let cwd = PathUri::parse("file:///C:/workspace").expect("Windows cwd");
     let context = local_context(&cwd);
@@ -393,4 +290,106 @@ fn write_permissions_for_windows_paths_uses_executor_uris() {
             FileSystemAccessMode::Write,
         )]),
     );
+}
+
+#[test]
+fn write_permissions_for_paths_skip_dirs_already_writable_under_workspace_root() {
+    let tmp = TempDir::new().expect("tmp");
+    let cwd_path = tmp.path();
+    let cwd = cwd_path.abs();
+    let nested = cwd_path.join("nested");
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+    let file_path = AbsolutePathBuf::try_from(nested.join("file.txt"))
+        .expect("nested file path should be absolute");
+    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
+        &[],
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ false,
+    );
+
+    let permissions = write_permissions_for_paths(
+        &[file_path.into()],
+        &PatchSandboxRoute::Platform
+            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
+            .expect("prepare patch matching"),
+    )
+    .expect("derive write permissions");
+
+    assert_eq!(permissions, None);
+}
+
+#[test]
+fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
+    let tmp = TempDir::new().expect("tmp");
+    let cwd = tmp.path().join("workspace");
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&cwd).expect("create cwd");
+    std::fs::create_dir_all(&outside).expect("create outside dir");
+    let file_path = AbsolutePathBuf::try_from(outside.join("file.txt"))
+        .expect("outside file path should be absolute");
+    let cwd_abs = cwd.abs();
+    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
+        &[],
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+
+    let permissions = write_permissions_for_paths(
+        &[file_path.into()],
+        &PatchSandboxRoute::Platform
+            .prepare_matching(&sandbox_policy, &local_context(&cwd_abs.into()))
+            .expect("prepare patch matching"),
+    )
+    .expect("derive write permissions");
+    let expected_outside = outside.abs();
+
+    assert_eq!(
+        permissions
+            .and_then(|profile| profile.file_system)
+            .and_then(|fs| fs.legacy_read_write_roots())
+            .and_then(|roots| roots.write),
+        Some(vec![expected_outside])
+    );
+}
+
+#[test]
+fn write_permissions_for_paths_do_not_widen_workspace_root_target() {
+    let tmp = TempDir::new().expect("tmp");
+    let cwd = tmp.path().join("workspace").abs();
+    std::fs::create_dir_all(&cwd).expect("create workspace");
+    let sandbox_policy = FileSystemSandboxPolicy::workspace_write(
+        &[],
+        /*exclude_tmpdir_env_var*/ true,
+        /*exclude_slash_tmp*/ true,
+    );
+    let permissions = write_permissions_for_paths(
+        &[cwd.clone().into()],
+        &PatchSandboxRoute::Platform
+            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
+            .expect("prepare patch matching"),
+    )
+    .expect("derive write permissions");
+
+    assert_eq!(permissions, None);
+}
+
+#[test]
+fn write_permissions_for_paths_do_not_regrant_an_already_writable_parent() {
+    let tmp = TempDir::new().expect("tmp");
+    let cwd = tmp.path().abs();
+    let file_path = cwd.join("protected.txt");
+    let sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry::new(cwd.clone().into(), FileSystemAccessMode::Write),
+        FileSystemSandboxEntry::new(file_path.clone().into(), FileSystemAccessMode::Read),
+    ]);
+
+    let permissions = write_permissions_for_paths(
+        &[file_path.into()],
+        &PatchSandboxRoute::Platform
+            .prepare_matching(&sandbox_policy, &local_context(&cwd.into()))
+            .expect("prepare patch matching"),
+    )
+    .expect("derive write permissions");
+
+    assert_eq!(permissions, None);
 }

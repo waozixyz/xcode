@@ -139,7 +139,9 @@ fn unicode_labels_and_later_declarations() {
         body.extend(&descriptions);
         body.push("T --> S");
         let mut expected = vec!["stateDiagram-v2", "S: Ready"];
-        if descriptions.len() > 1 { expected.push("S: Working"); }
+        if descriptions.len() > 1 {
+            expected.push("S: Working");
+        }
         expected.extend(["S --> T", "T --> S"]);
         assert_eq!(
             render(&body.join("\n"), /*max_width*/ 100),
@@ -228,8 +230,11 @@ fn graph_relationship_endpoints() {
         /*max_width*/ 100,
     )
     .unwrap();
-    let rows = ["│ A", "│ string a;b", "│ Object[] elementData", "│ +get()"]
-        .map(|row| output.find(row).unwrap_or_else(|| panic!("{row}: {output}")));
+    let rows = ["│ A", "│ string a;b", "│ Object[] elementData", "│ +get()"].map(|row| {
+        output
+            .find(row)
+            .unwrap_or_else(|| panic!("{row}: {output}"))
+    });
     assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{output}");
     // Endpoint markers bind only before whitespace or a quoted cardinality.
     for (line, spaced, target_tip, dashed) in [
@@ -239,9 +244,19 @@ fn graph_relationship_endpoints() {
         (r#"A ..o"many" B"#, r#"A ..o "many" B"#, '◇', true),
     ] {
         let output = render(&format!("classDiagram; {line}"), /*max_width*/ 100).unwrap();
-        assert_eq!(Ok(output.clone()), render(&format!("classDiagram; {spaced}"), 100), "{line}");
-        let ports = output.lines().filter(|row| row.contains('├')).collect::<Vec<_>>();
-        assert!(ports[0].contains("├─") && ports[1].contains(&format!("├{target_tip}")), "{line}: {output}");
+        assert_eq!(
+            Ok(output.clone()),
+            render(&format!("classDiagram; {spaced}"), 100),
+            "{line}"
+        );
+        let ports = output
+            .lines()
+            .filter(|row| row.contains('├'))
+            .collect::<Vec<_>>();
+        assert!(
+            ports[0].contains("├─") && ports[1].contains(&format!("├{target_tip}")),
+            "{line}: {output}"
+        );
         assert_eq!(output.contains('┆'), dashed, "{line}: {output}");
     }
 }

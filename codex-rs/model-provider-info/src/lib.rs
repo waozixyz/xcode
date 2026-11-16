@@ -586,8 +586,8 @@ other non-default provider fields are not supported"
                     "version".to_string(),
                     codex_protocol::client_version::reported_client_version().into(),
                 )]
-                    .into_iter()
-                    .collect(),
+                .into_iter()
+                .collect(),
             ),
             env_http_headers: Some(
                 [

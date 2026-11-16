@@ -125,7 +125,14 @@ impl InitializeRequestProcessor {
             client_mcp_extensions = ClientMcpExtensions::new(extensions);
         }
         let originator = name.clone();
-        let user_agent_suffix = format!("{name}; {version}");
+        // First-party clients built from this tree report the 0.0.0 package placeholder;
+        // the service sees the same upstream Codex version as every other request.
+        let reported_version = if version == "0.0.0" {
+            codex_protocol::client_version::reported_client_version()
+        } else {
+            version.as_str()
+        };
+        let user_agent_suffix = format!("{name}; {reported_version}");
         let mutates_global_identity = !NON_ORIGINATING_CLIENT_NAMES.contains(&name.as_str());
         let codex_home = self.config.codex_home.clone();
         if session
@@ -193,22 +200,6 @@ impl InitializeRequestProcessor {
         set_default_client_residency_requirement(self.config.enforce_residency.value());
         if mutates_global_identity && let Ok(mut suffix) = USER_AGENT_SUFFIX.lock() {
             *suffix = Some(user_agent_suffix);
-        }
-
-        #[cfg(windows)]
-        if matches!(session.origin, ConnectionOrigin::Stdio) && name == "Codex Desktop" {
-            // Uninstall ownership must not depend on account sign-in or sandbox setup.
-            // Keep this bounded attempt ahead of the response; background registration can race uninstall.
-            let home = codex_home.clone();
-            if !matches!(
-                tokio::task::spawn_blocking(move || {
-                    codex_windows_sandbox::register_desktop_installation(&home)
-                })
-                .await,
-                Ok(Ok(()))
-            ) {
-                tracing::warn!("could not register desktop uninstall ownership");
-            }
         }
 
         let user_agent = get_codex_user_agent();

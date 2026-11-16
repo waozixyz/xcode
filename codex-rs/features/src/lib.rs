@@ -206,8 +206,6 @@ pub enum Feature {
     ShellSnapshot,
     /// Restore bundled tools to PATH after Codex's login shell starts.
     LoginShellPackagePath,
-    /// Expose the selected PowerShell execution host's bounded major/minor version.
-    PowerShellShellVersion,
     /// Keep policy-filtered shell snapshots entirely in executor memory.
     ShellSnapshotV2,
     /// Allow turns to start while selected executors are still starting.
@@ -529,14 +527,6 @@ pub enum Feature {
     UseLinuxSandboxBwrap,
     /// Allow the model to request approval and propose exec rules.
     RequestRule,
-    /// Enable Windows sandbox (restricted token) on Windows.
-    WindowsSandbox,
-    /// Use the elevated Windows sandbox pipeline (setup + runner).
-    WindowsSandboxElevated,
-    /// Attempt elevated Windows sandbox provisioning through the installed service.
-    WindowsSandboxService,
-    /// Prefer the local native Windows sandbox when available, retaining legacy fallback.
-    PreferMxc,
     /// Legacy remote models flag kept for backward compatibility.
     RemoteModels,
     /// Removed legacy git commit attribution guidance flag.
@@ -1202,7 +1192,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::SecretAuthStorage,
         key: "secret_auth_storage",
         stage: Stage::Stable,
-        default_enabled: cfg!(windows),
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::UnifiedExec,
@@ -1242,12 +1232,6 @@ pub const FEATURES: &[FeatureSpec] = &[
             menu_description: "Keep bundled tools such as ripgrep available when login shell startup resets PATH.",
             announcement: "",
         },
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::PowerShellShellVersion,
-        key: "powershell_shell_version",
-        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
@@ -1536,30 +1520,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::RequestRule,
         key: "request_rule",
         stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandbox,
-        key: "experimental_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandboxElevated,
-        key: "elevated_windows_sandbox",
-        stage: Stage::Removed,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::WindowsSandboxService,
-        key: "windows_sandbox_service",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::PreferMxc,
-        key: "prefer_mxc",
-        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
@@ -2335,18 +2295,10 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::PreventIdleSleep,
         key: "prevent_idle_sleep",
-        stage: if cfg!(any(
-            target_os = "macos",
-            target_os = "linux",
-            target_os = "windows"
-        )) {
-            Stage::Experimental {
-                name: "Prevent sleep while running",
-                menu_description: "Keep your computer awake while Codex is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
-            }
-        } else {
-            Stage::UnderDevelopment
+        stage: Stage::Experimental {
+            name: "Prevent sleep while running",
+            menu_description: "Keep your computer awake while Codex is running a thread.",
+            announcement: "NEW: Prevent sleep while running is now available in /experimental.",
         },
         default_enabled: false,
     },

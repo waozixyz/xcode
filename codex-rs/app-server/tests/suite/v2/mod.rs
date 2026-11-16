@@ -24,7 +24,6 @@ mod bedrock_setup;
 mod client_metadata;
 mod code_mode_host;
 mod collaboration_mode_list;
-#[cfg(unix)]
 mod command_exec;
 mod compaction;
 #[path = "config_model_provider_requirements_tests.rs"]
@@ -40,17 +39,14 @@ mod config_requirements_login;
 mod config_rpc;
 #[path = "config_server_tests.rs"]
 mod config_server;
-#[cfg(unix)]
 #[path = "connection_handling_stdio_tests.rs"]
 mod connection_handling_stdio;
 mod connection_handling_websocket;
 #[path = "connection_handling_websocket_compression_tests.rs"]
 mod connection_handling_websocket_compression;
-#[cfg(unix)]
 mod connection_handling_websocket_unix;
 #[path = "critical_path_analytics_tests.rs"]
 mod critical_path_analytics;
-#[cfg(unix)]
 mod curated_mcp_sync;
 mod current_time;
 mod cyber_access_program;
@@ -61,7 +57,6 @@ mod environment_add;
 mod environment_info;
 mod environment_status;
 mod exec_server_test_support;
-#[cfg(not(target_os = "windows"))]
 mod executor_mcp;
 mod executor_skills;
 #[path = "executor_skills_spawn_tests.rs"]
@@ -142,11 +137,9 @@ mod review;
 mod rollout_compress;
 mod rollout_migration;
 mod safety_check_downgrade;
-#[cfg(not(target_os = "windows"))]
 mod selected_capability_stack;
 mod selected_environment;
 mod server_diagnostics;
-#[cfg(not(target_os = "windows"))]
 mod session_end;
 mod skills_list;
 mod sleep;
@@ -188,7 +181,6 @@ mod turn_start;
 mod turn_steer;
 mod view_image;
 mod web_search;
-mod windows_sandbox_setup;
 mod workspace_routing;
 
 mod user_verification;

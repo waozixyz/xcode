@@ -2,7 +2,6 @@ use codex_utils_absolute_path::test_support::PathExt;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::FileTimes;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -443,8 +442,6 @@ async fn worker_compresses_old_active_and_archived_rollouts() -> anyhow::Result<
     let stale_temp = active_path.with_file_name("rollout-stale.jsonl.zst.tmp");
     fs::write(&stale_temp, "stale temp")?;
     set_old_mtime(&stale_temp)?;
-    // A crash during metadata restoration can leave the data file unreadable.
-    #[cfg(unix)]
     fs::set_permissions(&stale_temp, fs::Permissions::from_mode(0o000))?;
 
     let fresh_temp = active_path.with_file_name("rollout-fresh.jsonl.zst.tmp");
@@ -621,7 +618,6 @@ async fn resume_materializes_compressed_rollout_path() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn compression_preserves_rollout_permissions() -> anyhow::Result<()> {
     let home = TempDir::new()?;
@@ -740,7 +736,6 @@ async fn worker_preserves_inherited_acl_through_append() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn worker_preserves_alternate_group_through_materialization() -> anyhow::Result<()> {
     use std::os::unix::fs::MetadataExt;
@@ -871,7 +866,6 @@ async fn worker_does_not_leak_temps_for_deletion_protected_rollouts() -> anyhow:
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn append_materialization_preserves_compressed_rollout_permissions() -> anyhow::Result<()> {
     let home = TempDir::new()?;
@@ -932,7 +926,6 @@ fn persist_temp_file_noclobber_does_not_replace_existing_destination() -> anyhow
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn compression_preserves_read_only_rollout_permissions() -> anyhow::Result<()> {
     let home = TempDir::new()?;

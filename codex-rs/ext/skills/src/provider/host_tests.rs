@@ -121,7 +121,6 @@ async fn host_catalog_resource_spellings_read_the_discovered_skill()
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn host_catalog_preserves_symlinked_skill_discovery_paths()
 -> Result<(), Box<dyn std::error::Error>> {

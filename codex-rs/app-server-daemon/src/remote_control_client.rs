@@ -373,7 +373,7 @@ impl From<RemoteControlStatusChangedNotification> for RemoteControlReadyStatus {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use anyhow::Result;
     use codex_app_server_protocol::JSONRPCError;

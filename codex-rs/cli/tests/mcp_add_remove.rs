@@ -186,11 +186,7 @@ async fn add_and_login_discover_oauth_through_configured_http_proxy() -> Result<
             .await?
             .contains_key("oauth")
     );
-    let helper_command = if cfg!(windows) {
-        r#"echo {"X-Gateway":"gateway-token"}"#
-    } else {
-        r#"printf '{"X-Gateway":"gateway-token"}'"#
-    };
+    let helper_command = r#"printf '{"X-Gateway":"gateway-token"}'"#;
     let config_path = codex_home.path().join("config.toml");
     let mut config = std::fs::read_to_string(&config_path)?;
     config.push_str(&format!(

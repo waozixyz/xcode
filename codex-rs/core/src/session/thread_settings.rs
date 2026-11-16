@@ -113,7 +113,6 @@ pub(super) fn prepare_update(
         sandbox_policy,
         permission_profile,
         active_permission_profile,
-        windows_sandbox_level,
         model,
         effort,
         summary,
@@ -140,7 +139,6 @@ pub(super) fn prepare_update(
         sandbox_policy,
         permission_profile,
         active_permission_profile,
-        windows_sandbox_level,
         disabled_plugin_ids,
         ..Default::default()
     }

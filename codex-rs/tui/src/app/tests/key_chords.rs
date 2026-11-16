@@ -16,7 +16,6 @@ use crate::chatwidget::ReplayKind;
 use crate::chatwidget::tests::helpers::render_bottom_popup;
 use crate::chatwidget::tests::helpers::set_active_cell;
 use crate::keymap::KeymapContext;
-#[cfg(unix)]
 use crate::pager_overlay::TranscriptHistoryState;
 use crate::tui::Tui;
 use codex_app_server_protocol::ThreadHistoryMode;
@@ -391,7 +390,6 @@ async fn queued_config_handoff_observes_a_consumed_chord_prefix() -> Result<()> 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_recovers_vim_escape_before_normal_commands() -> Result<()> {
     for (key, expected) in [
@@ -424,7 +422,6 @@ async fn legacy_terminal_recovers_vim_escape_before_normal_commands() -> Result<
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_preserves_default_and_configured_editor_alt_bindings() -> Result<()> {
     for (key, expected) in [
@@ -466,7 +463,6 @@ async fn legacy_terminal_preserves_default_and_configured_editor_alt_bindings() 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_preserves_active_global_alt_shortcuts() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;
@@ -496,7 +492,6 @@ async fn legacy_terminal_preserves_active_global_alt_shortcuts() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn owned_transcript_alt_jumps_preserve_legacy_vim_insert_and_draft() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;
@@ -555,7 +550,6 @@ async fn owned_transcript_alt_jumps_preserve_legacy_vim_insert_and_draft() -> Re
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_preserves_configured_composer_alt_shortcuts() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;
@@ -588,7 +582,6 @@ async fn legacy_terminal_preserves_configured_composer_alt_shortcuts() -> Result
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_preserves_active_alt_chords() -> Result<()> {
     for (binding, prefix, completion) in [
@@ -631,7 +624,6 @@ async fn legacy_terminal_preserves_active_alt_chords() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn legacy_terminal_preserves_image_paste_without_reading_clipboard() -> Result<()> {
     for mode in ['i', 'R'] {
@@ -727,7 +719,6 @@ async fn vim_escape_recovery_preserves_enhanced_terminals_and_altgr() -> Result<
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn recovered_vim_escape_cancels_a_pending_key_chord_first() -> Result<()> {
     let (mut app, mut tui, mut app_server) = chord_app().await?;

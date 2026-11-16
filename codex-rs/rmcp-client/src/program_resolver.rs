@@ -19,7 +19,6 @@ use std::path::Path;
 /// Unix systems handle PATH resolution and script execution natively through
 /// the kernel's shebang (`#!`) mechanism, so this function simply returns
 /// the program name unchanged.
-#[cfg(unix)]
 pub fn resolve(
     program: OsString,
     _env: &HashMap<OsString, OsString>,
@@ -28,55 +27,16 @@ pub fn resolve(
     Ok(program)
 }
 
-/// Resolves a program to its executable path on Windows systems.
-///
-/// Windows requires explicit file extensions for script execution. This function
-/// uses the `which` crate to search the `PATH` environment variable and find
-/// the full path to the executable, including necessary script extensions
-/// (`.cmd`, `.bat`, etc.) defined in `PATHEXT`.
-///
-/// This enables tools like `npx`, `pnpm`, and `yarn` to work correctly on Windows
-/// without requiring users to specify full paths or extensions in their configuration.
-#[cfg(windows)]
-pub fn resolve(
-    program: OsString,
-    env: &HashMap<OsString, OsString>,
-    cwd: &Path,
-) -> std::io::Result<OsString> {
-    // Extract PATH from environment for search locations
-    let search_path = env.iter().find_map(|(name, value)| {
-        name.to_string_lossy()
-            .eq_ignore_ascii_case("PATH")
-            .then_some(value)
-    });
-
-    // Attempt resolution via which crate
-    match which::which_in(&program, search_path, cwd) {
-        Ok(resolved) => {
-            tracing::debug!("Resolved {program:?} to {resolved:?}");
-            Ok(resolved.into_os_string())
-        }
-        Err(e) => {
-            tracing::debug!("Failed to resolve {program:?}: {e}. Using original path");
-            // Fallback to original program - let Command::new() handle the error
-            Ok(program)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::create_env_for_mcp_server;
     use anyhow::Result;
-    #[cfg(windows)]
-    use std::fs;
     use std::path::Path;
     use tempfile::TempDir;
     use tokio::process::Command;
 
     /// Unix: Verifies the OS handles script execution without file extensions.
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_unix_executes_script_without_extension() -> Result<()> {
         let env = TestExecutableEnv::new()?;
@@ -92,54 +52,10 @@ mod tests {
         Ok(())
     }
 
-    /// Windows: Verifies scripts fail to execute without the proper extension.
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_fails_without_extension() -> Result<()> {
-        let env = TestExecutableEnv::new()?;
-        let mut cmd = Command::new(&env.program_name);
-        cmd.envs(&env.mcp_env);
-
-        let output = cmd.output().await;
-        assert!(
-            output.is_err(),
-            "Windows requires .cmd/.bat extension for direct execution"
-        );
-        Ok(())
-    }
-
-    /// Windows: Verifies scripts with an explicit extension execute correctly.
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn test_windows_succeeds_with_extension() -> Result<()> {
-        let env = TestExecutableEnv::new()?;
-        // Append the `.cmd` extension to the program name
-        let program_with_ext = format!("{}.cmd", env.program_name);
-        let mut cmd = Command::new(&program_with_ext);
-        cmd.envs(&env.mcp_env);
-
-        let output = cmd.output().await;
-        assert!(
-            output.is_ok(),
-            "Windows should execute scripts when the extension is provided"
-        );
-        Ok(())
-    }
-
     /// Verifies program resolution enables successful execution on all platforms.
     #[tokio::test]
     async fn test_resolved_program_executes_successfully() -> Result<()> {
         let env = TestExecutableEnv::new()?;
-        #[cfg(windows)]
-        let env = {
-            let mut env = env;
-            let path = env
-                .mcp_env
-                .remove(std::ffi::OsStr::new("PATH"))
-                .expect("test environment should include PATH");
-            env.mcp_env.insert(OsString::from("Path"), path);
-            env
-        };
         let program = OsString::from(&env.program_name);
 
         // Apply platform-specific resolution
@@ -178,9 +94,6 @@ mod tests {
             let mut extra_env = HashMap::new();
             extra_env.insert(OsString::from("PATH"), Self::build_path_env_var(dir_path));
 
-            #[cfg(windows)]
-            extra_env.insert(OsString::from("PATHEXT"), Self::ensure_cmd_extension());
-
             let mcp_env = create_env_for_mcp_server(Some(extra_env), &[])?;
 
             Ok(Self {
@@ -192,13 +105,6 @@ mod tests {
 
         /// Creates a simple, platform-specific executable script.
         fn create_executable(dir: &Path) -> Result<()> {
-            #[cfg(windows)]
-            {
-                let file = dir.join(format!("{}.cmd", Self::TEST_PROGRAM));
-                fs::write(&file, "@echo off\nexit 0")?;
-            }
-
-            #[cfg(unix)]
             {
                 let file = dir.join(Self::TEST_PROGRAM);
                 codex_utils_cargo_bin::write_executable(&file, "#!/bin/sh\nexit 0")?;
@@ -211,28 +117,11 @@ mod tests {
         fn build_path_env_var(dir: &Path) -> OsString {
             let mut path = OsString::from(dir.as_os_str());
             if let Some(current) = std::env::var_os("PATH") {
-                let sep = if cfg!(windows) { ";" } else { ":" };
+                let sep = ":";
                 path.push(sep);
                 path.push(current);
             }
             path
-        }
-
-        /// Ensures `.CMD` is in the `PATHEXT` variable on Windows for script discovery.
-        #[cfg(windows)]
-        fn ensure_cmd_extension() -> OsString {
-            let current = std::env::var_os("PATHEXT").unwrap_or_default();
-            if current
-                .to_string_lossy()
-                .to_ascii_uppercase()
-                .contains(".CMD")
-            {
-                current
-            } else {
-                let mut path_ext = OsString::from(".CMD;");
-                path_ext.push(current);
-                path_ext
-            }
         }
     }
 }

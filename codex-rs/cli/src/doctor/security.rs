@@ -1,33 +1,31 @@
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use std::ffi::OsStr;
-#[cfg(target_os = "windows")]
-use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use std::process::Output;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use std::process::Stdio;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use tokio::process::Command;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 use tokio::time::timeout;
 
 use super::CheckStatus;
 use super::DoctorCheck;
 use super::DoctorIssue;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 const PRODUCT_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 const MAX_PRODUCT_OUTPUT_BYTES: usize = 64 * 1024;
 
 pub(super) enum EndpointInspection {
     Complete(Vec<&'static str>),
-    #[cfg(any(target_os = "windows", test))]
+    #[cfg(test)]
     Partial(Vec<&'static str>),
-    #[cfg(any(target_os = "macos", target_os = "windows", test))]
+    #[cfg(any(target_os = "macos", test))]
     Unavailable,
 }
 
@@ -38,9 +36,9 @@ pub(super) async fn check() -> DoctorCheck {
 pub(super) fn endpoint_check(inspection: EndpointInspection) -> DoctorCheck {
     let (products, visibility_incomplete) = match inspection {
         EndpointInspection::Complete(products) => (products, false),
-        #[cfg(any(target_os = "windows", test))]
+        #[cfg(test)]
         EndpointInspection::Partial(products) => (products, true),
-        #[cfg(any(target_os = "macos", target_os = "windows", test))]
+        #[cfg(any(target_os = "macos", test))]
         EndpointInspection::Unavailable => {
             return DoctorCheck::new(
                 "security.endpoint",
@@ -65,9 +63,7 @@ pub(super) fn endpoint_check(inspection: EndpointInspection) -> DoctorCheck {
             .detail(format!("endpoint products: {detail}"));
     }
 
-    let targets = if cfg!(target_os = "windows") {
-        "signed Codex app; codex.exe; codex-windows-sandbox-setup.exe; codex-command-runner.exe; codex-code-mode-host.exe"
-    } else if cfg!(target_os = "macos") {
+    let targets = if cfg!(target_os = "macos") {
         "signing team 2DC432GLL2 plus the installed Codex app identity, signed codex agent, and required helpers"
     } else {
         "verified Codex app, codex agent, and required helpers"
@@ -125,56 +121,6 @@ pub(super) fn endpoint_check(inspection: EndpointInspection) -> DoctorCheck {
 }
 
 async fn endpoint_products() -> EndpointInspection {
-    #[cfg(target_os = "windows")]
-    {
-        let system32 = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
-            .join("System32");
-        let service = system32.join("sc.exe");
-        let (crowdstrike, beyondtrust, defender, sentinelone) = tokio::join!(
-            product_command(&service, &["query", "CSFalconService"]),
-            product_command(&service, &["query", "DefendpointService"]),
-            product_command(&service, &["query", "WinDefend"]),
-            product_command(&service, &["query", "SentinelAgent"]),
-        );
-
-        let mut products = Vec::new();
-        let mut visibility_incomplete = false;
-        for (product, output) in [
-            ("CrowdStrike Falcon", crowdstrike),
-            ("BeyondTrust Privilege Management", beyondtrust),
-            ("Microsoft Defender", defender),
-            ("SentinelOne", sentinelone),
-        ] {
-            match output {
-                Some(output) if output.status.success() => {
-                    if product != "Microsoft Defender"
-                        || String::from_utf8_lossy(&output.stdout).lines().any(|line| {
-                            line.split_once(':').is_some_and(|(_, value)| {
-                                value.split_whitespace().next() == Some("4")
-                            })
-                        })
-                    {
-                        products.push(product);
-                    }
-                }
-                Some(output) if output.status.code() == Some(1060) => {}
-                Some(_) | None => visibility_incomplete = true,
-            }
-        }
-
-        if visibility_incomplete {
-            if products.is_empty() {
-                EndpointInspection::Unavailable
-            } else {
-                EndpointInspection::Partial(products)
-            }
-        } else {
-            EndpointInspection::Complete(products)
-        }
-    }
-
     #[cfg(target_os = "macos")]
     {
         const PRODUCTS: &[(&str, &str, &str)] = &[
@@ -228,13 +174,13 @@ async fn endpoint_products() -> EndpointInspection {
         )
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "macos"))]
     {
         EndpointInspection::Complete(Vec::new())
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 async fn product_command(program: impl AsRef<OsStr>, args: &[&str]) -> Option<Output> {
     let mut command = Command::from(codex_utils_process::background_command(program));
     command

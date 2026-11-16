@@ -524,9 +524,7 @@ fn spawn_written_executable(command: &mut Command) -> std::io::Result<Child> {
     let mut attempt = 1;
     loop {
         match command.spawn() {
-            Err(error)
-                if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < ATTEMPTS =>
-            {
+            Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < ATTEMPTS => {
                 std::thread::sleep(std::time::Duration::from_millis(2 * attempt));
                 attempt += 1;
             }

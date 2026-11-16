@@ -7,7 +7,6 @@ use std::process::Command;
 use anyhow::Result;
 
 pub(crate) fn set_working_directory(command: &mut Command, state_dir: &Path) -> Result<()> {
-    #[cfg(unix)]
     let cwd_missing = match std::env::current_dir() {
         Ok(_) => false,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
@@ -32,8 +31,6 @@ pub(crate) fn set_working_directory(command: &mut Command, state_dir: &Path) -> 
     }
     // Preserve process-scoped paths before changing cwd; CA names match CUSTOM_CA_ENV_KEYS.
     for name in [
-        #[cfg(windows)]
-        "CODEX_SQLITE_HOME",
         "CODEX_CA_CERTIFICATE",
         "SSL_CERT_FILE",
         "REQUESTS_CA_BUNDLE",
@@ -82,11 +79,8 @@ pub(crate) fn set_working_directory(command: &mut Command, state_dir: &Path) -> 
             .collect::<std::io::Result<Vec<_>>>()?;
         command.env("SSL_CERT_DIR", std::env::join_paths(paths)?);
     }
-    #[cfg(unix)]
     if cwd_missing {
         command.current_dir(state_dir);
     }
-    #[cfg(windows)]
-    command.current_dir(state_dir);
     Ok(())
 }

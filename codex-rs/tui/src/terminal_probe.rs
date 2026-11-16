@@ -13,15 +13,9 @@
 
 use std::time::Duration;
 
-#[cfg(unix)]
 mod startup_replay;
 
-#[cfg(unix)]
 mod terminal_identity;
-
-#[cfg(any(windows, test))]
-#[path = "terminal_probe/windows_replay.rs"]
-mod windows_replay;
 
 /// Default wall-clock budget for each terminal probe or startup probe group.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_millis(/*millis*/ 250);
@@ -35,7 +29,6 @@ pub(crate) struct DefaultColors {
     pub(crate) bg: (u8, u8, u8),
 }
 
-#[cfg(unix)]
 #[cfg_attr(test, allow(dead_code))]
 mod imp {
     use super::DefaultColors;
@@ -813,11 +806,6 @@ mod imp {
     }
 }
 
-#[cfg(windows)]
-#[path = "terminal_probe/windows.rs"]
-mod imp;
-
-#[cfg(any(unix, windows, test))]
 fn parse_osc_color(buffer: &[u8], slot: u8) -> Option<(u8, u8, u8)> {
     let prefix = format!("\x1B]{slot};");
     let start = find_subslice(buffer, prefix.as_bytes())?;
@@ -828,14 +816,12 @@ fn parse_osc_color(buffer: &[u8], slot: u8) -> Option<(u8, u8, u8)> {
     parse_osc_rgb(payload)
 }
 
-#[cfg(any(unix, test))]
 fn parse_default_colors(buffer: &[u8]) -> Option<DefaultColors> {
     let fg = parse_osc_color(buffer, /*slot*/ 10)?;
     let bg = parse_osc_color(buffer, /*slot*/ 11)?;
     Some(DefaultColors { fg, bg })
 }
 
-#[cfg(any(unix, windows, test))]
 fn osc_payload_end(buffer: &[u8]) -> Option<(usize, usize)> {
     let mut idx = 0;
     while idx < buffer.len() {
@@ -848,7 +834,6 @@ fn osc_payload_end(buffer: &[u8]) -> Option<(usize, usize)> {
     None
 }
 
-#[cfg(any(unix, windows, test))]
 fn parse_osc_rgb(payload: &str) -> Option<(u8, u8, u8)> {
     let (prefix, values) = payload.trim().split_once(':')?;
     if !prefix.eq_ignore_ascii_case("rgb") && !prefix.eq_ignore_ascii_case("rgba") {
@@ -865,7 +850,6 @@ fn parse_osc_rgb(payload: &str) -> Option<(u8, u8, u8)> {
     parts.next().is_none().then_some((r, g, b))
 }
 
-#[cfg(any(unix, windows, test))]
 fn parse_osc_component(component: &str) -> Option<u8> {
     if !(1..=4).contains(&component.len()) {
         return None;
@@ -876,14 +860,12 @@ fn parse_osc_component(component: &str) -> Option<u8> {
     Some((value * u32::from(u8::MAX) / maximum) as u8)
 }
 
-#[cfg(any(unix, windows, test))]
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
 }
 
-#[cfg(any(unix, windows))]
 pub(crate) use imp::*;
 
 #[cfg(test)]

@@ -441,7 +441,6 @@ fn native_path_grammar_preserves_component_validation_and_spelling() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn non_unicode_home_is_rejected_by_the_shared_compiler() {
     use std::ffi::OsString;

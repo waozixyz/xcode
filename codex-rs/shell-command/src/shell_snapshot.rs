@@ -27,7 +27,7 @@ pub use restore::build_brokered_credential_exports;
 
 use capture::BASH_SH_SNAPSHOT_HEADER;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "shell_snapshot_tests.rs"]
 mod tests;
 

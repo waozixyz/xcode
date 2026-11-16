@@ -1,5 +1,6 @@
 //! Covers policy presence and the environment-only configuration projection.
 
+use codex_network_proxy::EnvironmentNetworkPolicyExt;
 use super::*;
 use codex_config::RequirementSource;
 use codex_network_proxy::NetworkProxyConstraints;

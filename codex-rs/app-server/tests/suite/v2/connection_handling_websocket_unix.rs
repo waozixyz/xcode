@@ -32,7 +32,6 @@ use futures::SinkExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
-#[cfg(unix)]
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 use tokio::process::Child;
@@ -46,7 +45,6 @@ use wiremock::Mock;
 use wiremock::matchers::method;
 use wiremock::matchers::path_regex;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_ctrl_c_waits_for_running_turn_before_exit() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -129,7 +127,6 @@ async fn websocket_transport_ctrl_c_waits_for_running_turn_before_exit() -> Resu
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_second_ctrl_c_forces_exit_while_turn_running() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -157,7 +154,6 @@ async fn websocket_transport_second_ctrl_c_forces_exit_while_turn_running() -> R
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_sigterm_waits_for_running_turn_before_exit() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -184,7 +180,6 @@ async fn websocket_transport_sigterm_waits_for_running_turn_before_exit() -> Res
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_second_sigterm_forces_exit_while_turn_running() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -212,7 +207,6 @@ async fn websocket_transport_second_sigterm_forces_exit_while_turn_running() -> 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_repeated_sighup_keeps_waiting_for_running_turn() -> Result<()> {
     let GracefulCtrlCFixture {
@@ -242,7 +236,6 @@ async fn websocket_transport_repeated_sighup_keeps_waiting_for_running_turn() ->
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn websocket_transport_allows_turn_interrupt_during_drain() -> Result<()> {
     let (_release_target, target_gate) = oneshot::channel();
@@ -310,7 +303,6 @@ async fn websocket_transport_allows_turn_interrupt_during_drain() -> Result<()> 
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case::test_case("thread/queue/add", json!({
     "clientUserMessageId": "queued-before-drain",
     "input": [{"type": "text", "text": "continue from queue"}],
@@ -522,22 +514,18 @@ async fn wait_for_responses_post(server: &wiremock::MockServer, wait_for: Durati
     }
 }
 
-#[cfg(unix)]
 fn send_sigint(process: &Child) -> Result<()> {
     send_signal(process, "-INT")
 }
 
-#[cfg(unix)]
 fn send_sigterm(process: &Child, _home: &std::path::Path) -> Result<()> {
     send_signal(process, "-TERM")
 }
 
-#[cfg(unix)]
 fn send_sighup(process: &Child) -> Result<()> {
     send_signal(process, "-HUP")
 }
 
-#[cfg(unix)]
 fn send_signal(process: &Child, signal: &str) -> Result<()> {
     let pid = process
         .id()

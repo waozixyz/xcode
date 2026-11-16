@@ -1,6 +1,5 @@
 use core::fmt;
 use std::io;
-#[cfg(unix)]
 use std::os::fd::RawFd;
 use std::process::ExitStatus;
 use std::sync::Arc;
@@ -37,7 +36,6 @@ pub(crate) fn exit_code_from_status(status: ExitStatus) -> i32 {
         return code;
     }
 
-    #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
         if let Some(signal) = status.signal() {
@@ -77,15 +75,12 @@ impl From<TerminalSize> for PtySize {
     }
 }
 
-#[cfg(unix)]
 pub(crate) trait PtyHandleKeepAlive: Send {}
 
-#[cfg(unix)]
 impl<T: Send + ?Sized> PtyHandleKeepAlive for T {}
 
 pub(crate) enum PtyMasterHandle {
     Resizable(Box<dyn MasterPty + Send>),
-    #[cfg(unix)]
     Opaque {
         raw_fd: RawFd,
         _handle: Box<dyn PtyHandleKeepAlive>,
@@ -200,7 +195,6 @@ impl ProcessHandle {
             if let Some(handles) = handles.as_ref() {
                 return match &handles._master {
                     PtyMasterHandle::Resizable(master) => master.resize(size.into()),
-                    #[cfg(unix)]
                     PtyMasterHandle::Opaque { raw_fd, .. } => resize_raw_pty(*raw_fd, size),
                 };
             }
@@ -243,10 +237,6 @@ impl ProcessHandle {
         };
 
         let result = killer.signal(signal);
-        #[cfg(windows)]
-        if result.is_ok() {
-            killer_opt.take();
-        }
         result
     }
 
@@ -283,17 +273,10 @@ impl Drop for ProcessHandle {
 /// Adapts a closure into a `ChildTerminator` implementation.
 struct ClosureTerminator {
     inner: Option<Box<dyn FnMut() + Send + Sync>>,
-    #[cfg(windows)]
-    interrupt_terminates: bool,
 }
 
 impl ChildTerminator for ClosureTerminator {
     fn signal(&mut self, signal: ProcessSignal) -> io::Result<()> {
-        #[cfg(windows)]
-        if self.interrupt_terminates {
-            return self.kill();
-        }
-
         Err(unsupported_signal(signal))
     }
 
@@ -305,7 +288,6 @@ impl ChildTerminator for ClosureTerminator {
     }
 }
 
-#[cfg(unix)]
 fn resize_raw_pty(raw_fd: RawFd, size: TerminalSize) -> anyhow::Result<()> {
     let mut winsize = libc::winsize {
         ws_row: size.rows,
@@ -373,9 +355,6 @@ pub struct ProcessDriver {
     pub terminator: Option<Box<dyn FnMut() + Send + Sync>>,
     pub writer_handle: Option<JoinHandle<()>>,
     pub resizer: Option<ResizeFn>,
-    /// Whether this Windows process is attached to a pseudo-console.
-    #[cfg(windows)]
-    pub tty: bool,
 }
 
 /// Build a `SpawnedProcess` from a driver that supplies stdin/output/exit channels.
@@ -388,12 +367,7 @@ pub fn spawn_from_driver(driver: ProcessDriver) -> SpawnedProcess {
         terminator,
         writer_handle,
         resizer,
-        #[cfg(windows)]
-        tty,
     } = driver;
-
-    #[cfg(windows)]
-    let interrupt_terminates = terminator.is_some() && !tty;
 
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>(256);
     let (stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>(256);
@@ -458,11 +432,7 @@ pub fn spawn_from_driver(driver: ProcessDriver) -> SpawnedProcess {
 
     let handle = ProcessHandle::new(
         writer_tx,
-        Box::new(ClosureTerminator {
-            inner: terminator,
-            #[cfg(windows)]
-            interrupt_terminates,
-        }),
+        Box::new(ClosureTerminator { inner: terminator }),
         Some(reader_handle),
         stderr_reader_handle,
         writer_handle,

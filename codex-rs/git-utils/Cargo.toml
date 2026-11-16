@@ -18,12 +18,11 @@ codex-utils-absolute-path = { workspace = true }
 codex-utils-path-uri = { workspace = true }
 codex-utils-pty = { workspace = true }
 futures = { workspace = true, features = ["alloc"] }
-gix = { workspace = true }
 once_cell = { workspace = true }
 regex = "1"
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-similar = { workspace = true }
+codex-utils-text-diff = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process", "rt", "time"] }
@@ -35,6 +34,7 @@ ts-rs = { workspace = true, features = [
 walkdir = { workspace = true }
 
 [dev-dependencies]
+gix = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 pretty_assertions = { workspace = true }
 

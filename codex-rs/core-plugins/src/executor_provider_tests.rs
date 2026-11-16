@@ -250,7 +250,6 @@ async fn root_ownership_survives_malformed_ancestor_manifests() {
     let directory = tempdir().expect("tempdir");
     let root = directory.path().join("package/skills");
     fs::create_dir_all(&root).expect("create skills root");
-    #[cfg(unix)]
     let root = {
         let alias = directory.path().join("owning-package/skills");
         fs::create_dir_all(alias.parent().unwrap()).expect("create owning package");

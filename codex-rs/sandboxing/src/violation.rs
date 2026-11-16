@@ -4,7 +4,6 @@ use codex_network_proxy::NetworkMode;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use tracing::warn;
 
-#[cfg(unix)]
 const EXIT_CODE_SIGNAL_BASE: i32 = 128;
 const OUTPUT_SNIPPET_MAX_CHARS: usize = 512;
 
@@ -49,8 +48,6 @@ pub enum SandboxViolationBackend {
     LinuxSandbox,
     ManagedNetworkProxy,
     Seatbelt,
-    WindowsSandbox,
-    WindowsMxc,
 }
 
 impl SandboxViolationBackend {
@@ -59,8 +56,6 @@ impl SandboxViolationBackend {
             Self::LinuxSandbox => "linux_sandbox",
             Self::ManagedNetworkProxy => "managed_network_proxy",
             Self::Seatbelt => "seatbelt",
-            Self::WindowsSandbox => "windows_sandbox",
-            Self::WindowsMxc => "windows_mxc",
         }
     }
 }
@@ -144,8 +139,6 @@ fn classify_filesystem_sandbox_violation(
         SandboxType::None => return None,
         SandboxType::MacosSeatbelt => SandboxViolationBackend::Seatbelt,
         SandboxType::LinuxSeccomp => SandboxViolationBackend::LinuxSandbox,
-        SandboxType::WindowsRestrictedToken => SandboxViolationBackend::WindowsSandbox,
-        SandboxType::WindowsMxc => SandboxViolationBackend::WindowsMxc,
     };
 
     if let Some((reason, output)) = filesystem_reason_from_output(exec_output) {
@@ -161,7 +154,6 @@ fn classify_filesystem_sandbox_violation(
         return None;
     }
 
-    #[cfg(unix)]
     {
         if sandbox_type == SandboxType::LinuxSeccomp
             && exec_output.exit_code == EXIT_CODE_SIGNAL_BASE + libc::SIGSYS

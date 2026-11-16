@@ -80,11 +80,7 @@ impl AudioTrack {
 
     /// Send only synthetic silence while muted, never a device or processing buffer.
     /// Reuse the encoded packet and pace it by the same RTP clock as live capture.
-    #[cfg(any(
-        target_os = "macos",
-        all(target_os = "linux", target_env = "gnu"),
-        all(windows, target_env = "msvc")
-    ))]
+    #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
     pub(crate) async fn send_muted_silence(&mut self, at: Instant) -> Result<(), &'static str> {
         if self.end.is_some_and(|end| at < end) {
             return Ok(());

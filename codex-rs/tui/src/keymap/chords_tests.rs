@@ -350,7 +350,6 @@ fn rejects_reserved_interrupt_keys_inside_a_main_chord() {
     assert!(error.contains("fixed.interrupt_or_quit"), "{error}");
 }
 
-#[cfg(unix)]
 #[test]
 fn rejects_unix_suspend_key_in_any_chord_stroke() {
     for chord in ["ctrl-z ctrl-t", "ctrl-x ctrl-z"] {
@@ -362,18 +361,6 @@ fn rejects_unix_suspend_key_in_any_chord_stroke() {
 
         assert!(error.contains("suspending"), "{error}");
     }
-}
-
-#[cfg(windows)]
-#[test]
-fn rejects_windows_altgr_prefixes_outside_vim() {
-    let mut config = TuiKeymap::default();
-    config.composer.submit = Some(binding("ctrl-alt-x enter"));
-
-    let error =
-        RuntimeKeymap::from_config(&config).expect_err("AltGr may be ordinary Windows text input");
-
-    assert!(error.contains("AltGr"), "{error}");
 }
 
 #[test]

@@ -38,16 +38,12 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
     if running.is_none() && client::probe(&legacy.socket_path).await.is_ok() {
         return super::manual_update::unsupported(legacy).await;
     }
-    #[cfg(unix)]
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let cancellation = async {
-        #[cfg(unix)]
         tokio::select! {
             _ = terminate.recv() => {},
             _ = tokio::signal::ctrl_c() => {},
         }
-        #[cfg(windows)]
-        let _ = tokio::signal::ctrl_c().await;
         Some(())
     };
     let mut cancellation = std::pin::pin!(cancellation);
@@ -60,7 +56,6 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
         "the published installer does not support daemon migration yet; the legacy installation was left unchanged"
     );
     eprintln!("Preparing the daemon update in {}...", root.display());
-    #[cfg(unix)]
     {
         if matches!(
             run_installer_script(
@@ -74,11 +69,6 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
         ) {
             return Err(std::io::Error::from(std::io::ErrorKind::Interrupted).into());
         }
-    }
-    #[cfg(windows)]
-    tokio::select! {
-        result = run_installer_script(&script, InstallerMode::Migration, &root) => { result?; },
-        _ = &mut cancellation => return Err(std::io::Error::from(std::io::ErrorKind::Interrupted).into()),
     }
 
     let _install_lock = acquire_install_lock(&root).await?;
@@ -94,11 +84,7 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
             && std::fs::read_to_string(root.join("auto-update-version"))? == name.to_string_lossy(),
         "installer did not prepare a latest-channel daemon package"
     );
-    let entrypoint = if cfg!(windows) {
-        "bin/codex.exe"
-    } else {
-        "bin/codex"
-    };
+    let entrypoint = "bin/codex";
     let binary = release.join(entrypoint);
     let version = managed_install::managed_codex_version(&binary).await?;
     anyhow::ensure!(
@@ -114,8 +100,6 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
         .await,
         "the latest production release does not support daemon migration yet; the legacy daemon was left running"
     );
-    #[cfg(windows)]
-    backend::windows::ensure_detached_launch(&binary)?;
     anyhow::ensure!(
         selected_release(legacy)? == previous,
         "daemon selection changed; retry the update"

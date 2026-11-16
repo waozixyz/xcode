@@ -6,14 +6,20 @@ use unicode_width::UnicodeWidthStr;
 
 /// Render statements as separate lines, so equivalent graphs compare by output.
 fn flowchart(header: &str, statements: &[&str]) -> Result<String, RenderError> {
-    render(&format!("{header}\n{}", statements.join("\n")), /*max_width*/ 200)
+    render(
+        &format!("{header}\n{}", statements.join("\n")),
+        /*max_width*/ 200,
+    )
 }
 
 #[test]
 fn stadium_declarations_and_references() {
     let output = flowchart("flowchart TD", &["A", "A([Ready?])", "A", "A([Ready?])"]).unwrap();
     assert_eq!(output, flowchart("flowchart TD", &["A([Ready?])"]).unwrap());
-    assert!(output.contains('╭') && output.contains("Ready?"), "{output}");
+    assert!(
+        output.contains('╭') && output.contains("Ready?"),
+        "{output}"
+    );
 }
 
 #[test]
@@ -74,7 +80,10 @@ A[Review & confirm;]"#;
     );
     // `oB` and `xB` are node names, not circle or cross endpoints.
     let output = flowchart("flowchart", &["A--- oB", "A-.- xB"]).unwrap();
-    assert!(output.contains("│ oB") && output.contains("│ xB"), "{output}");
+    assert!(
+        output.contains("│ oB") && output.contains("│ xB"),
+        "{output}"
+    );
     assert_eq!(
         flowchart("flowchart", &["A --> B & B"]).unwrap(),
         flowchart("flowchart TD", &["A --> B", "A --> B"]).unwrap(),
@@ -84,8 +93,11 @@ A[Review & confirm;]"#;
         render(&format!("graph TD; {unquoted}"), /*max_width*/ 180).unwrap(),
     );
     // Quoted text keeps separators and brackets; the decision keeps its marker.
-    let output =
-        render(r#"graph TD;A["chimpansen hoppar ()[]"] -->|"x | y; z"| B{"x < 3?"};"#, 200).unwrap();
+    let output = render(
+        r#"graph TD;A["chimpansen hoppar ()[]"] -->|"x | y; z"| B{"x < 3?"};"#,
+        200,
+    )
+    .unwrap();
     for text in ["┌", "│ chimpansen hoppar ()[]", "x | y; z", "│ ◇ x < 3?"] {
         assert!(output.contains(text), "{text}: {output}");
     }
@@ -95,7 +107,10 @@ A[Review & confirm;]"#;
         (r#"A["/Input/"]"#, "/Input/"),
     ] {
         let output = flowchart("flowchart TD", &[quoted]).unwrap();
-        assert!(output.starts_with('┌') && output.contains(&format!("│ {label}")), "{output}");
+        assert!(
+            output.starts_with('┌') && output.contains(&format!("│ {label}")),
+            "{output}"
+        );
     }
 }
 

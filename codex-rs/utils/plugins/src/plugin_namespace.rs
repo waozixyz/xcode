@@ -248,7 +248,6 @@ mod tests {
         assert_eq!(find_plugin_manifest_path(&plugin_root), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlinked_root_plugin_manifest() {
         let tmp = tempdir().expect("tempdir");
@@ -283,7 +282,6 @@ mod tests {
         assert_eq!(find_plugin_manifest_path(&plugin_root), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlinked_legacy_plugin_manifest_before_lower_precedence_manifest() {
         let tmp = tempdir().expect("tempdir");
@@ -302,7 +300,6 @@ mod tests {
         assert_eq!(find_plugin_manifest_path(&plugin_root), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlinked_legacy_plugin_manifest_directory_before_lower_precedence_manifest() {
         let tmp = tempdir().expect("tempdir");
@@ -324,7 +321,6 @@ mod tests {
         assert_eq!(find_plugin_manifest_path(&plugin_root), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlinked_claude_manifest_before_cursor_manifest() {
         let tmp = tempdir().expect("tempdir");

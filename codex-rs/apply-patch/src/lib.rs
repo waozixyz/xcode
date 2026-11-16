@@ -1076,7 +1076,6 @@ mod tests {
         assert_eq!(contents, "line2\n");
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_failed_move_returns_committed_destination_delta() {
         use std::os::unix::fs::PermissionsExt;
@@ -1329,7 +1328,6 @@ mod tests {
         assert_eq!(String::from_utf8(stderr).unwrap(), "");
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_apply_patch_fails_on_write_error() {
         use std::os::unix::fs::PermissionsExt;
@@ -1388,7 +1386,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_delete_symlink_returns_inexact_delta() {
         use std::os::unix::fs::symlink;

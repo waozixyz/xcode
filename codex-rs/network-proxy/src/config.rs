@@ -7,9 +7,7 @@ use anyhow::Result;
 use anyhow::bail;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
-use serde::Serializer;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -22,103 +20,11 @@ use crate::Platform;
 use crate::mitm_hook::MitmHookConfig;
 use crate::policy::normalize_host;
 
-/// Variant order encodes effective precedence for duplicate patterns:
-/// `None < Allow < Deny`, so deny wins over allow when entries conflict.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "lowercase")]
-pub enum NetworkDomainPermission {
-    None,
-    Allow,
-    Deny,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NetworkDomainPermissionEntry {
-    pub pattern: String,
-    pub permission: NetworkDomainPermission,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct NetworkDomainPermissions {
-    pub entries: Vec<NetworkDomainPermissionEntry>,
-}
-
-impl Serialize for NetworkDomainPermissions {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.effective_entries()
-            .into_iter()
-            .map(|entry| (entry.pattern, entry.permission))
-            .collect::<BTreeMap<_, _>>()
-            .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for NetworkDomainPermissions {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let entries = BTreeMap::<String, NetworkDomainPermission>::deserialize(deserializer)?
-            .into_iter()
-            .map(|(pattern, permission)| NetworkDomainPermissionEntry {
-                pattern,
-                permission,
-            })
-            .collect();
-        Ok(Self { entries })
-    }
-}
-
-impl NetworkDomainPermissions {
-    fn effective_entries(&self) -> Vec<NetworkDomainPermissionEntry> {
-        let mut order = Vec::new();
-        let mut effective_permissions = BTreeMap::new();
-
-        for entry in &self.entries {
-            if !effective_permissions.contains_key(&entry.pattern) {
-                order.push(entry.pattern.clone());
-            }
-
-            let permission = effective_permissions
-                .entry(entry.pattern.clone())
-                .or_insert(entry.permission);
-            if entry.permission > *permission {
-                *permission = entry.permission;
-            }
-        }
-
-        order
-            .into_iter()
-            .filter_map(|pattern| {
-                effective_permissions.remove(&pattern).map(|permission| {
-                    NetworkDomainPermissionEntry {
-                        pattern,
-                        permission,
-                    }
-                })
-            })
-            .collect()
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum NetworkUnixSocketPermission {
-    Allow,
-    Deny,
-}
-
-/// Socket policy keys are preserved across controller and executor hosts.
-/// Allow entries must be NUL-free and absolute according to the executor OS;
-/// Deny entries are retained without path validation or expansion.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct NetworkUnixSocketPermissions {
-    #[serde(flatten)]
-    pub entries: BTreeMap<String, NetworkUnixSocketPermission>,
-}
+pub use codex_network_policy::NetworkDomainPermission;
+pub use codex_network_policy::NetworkDomainPermissionEntry;
+pub use codex_network_policy::NetworkDomainPermissions;
+pub use codex_network_policy::NetworkUnixSocketPermission;
+pub use codex_network_policy::NetworkUnixSocketPermissions;
 
 /// A caller-provided MITM CA for trusted proxy configuration, not sandbox `config.toml`.
 /// The private key file is readable only by the proxy process.
@@ -237,44 +143,11 @@ impl NetworkProxyConfig {
         &mut self,
         environment: &HashMap<String, String>,
     ) {
-        if cfg!(windows)
-            && self.credential_broker
-            && self.has_ambiguous_windows_credential_environment(environment)
-        {
-            warn!(
-                "credential brokerage disabled because shell environment overrides contain \
-                 conflicting case-insensitive provider keys"
-            );
-            self.set_credential_broker_enabled(/*enabled*/ false);
-        }
         self.credential_broker_context = if self.credential_broker {
             crate::CredentialBrokerContext::capture(self, environment)
         } else {
             crate::CredentialBrokerContext::default()
         };
-    }
-
-    fn has_ambiguous_windows_credential_environment(
-        &self,
-        environment: &HashMap<String, String>,
-    ) -> bool {
-        environment.iter().any(|(key, value)| {
-            let is_provider_key =
-                crate::credential_broker::is_credential_broker_provider_env_key(key)
-                    || self.credential_providers.values().any(|provider| {
-                        provider
-                            .env
-                            .iter()
-                            .chain(provider.url_prefix_from_env.iter())
-                            .any(|candidate| key.eq_ignore_ascii_case(candidate))
-                    });
-            is_provider_key
-                && environment.iter().any(|(candidate, candidate_value)| {
-                    key != candidate
-                        && key.eq_ignore_ascii_case(candidate)
-                        && value != candidate_value
-                })
-        })
     }
 
     pub fn allowed_domains(&self) -> Option<Vec<String>> {
@@ -834,26 +707,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
-    fn ambiguous_credential_environment_preserves_remote_proxy_support() {
-        let mut config = NetworkProxyConfig {
-            enabled: true,
-            ..Default::default()
-        };
-        let expected = crate::RemoteNetworkProxyConfig::from_effective_config(&config).unwrap();
-        config.set_credential_broker_enabled(/*enabled*/ true);
-        config.configure_credential_broker_environment(&HashMap::from([
-            ("GH_HOST".to_string(), "first.example".to_string()),
-            ("gh_host".to_string(), "second.example".to_string()),
-        ]));
-        assert_eq!(
-            crate::RemoteNetworkProxyConfig::from_effective_config(&config).unwrap(),
-            expected
-        );
-    }
-
-    #[test]
-    #[cfg(unix)]
     fn credential_broker_context_accepts_non_unicode_environment() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;

@@ -6,22 +6,15 @@ mod pid_namespace_tests;
 mod auth_refresh_tests;
 
 use std::collections::HashMap;
-#[cfg(unix)]
 use std::io::BufRead as _;
-#[cfg(unix)]
 use std::io::BufReader as StdBufReader;
-#[cfg(unix)]
 use std::io::Read as _;
-#[cfg(unix)]
 use std::io::Write as _;
-#[cfg(unix)]
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::Stdio;
-#[cfg(unix)]
 use std::thread;
 use std::time::Duration;
-#[cfg(unix)]
 use std::time::Instant;
 
 use anyhow::Context;
@@ -629,16 +622,6 @@ metrics_exporter = {{ otlp-http = {{ endpoint = "{collector_url}/v1/metrics", pr
     std::fs::remove_file(&manifest)?;
     assert_eq!(client.force_environment_info().await?, expected_info);
 
-    #[cfg(windows)]
-    let argv = vec![
-        "powershell.exe",
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "if (Test-Path Env:CODEX_EXEC_SERVER_EXIT_ON_STDIN_CLOSE) { exit 1 }; Start-Sleep -Seconds 60",
-    ];
-    #[cfg(not(windows))]
     let argv = vec![
         "/bin/sh",
         "-c",
@@ -1113,9 +1096,6 @@ metrics_exporter = {{ otlp-http = {{ endpoint = "{base_url}/v1/metrics", protoco
 
     let cwd = url::Url::from_directory_path(std::env::current_dir()?)
         .map_err(|()| anyhow::anyhow!("could not convert cwd to file URL"))?;
-    #[cfg(windows)]
-    let argv = vec!["ping.exe", "-n", "61", "127.0.0.1"];
-    #[cfg(not(windows))]
     let argv = vec!["/bin/sleep", "60"];
     let codex_bin = codex_utils_cargo_bin::cargo_bin("codex")?;
     let codex_home = codex_home.path().to_path_buf();
@@ -1247,7 +1227,6 @@ async fn send_json_line(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn local_exec_server_exits_successfully_on_sigterm() -> Result<()> {
     let codex_home = TempDir::new()?;

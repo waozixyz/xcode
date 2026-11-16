@@ -205,7 +205,6 @@ fn full_disk_write_with_unreadable_glob_still_wraps_and_masks_match() {
     assert!(writable_root < devices && devices < device_mask);
 }
 
-#[cfg(unix)]
 #[test]
 fn restricted_policy_chdirs_to_canonical_command_cwd() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -285,7 +284,6 @@ fn restricted_policy_chdirs_to_canonical_command_cwd() {
     }));
 }
 
-#[cfg(unix)]
 #[test]
 fn symlinked_writable_roots_bind_real_target_and_remap_carveouts() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -334,7 +332,6 @@ fn symlinked_writable_roots_bind_real_target_and_remap_carveouts() {
     }));
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_under_symlinked_ancestors_bind_real_target() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -378,7 +375,6 @@ fn writable_roots_under_symlinked_ancestors_bind_real_target() {
     }));
 }
 
-#[cfg(unix)]
 #[test]
 fn protected_symlinked_directory_subpaths_fail_closed() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -407,7 +403,6 @@ fn protected_symlinked_directory_subpaths_fail_closed() {
     assert!(message.contains(&agents_link_str), "{message}");
 }
 
-#[cfg(unix)]
 #[test]
 fn symlinked_writable_roots_nested_symlink_escape_paths_fail_closed() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -625,7 +620,6 @@ fn missing_child_git_under_parent_repo_is_mounted_read_only() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn symlinked_missing_child_git_under_parent_repo_mounts_effective_path_read_only() {
     let temp_dir = TempDir::new().expect("temp dir");
@@ -1451,7 +1445,6 @@ fn unreadable_globs_expand_existing_matches_with_configured_depth() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn unreadable_globs_add_canonical_targets_for_symlink_matches() {
     let temp_dir = TempDir::new().expect("temp dir");

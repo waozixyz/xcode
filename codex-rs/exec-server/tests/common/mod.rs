@@ -29,18 +29,7 @@ pub(crate) const SYSTEM_PROXY_REQUEST_URL_ENV: &str =
     "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_REQUEST_URL";
 pub(crate) const SYSTEM_PROXY_URL_ENV: &str = "CODEX_EXEC_SERVER_TEST_SYSTEM_PROXY_URL";
 
-const CODEX_WINDOWS_SANDBOX_ARG1: &str = "--run-as-windows-sandbox";
 const DELAYED_OUTPUT_AFTER_EXIT_CHILD_ARG: &str = "--codex-test-delayed-output-after-exit-child";
-
-#[macro_export]
-macro_rules! skip_if_mxc_unavailable {
-    ($return_value:expr $(,)?) => {{
-        if !codex_sandboxing::windows_mxc_available() {
-            eprintln!("skipping test: native MXC is unavailable on this host");
-            return $return_value;
-        }
-    }};
-}
 
 #[ctor]
 pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
@@ -49,12 +38,6 @@ pub static TEST_BINARY_DISPATCH_GUARD: Option<TestBinaryDispatchGuard> = {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         if argv1 == Some(CODEX_FS_HELPER_ARG1) {
-            return TestBinaryDispatchMode::DispatchArg0Only;
-        }
-        if argv1 == Some(CODEX_WINDOWS_SANDBOX_ARG1) {
-            return TestBinaryDispatchMode::DispatchArg0Only;
-        }
-        if argv1 == Some(codex_sandboxing::CODEX_WINDOWS_MXC_ARG1) {
             return TestBinaryDispatchMode::DispatchArg0Only;
         }
         if exe_name == CODEX_LINUX_SANDBOX_ARG0 {
@@ -214,7 +197,7 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
             std::process::exit(1);
         }
     };
-    let mut runtime_paths = match ExecServerRuntimeOptions::new(
+    let runtime_paths = match ExecServerRuntimeOptions::new(
         current_exe.clone(),
         linux_sandbox_exe(guard, &current_exe),
     ) {
@@ -224,14 +207,6 @@ fn maybe_run_exec_server_from_test_binary(guard: Option<&TestBinaryDispatchGuard
             std::process::exit(1);
         }
     };
-    runtime_paths.prefer_mxc = env::var("CODEX_EXEC_SERVER_TEST_PREFER_MXC")
-        .ok()
-        .map(|value| {
-            value.parse().unwrap_or_else(|error| {
-                eprintln!("invalid test MXC preference: {error}");
-                std::process::exit(1);
-            })
-        });
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

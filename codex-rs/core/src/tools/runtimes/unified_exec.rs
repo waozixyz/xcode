@@ -24,7 +24,6 @@ use crate::tools::network_approval::remote_network_proxy_launch;
 use crate::tools::runtimes::RuntimePathPrepends;
 use crate::tools::runtimes::exec_env_for_sandbox_permissions;
 use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
-use crate::tools::runtimes::prepare_powershell_command_for_windows_sandbox;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalAction;
 use crate::tools::sandboxing::ExecApprovalRequirement;
@@ -33,7 +32,6 @@ use crate::tools::sandboxing::Sandboxable;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
 use crate::tools::sandboxing::ToolRuntime;
-use crate::tools::sandboxing::executor_windows_sandbox_selection;
 use crate::tools::sandboxing::managed_network_for_sandbox_permissions;
 use crate::tools::sandboxing::sandbox_permissions_preserving_denied_reads;
 use crate::unified_exec::TerminalPermissions;
@@ -42,7 +40,6 @@ use crate::unified_exec::UnifiedExecProcess;
 use crate::unified_exec::UnifiedExecProcessManager;
 use codex_core_plugins::PluginMetricsSidecar;
 use codex_features::Feature;
-use codex_file_system::WindowsSandboxSelection;
 use codex_network_proxy::CREDENTIAL_BROKER_ACTIVE_ENV_KEY;
 use codex_network_proxy::NetworkProxy;
 use codex_network_proxy::RemoteCredentialMasking;
@@ -54,7 +51,6 @@ use codex_protocol::protocol::WarningEvent;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxablePreference;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
-use codex_shell_command::powershell::prefix_powershell_script_with_utf8;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
 use std::io;
@@ -227,7 +223,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
         let prepared = req.prepared;
         let base_command = &prepared.resolved.command;
         let requested_shell = &prepared.resolved.shell.shell;
-        let windows_sandbox_proxy_settings_mode = ctx.session.windows_sandbox_proxy_settings_mode;
         let session_shell = ctx.session.user_shell();
         let environment_shell = prepared
             .turn_environment
@@ -432,7 +427,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
         if let Some(sidecar) = metrics_sidecar.as_ref() {
             sidecar.install_output_env(&mut env);
         }
-        #[cfg(unix)]
         let runtime_path_prepends = {
             let mut runtime_path_prepends = RuntimePathPrepends::default();
             if !environment_is_remote {
@@ -443,8 +437,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
             }
             runtime_path_prepends
         };
-        #[cfg(not(unix))]
-        let runtime_path_prepends = RuntimePathPrepends::default();
         // Restore the executor's PATH directories inside the shell so nested commands can
         // still find bundled tools even if login startup clears the inherited PATH.
         // `base_command` already carries the requested login mode; keep it if setup is unavailable.
@@ -514,43 +506,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
                 *script = format!("{exports}\n{script}");
             }
         }
-        if !environment_is_remote
-            && matches!(shell.shell_type, ShellType::PowerShell | ShellType::Cmd)
-            && env
-                .get(CREDENTIAL_BROKER_ACTIVE_ENV_KEY)
-                .is_some_and(|active| active == "1")
-            && let Some(network) = managed_network
-        {
-            network.restore_and_disable_brokered_credentials(&mut env, &mut command);
-        }
-        // The executor selection is Disabled for non-Windows target paths, so this
-        // preparation is a no-op for PowerShell on other platforms.
-        let windows_sandbox = executor_windows_sandbox_selection(
-            attempt.windows_sandbox_type,
-            attempt.windows_sandbox_level,
-            attempt.sandbox_cwd,
-        );
-        let mut command = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&requested_shell.shell_type),
-            attempt.sandbox_requested,
-            windows_sandbox,
-            environment_is_remote,
-        );
-        let command = if matches!(requested_shell.shell_type, ShellType::PowerShell) {
-            if attempt.sandbox_requested
-                && windows_sandbox == WindowsSandboxSelection::Mxc
-                && let [_, .., flag, script] = command.as_mut_slice()
-                && flag.eq_ignore_ascii_case("-Command")
-            {
-                // Temporary workaround for https://github.com/PowerShell/PowerShell/issues/27899.
-                // Remove the prefix once supported PowerShell versions initialize $PWD under a denied ancestor.
-                script.insert_str(0, include_str!("../../../assets/tools/mxc_pwsh_cwd.ps1"));
-            }
-            prefix_powershell_script_with_utf8(&command)
-        } else {
-            command
-        };
+        let command = command;
         let sidecar_permissions = metrics_sidecar
             .as_ref()
             .map(PluginMetricsSidecar::additional_permissions);
@@ -650,7 +606,6 @@ impl<'a> ToolRuntime<UnifiedExecRequest<'_>, UnifiedExecAttempt> for UnifiedExec
                 network_proxy_launch,
                 req.exec_server_env_config.clone(),
                 req.shell_snapshot.clone(),
-                windows_sandbox_proxy_settings_mode,
                 prepared.tty,
                 prepared.turn_environment.environment().as_ref(),
             )
@@ -702,7 +657,7 @@ async fn warn_if_remote_credential_masking_unavailable(
     } else if match prepared.resolved.shell.shell.shell_type {
         ShellType::Bash => prepared.resolved.shell.use_login_shell || req.shell_snapshot.is_some(),
         ShellType::Zsh => !prepared.resolved.shell.use_login_shell || req.shell_snapshot.is_none(),
-        ShellType::Sh | ShellType::PowerShell | ShellType::Cmd => true,
+        ShellType::Sh => true,
     } {
         format!(
             "Credential masking is unavailable for this shell startup on environment `{environment_id}`. This command will run with unmasked credentials."
@@ -732,7 +687,6 @@ mod tests {
     use crate::tools::sandboxing::ToolRuntime;
     use codex_exec_server::Environment;
     use codex_exec_server::LOCAL_ENVIRONMENT_ID;
-    use codex_protocol::config_types::WindowsSandboxLevel;
     use codex_protocol::models::PermissionProfile;
     use codex_protocol::protocol::EnvironmentConfig;
     use codex_protocol::protocol::EnvironmentConfigState;
@@ -755,8 +709,6 @@ mod tests {
                     environment_hooks: Default::default(),
                     allow_login_shell: true,
                     workspace_roots: Vec::new(),
-                    windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                    windows_sandbox_type: codex_sandboxing::SandboxType::None,
                     use_legacy_landlock: false,
                     permission_profile: PermissionProfileSnapshot::legacy(
                         PermissionProfile::read_only(),

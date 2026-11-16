@@ -81,7 +81,7 @@ codex-utils-string = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
 derive_more = { workspace = true, features = ["debug", "is_variant"] }
-diffy = { workspace = true }
+codex-utils-text-diff = { workspace = true }
 dirs = { workspace = true }
 dunce = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
@@ -136,7 +136,6 @@ urlencoding = { workspace = true }
 webbrowser = { workspace = true }
 uuid = { workspace = true }
 
-codex-windows-sandbox = { workspace = true }
 tokio-util = { workspace = true, features = ["time"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -152,31 +151,11 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 # Keep the same executor features as the credential store, which also uses zbus.
 zbus = "4.4.0"
 
-[target.'cfg(windows)'.dependencies]
-which = { workspace = true }
-windows-sys = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_Globalization",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Console",
-    "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_RemoteDesktop",
-    "Win32_System_IO",
-    "Win32_System_Pipes",
-    "Win32_System_Threading",
-    "Win32_UI_Shell",
-    "Win32_UI_WindowsAndMessaging",
-] }
-winsplit = "0.1"
-
-# Clipboard support via `arboard` is not available on Android/Termux.
-# Only include it for non-Android targets so the crate builds on Android.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 arboard = { workspace = true }
 
-
 [dev-dependencies]
+diffy = { workspace = true }
 app_test_support = { workspace = true }
 codex-mcp = { workspace = true }
 codex-protocol-test-support = { workspace = true }

@@ -20,7 +20,6 @@ use codex_plugin::PluginHookSource;
 use codex_plugin::is_allowlisted_bundled_cleanup_hook;
 use codex_protocol::protocol::HookEventName;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use serde::Deserialize;
 use serde::Serialize;
@@ -474,15 +473,7 @@ fn config_toml_source_path(layer: &ConfigLayerEntry) -> AbsolutePathBuf {
 }
 
 fn synthetic_layer_path(path: &str) -> AbsolutePathBuf {
-    #[cfg(windows)]
-    {
-        AbsolutePathBuf::resolve_path_against_base(path, r"C:\")
-    }
-
-    #[cfg(not(windows))]
-    {
-        AbsolutePathBuf::resolve_path_against_base(path, "/")
-    }
+    AbsolutePathBuf::resolve_path_against_base(path, "/")
 }
 
 fn escape_xml_text(value: &str) -> String {
@@ -531,28 +522,13 @@ pub fn validate_environment_hooks(
 
 fn append_environment_hooks(
     discovered: &mut DiscoveryResult,
-    mut source: crate::EnvironmentHookSource,
+    source: crate::EnvironmentHookSource,
     display_order: &mut i64,
 ) {
     let path = synthetic_layer_path(&format!(
         "<environment:{}>/requirements.toml",
         source.environment_id
     ));
-    // Resolve overrides against the executor platform before normal local discovery.
-    for (_, groups) in source.hooks.matcher_groups_mut() {
-        for handler in groups.iter_mut().flat_map(|group| &mut group.hooks) {
-            if let HookHandlerConfig::Command {
-                command,
-                command_windows,
-                ..
-            } = handler
-                && let Some(windows) = command_windows.take()
-                && source.cwd.infer_path_convention() == Some(PathConvention::Windows)
-            {
-                *command = windows;
-            }
-        }
-    }
     let handler_start = discovered.handlers.len();
     let entry_start = discovered.hook_entries.len();
     append_hook_events(
@@ -651,17 +627,12 @@ fn append_matcher_groups(
             let normalized = match handler {
                 HookHandlerConfig::Command {
                     command,
-                    command_windows,
                     timeout_sec,
                     r#async,
                     status_message,
                     additional_context_limit,
                 } => {
-                    let command = if cfg!(windows) {
-                        command_windows.unwrap_or(command)
-                    } else {
-                        command
-                    };
+                    let command = command;
                     if command.trim().is_empty() {
                         source.record_load_failure(
                             format!("skipping empty hook command in {}", source.path.display()),
@@ -705,7 +676,6 @@ fn append_matcher_groups(
                         .filter(|limit| *limit != DEFAULT_HOOK_OUTPUT_TOKEN_LIMIT);
                     let config = HookHandlerConfig::Command {
                         command: command.clone(),
-                        command_windows: None,
                         timeout_sec: Some(timeout_sec),
                         r#async,
                         status_message: status_message.clone(),
@@ -1184,7 +1154,6 @@ mod tests {
             matcher: matcher.map(str::to_string),
             hooks: vec![HookHandlerConfig::Command {
                 command: "echo hello".to_string(),
-                command_windows: None,
                 timeout_sec: None,
                 r#async: false,
                 status_message: None,
@@ -1200,7 +1169,6 @@ mod tests {
             matcher: None,
             hooks: vec![HookHandlerConfig::Command {
                 command: "echo hello".to_string(),
-                command_windows: None,
                 timeout_sec: None,
                 r#async: false,
                 status_message: None,
@@ -1548,7 +1516,6 @@ mod tests {
                 hooks: vec![
                     HookHandlerConfig::Command {
                         command: "echo default".to_string(),
-                        command_windows: None,
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
@@ -1556,7 +1523,6 @@ mod tests {
                     },
                     HookHandlerConfig::Command {
                         command: "echo clamped".to_string(),
-                        command_windows: None,
                         timeout_sec: Some(600),
                         r#async: true,
                         status_message: None,
@@ -1638,7 +1604,6 @@ mod tests {
                 matcher: Some("ignored".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "echo interrupt".to_string(),
-                    command_windows: None,
                     timeout_sec: Some(600),
                     r#async: true,
                     status_message: None,
@@ -1829,7 +1794,6 @@ mod tests {
                     matcher: None,
                     hooks: vec![HookHandlerConfig::Command {
                         command: "echo hello".to_string(),
-                        command_windows: None,
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
@@ -1860,7 +1824,6 @@ mod tests {
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "echo unix".to_string(),
-                    command_windows: Some("echo windows".to_string()),
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
@@ -1874,12 +1837,7 @@ mod tests {
         assert_eq!(
             handlers[0].kind,
             ConfiguredHandlerKind::Command {
-                command: if cfg!(windows) {
-                    "echo windows"
-                } else {
-                    "echo unix"
-                }
-                .to_string(),
+                command: "echo unix".to_string(),
                 env: std::collections::HashMap::new(),
                 r#async: false,
             }

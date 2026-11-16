@@ -612,7 +612,6 @@ async fn direct_child_plugin_root_ignores_nested_skills() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn direct_child_plugin_root_skips_skills_resolving_outside_plugin_root() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);
@@ -650,7 +649,6 @@ async fn direct_child_plugin_root_skips_skills_resolving_outside_plugin_root() {
     assert_eq!(snapshot.skills, Vec::new());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn recursive_plugin_root_preserves_symlinked_skill_discovery_path() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);
@@ -703,7 +701,6 @@ async fn recursive_plugin_root_preserves_symlinked_skill_discovery_path() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn follows_directory_symlinks_except_for_system_scope() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);

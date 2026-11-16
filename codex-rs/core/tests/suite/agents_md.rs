@@ -2080,16 +2080,8 @@ async fn global_instruction_warnings_reappear_only_after_recovery() -> Result<()
     let home = Arc::new(TempDir::new()?);
     write_global_file(home.as_ref(), GLOBAL_AGENTS_FILENAME, GLOBAL_INSTRUCTIONS)?;
     let override_path = home.path().join(GLOBAL_AGENTS_OVERRIDE_FILENAME);
-    let create_unreadable_override = || {
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(GLOBAL_AGENTS_OVERRIDE_FILENAME, &override_path)
-        }
-        #[cfg(windows)]
-        {
-            std::os::windows::fs::symlink_file(GLOBAL_AGENTS_OVERRIDE_FILENAME, &override_path)
-        }
-    };
+    let create_unreadable_override =
+        || std::os::unix::fs::symlink(GLOBAL_AGENTS_OVERRIDE_FILENAME, &override_path);
     create_unreadable_override()?;
     let read_error = std::fs::read(&override_path).expect_err("symlink loop must be unreadable");
     let expected_warning = format!(

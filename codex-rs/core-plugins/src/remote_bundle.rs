@@ -1051,7 +1051,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn extraction_preserves_executable_permissions() {
         use std::os::unix::fs::PermissionsExt;

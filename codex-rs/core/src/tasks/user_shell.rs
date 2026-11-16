@@ -22,7 +22,6 @@ use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
 use crate::state::TaskKind;
 use crate::tools::runtimes::RuntimePathPrepends;
-#[cfg(unix)]
 use crate::tools::runtimes::apply_package_path_prepend;
 use crate::tools::runtimes::maybe_wrap_shell_lc_with_snapshot;
 use crate::tools::runtimes::strip_managed_proxy_env;
@@ -222,11 +221,7 @@ pub(crate) async fn execute_user_shell_command(
         expiration: timeout_ms.unwrap_or(USER_SHELL_TIMEOUT_MS).into(),
         capture_policy: ExecCapturePolicy::ShellTool,
         sandbox: SandboxType::None,
-        windows_sandbox_policy_cwd: cwd.clone().into(),
-        windows_sandbox_workspace_roots: Vec::new(),
-        windows_sandbox_level: turn_context.windows_sandbox_level,
         permission_profile,
-        windows_sandbox_filesystem_overrides: None,
         arg0: None,
         exec_server_sandbox: None,
         exec_server_enforce_managed_network: false,
@@ -383,7 +378,6 @@ fn prepare_user_shell_exec_command(
     shell_environment_set: &HashMap<String, String>,
     exec_env_map: &mut HashMap<String, String>,
 ) -> Vec<String> {
-    #[cfg(unix)]
     {
         prepare_user_shell_exec_command_with_path_prepend(
             display_command,
@@ -394,21 +388,6 @@ fn prepare_user_shell_exec_command(
             apply_package_path_prepend,
         )
     }
-
-    #[cfg(not(unix))]
-    {
-        maybe_wrap_shell_lc_with_snapshot(
-            display_command,
-            shell,
-            shell_snapshot,
-            shell_environment_set,
-            exec_env_map,
-            // On non-Unix targets, arg0 has already prepended the package path
-            // to the process PATH before create_env() builds exec_env_map.
-            // RuntimePathPrepends is only needed for Unix shell snapshot replay.
-            &RuntimePathPrepends::default(),
-        )
-    }
 }
 
 /// Prepares a user-shell command after adding runtime-owned PATH entries.
@@ -416,7 +395,6 @@ fn prepare_user_shell_exec_command(
 /// The callback mutates the live exec environment for commands that are not
 /// wrapped with a shell snapshot and records only the runtime-owned entries so
 /// snapshot wrapping can reapply them after restoring the user's snapshot PATH.
-#[cfg(unix)]
 fn prepare_user_shell_exec_command_with_path_prepend(
     display_command: &[String],
     shell: &Shell,
@@ -468,6 +446,6 @@ async fn persist_user_shell_output(
         .await;
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "user_shell_tests.rs"]
 mod tests;

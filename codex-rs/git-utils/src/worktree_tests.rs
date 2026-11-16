@@ -52,7 +52,6 @@ fn repository_identity_is_shared_by_primary_and_linked_checkouts() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn linked_worktree_discovery_preserves_logical_working_directory_aliases() {
     let (root, primary, linked) = repository_with_linked_checkout();
@@ -83,7 +82,6 @@ fn linked_worktree_discovery_rejects_mismatched_backlinks() {
     assert_eq!(linked_worktree_cwds(&primary_cwd), Some(vec![primary_cwd]));
 }
 
-#[cfg(unix)]
 #[test]
 fn linked_worktree_discovery_rejects_relative_directory_symlink_escapes() {
     let (root, primary, linked) = repository_with_linked_checkout();

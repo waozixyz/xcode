@@ -186,16 +186,8 @@ impl ManagedMitmCa {
 }
 
 fn read_external_ca_file(path: &Path, field: &str, private: bool) -> Result<String> {
-    // Do not accept a caller-provided signing key where its access controls cannot be verified.
-    #[cfg(not(unix))]
-    anyhow::ensure!(
-        !private,
-        "{field} is not supported on this platform because private-file permissions cannot be verified"
-    );
-
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
         options.custom_flags(libc::O_NOFOLLOW);
@@ -214,7 +206,6 @@ fn read_external_ca_file(path: &Path, field: &str, private: bool) -> Result<Stri
         metadata.len() <= MAX_EXTERNAL_CA_FILE_BYTES,
         "{field} exceeds {MAX_EXTERNAL_CA_FILE_BYTES} bytes"
     );
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
         anyhow::ensure!(
@@ -688,12 +679,10 @@ fn open_managed_ca_lock(path: &Path) -> Result<File> {
         ));
     }
 
-    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
 
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
-    #[cfg(unix)]
     options.mode(0o600);
     options
         .open(path)
@@ -875,17 +864,11 @@ fn write_atomic_create_new(path: &Path, contents: &[u8], mode: u32) -> Result<()
     Ok(())
 }
 
-#[cfg(not(windows))]
 fn sync_parent_dir(parent: &Path) -> Result<()> {
     // Best-effort durability: ensure the directory entry is persisted too.
     let dir = File::open(parent).with_context(|| format!("failed to open {}", parent.display()))?;
     dir.sync_all()
         .with_context(|| format!("failed to fsync {}", parent.display()))
-}
-
-#[cfg(windows)]
-fn sync_parent_dir(_parent: &Path) -> Result<()> {
-    Ok(())
 }
 
 fn write_atomic_create_new_or_reuse(path: &Path, contents: &[u8], mode: u32) -> Result<()> {
@@ -911,7 +894,6 @@ fn write_atomic_create_new_or_reuse(path: &Path, contents: &[u8], mode: u32) -> 
     }
 }
 
-#[cfg(unix)]
 fn open_create_new_with_mode(path: &Path, mode: u32) -> Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -919,15 +901,6 @@ fn open_create_new_with_mode(path: &Path, mode: u32) -> Result<File> {
         .write(true)
         .create_new(true)
         .mode(mode)
-        .open(path)
-        .with_context(|| format!("failed to create {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn open_create_new_with_mode(path: &Path, _mode: u32) -> Result<File> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
         .open(path)
         .with_context(|| format!("failed to create {}", path.display()))
 }
@@ -975,7 +948,6 @@ mod tests {
         let private_key = private_key.serialize_pem();
         fs::write(&certificate_path, format!("{certificate}{private_key}")).unwrap();
         fs::write(&private_key_path, private_key).unwrap();
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
             fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600)).unwrap();
@@ -995,7 +967,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn external_ca_rejects_mismatched_private_key() {
         use std::os::unix::fs::PermissionsExt as _;
@@ -1021,23 +992,6 @@ mod tests {
             error
                 .to_string()
                 .contains("certificate and private key do not match")
-        );
-    }
-
-    #[cfg(not(unix))]
-    #[test]
-    fn external_ca_private_key_fails_closed_without_unix_permissions() {
-        let error = read_external_ca_file(
-            Path::new("external-ca-key.pem"),
-            "network.mitm_ca.private_key_file",
-            /*private*/ true,
-        )
-        .expect_err("an external CA private key must fail closed on non-Unix platforms");
-
-        assert!(
-            error
-                .to_string()
-                .contains("private-file permissions cannot be verified")
         );
     }
 
@@ -1276,7 +1230,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn write_atomic_create_new_or_reuse_rejects_matching_symlink_target() {
         use std::os::unix::fs::symlink;

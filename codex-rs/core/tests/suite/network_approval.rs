@@ -1,3 +1,4 @@
+use codex_network_proxy::EnvironmentNetworkPolicyExt;
 use anyhow::Context;
 use anyhow::Result;
 use codex_config::test_support::CloudConfigBundleFixture;
@@ -10,7 +11,6 @@ use codex_core::config::Constrained;
 use codex_core::config::NetworkProxySpec;
 use codex_core::shell::ShellType;
 use codex_core::shell::get_shell;
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::REMOTE_ENVIRONMENT_ID;
 use codex_extension_api::ExtensionRegistryBuilder;
@@ -19,13 +19,9 @@ use codex_extension_api::ToolLifecycleContributor;
 use codex_extension_api::ToolLifecycleFuture;
 use codex_features::Feature;
 use codex_history::RolloutItem;
-#[cfg(unix)]
 use codex_network_proxy::CredentialProviderConfig;
-#[cfg(unix)]
 use codex_network_proxy::MitmHookActionsConfig;
-#[cfg(unix)]
 use codex_network_proxy::MitmHookConfig;
-#[cfg(unix)]
 use codex_network_proxy::MitmHookMatchConfig;
 use codex_network_proxy::NetworkProxyConfig;
 use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
@@ -40,7 +36,6 @@ use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::PermissionProfileSnapshot;
@@ -83,7 +78,6 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_host_windows;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_no_remote_env;
 use core_test_support::skip_if_remote;
@@ -127,7 +121,6 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing(
     requirements_table: &str,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -310,7 +303,6 @@ async fn guardian_network_approval_preserves_action_and_outcome_routing(
 async fn strict_auto_review_routes_network_approval_to_guardian_when_user_reviewer_is_selected()
 -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -469,7 +461,6 @@ async fn strict_auto_review_routes_network_approval_to_guardian_when_user_review
 async fn cancelled_guardian_network_review_fails_closed_without_rewriting_turn_state() -> Result<()>
 {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -568,7 +559,6 @@ async fn disconnected_network_request_explains_failure_to_model(
     target: &str,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -680,7 +670,6 @@ PY"#
 async fn timed_out_guardian_network_review_uses_timeout_outcome_without_user_fallback() -> Result<()>
 {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -839,7 +828,6 @@ async fn background_network_approval_uses_current_review_settings_and_original_e
     same_turn: bool,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1155,7 +1143,6 @@ async fn user_network_approval_once_session_and_denial_semantics(
         "remote executors forward network decisions only to Guardian"
     );
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1357,7 +1344,6 @@ async fn network_rejection_preserves_execution_and_review_outcomes(
     other_review: OtherNetworkReview,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1549,7 +1535,6 @@ PY"#
 )]
 async fn allowing_network_policy_amendment_persists_context_and_bypasses_prompt() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1640,7 +1625,6 @@ async fn denying_network_policy_amendment_persists_and_blocks_request() -> Resul
         "remote executors forward network decisions only to Guardian"
     );
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1702,7 +1686,6 @@ async fn denying_network_policy_amendment_persists_and_blocks_request() -> Resul
 )]
 async fn failed_network_policy_amendment_denies_request_and_does_not_approve_host() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1784,7 +1767,6 @@ async fn unattributed_network_request_uses_active_turn_environment_fallback(
     approvals_reviewer: ApprovalsReviewer,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses a raw TCP proxy fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -1846,8 +1828,6 @@ async fn unattributed_network_request_uses_active_turn_environment_fallback(
                         .permissions
                         .shell_environment_policy
                         .clone(),
-                    windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
-                    windows_sandbox_type: test.config.permissions.windows_sandbox_type,
                     use_legacy_landlock: test.config.features.use_legacy_landlock(),
                     exec_policy: None,
                     mcp_policy: None,
@@ -1966,7 +1946,6 @@ async fn unattributed_network_request_uses_active_turn_environment_fallback(
 )]
 async fn ambiguous_unattributed_network_request_is_not_assigned_to_active_calls() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses POSIX shell and raw TCP fixtures");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -2058,7 +2037,6 @@ async fn ambiguous_unattributed_network_request_is_not_assigned_to_active_calls(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn thread_turnover_closes_managed_proxy_tunnels() -> Result<()> {
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -2161,7 +2139,6 @@ async fn thread_turnover_closes_managed_proxy_tunnels() -> Result<()> {
 )]
 async fn guardian_receives_exact_triggers_for_concurrent_network_requests() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -2315,7 +2292,6 @@ async fn guardian_receives_exact_triggers_for_concurrent_network_requests() -> R
 )]
 async fn guardian_receives_exact_trigger_for_single_network_request() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
@@ -2416,7 +2392,6 @@ async fn guardian_receives_exact_trigger_for_single_network_request() -> Result<
 async fn remote_guardian_network_decisions_are_scoped_to_each_request_and_environment() -> Result<()>
 {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_no_remote_env!(Ok(()));
@@ -2641,7 +2616,6 @@ async fn remote_guardian_network_decisions_are_scoped_to_each_request_and_enviro
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn owner_network_policy_follows_the_selected_remote_command() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_no_remote_env!(Ok(()));
@@ -2818,8 +2792,6 @@ async fn owner_network_policy_follows_the_selected_remote_command() -> Result<()
                 workspace_roots: remote.workspace_roots.clone(),
                 permission_profile: PermissionProfileSnapshot::legacy(permission_profile),
                 shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
-                windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
-                windows_sandbox_type: test.config.permissions.windows_sandbox_type,
                 use_legacy_landlock: test.config.features.use_legacy_landlock(),
                 exec_policy: None,
                 mcp_policy: None,
@@ -3008,7 +2980,6 @@ async fn escalated_owner_network_terminal_requires_stdin_approval(
     filesystem: FileSystemSandboxPolicy,
 ) -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python interactive fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_no_remote_env!(Ok(()));
@@ -3044,8 +3015,6 @@ async fn escalated_owner_network_terminal_requires_stdin_approval(
             test.config.permissions.permission_profile().clone(),
         ),
         shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
-        windows_sandbox_type: test.config.permissions.windows_sandbox_type,
         use_legacy_landlock: test.config.features.use_legacy_landlock(),
         exec_policy: None,
         mcp_policy: None,
@@ -3134,7 +3103,6 @@ async fn escalated_owner_network_terminal_requires_stdin_approval(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn local_session_grant_does_not_allow_the_same_host_on_a_remote_executor() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
-    skip_if_host_windows!(Ok(()));
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_no_remote_env!(Ok(()));
@@ -3198,7 +3166,6 @@ async fn local_session_grant_does_not_allow_the_same_host_on_a_remote_executor()
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agent_started_proxy_denies_brokered_provider_alias() -> Result<()> {
     const REAL_CREDENTIAL: &str = "alias_aaaaaaaaaaaaaaaaaaaaaaaa";

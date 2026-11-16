@@ -14,8 +14,6 @@ use crate::shell::Shell;
 use crate::shell::ShellType;
 use codex_apply_patch::CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS_ENV_VAR;
 use codex_core_plugins::PLUGIN_METRICS_OUTPUT_ENV_VAR;
-use codex_file_system::WindowsSandboxSelection;
-#[cfg(unix)]
 use codex_install_context::InstallContext;
 #[cfg(target_os = "macos")]
 use codex_network_proxy::CODEX_PROXY_GIT_SSH_COMMAND_MARKER;
@@ -64,7 +62,6 @@ pub(crate) fn exec_env_for_sandbox_permissions(
 /// Returns the updated `PATH` value when `env` was changed. Returns `None` when
 /// `path_entry` is empty, leaving `env` untouched so an empty entry does not add
 /// the current working directory to command lookup.
-#[cfg(unix)]
 fn prepend_path_entry(env: &mut HashMap<String, String>, path_entry: &str) -> Option<String> {
     if path_entry.is_empty() {
         None
@@ -94,7 +91,6 @@ pub(crate) struct RuntimePathPrepends {
 }
 
 impl RuntimePathPrepends {
-    #[cfg(unix)]
     pub(crate) fn prepend(&mut self, env: &mut HashMap<String, String>, path_entry: &Path) {
         let path_entry = path_entry.to_string_lossy().to_string();
         if prepend_path_entry(env, &path_entry).is_some() {
@@ -132,7 +128,6 @@ impl RuntimePathPrepends {
 /// replays after login startup. Without that replay a login profile can reset
 /// `PATH` (dropping the helper) or put another `apply_patch` ahead of it, and
 /// shell commands that invoke `apply_patch` would silently run that program.
-#[cfg(unix)]
 pub(crate) fn apply_package_path_prepend(
     env: &mut HashMap<String, String>,
     runtime_path_prepends: &mut RuntimePathPrepends,
@@ -153,66 +148,9 @@ pub(crate) fn apply_package_path_prepend(
 
 /// Returns the published `apply_patch` helper directory when it is absolute
 /// and still contains the helper.
-#[cfg(unix)]
 fn apply_patch_helper_dir(value: Option<std::ffi::OsString>) -> Option<std::path::PathBuf> {
     let dir = std::path::PathBuf::from(value?);
     (dir.is_absolute() && dir.join("apply_patch").is_file()).then_some(dir)
-}
-
-pub(crate) fn prepare_powershell_command_for_windows_sandbox(
-    command: &[String],
-    shell_type: Option<&ShellType>,
-    sandbox_requested: bool,
-    windows_sandbox: WindowsSandboxSelection,
-    environment_is_remote: bool,
-) -> Vec<String> {
-    prepare_powershell_command_for_windows_sandbox_with_fallback(
-        command,
-        shell_type,
-        sandbox_requested,
-        windows_sandbox,
-        environment_is_remote,
-        codex_shell_command::shell_detect::fallback_powershell_shell_for_windows_sandbox,
-    )
-}
-
-fn prepare_powershell_command_for_windows_sandbox_with_fallback(
-    command: &[String],
-    shell_type: Option<&ShellType>,
-    sandbox_requested: bool,
-    windows_sandbox: WindowsSandboxSelection,
-    environment_is_remote: bool,
-    find_fallback: impl FnOnce(&Path) -> Option<codex_shell_command::shell_detect::DetectedShell>,
-) -> Vec<String> {
-    if shell_type != Some(&ShellType::PowerShell)
-        || !sandbox_requested
-        || !matches!(
-            windows_sandbox,
-            WindowsSandboxSelection::Elevated | WindowsSandboxSelection::Mxc
-        )
-        || command.is_empty()
-    {
-        return command.to_vec();
-    }
-
-    let mut command = command.to_vec();
-    if !environment_is_remote && let Some(fallback) = find_fallback(Path::new(&command[0])) {
-        command[0] = fallback.shell_path.to_string_lossy().to_string();
-    }
-
-    if windows_sandbox != WindowsSandboxSelection::Elevated
-        || command[1..]
-            .iter()
-            .any(|arg| arg.eq_ignore_ascii_case("-NoProfile"))
-    {
-        return command;
-    }
-
-    // The elevated Windows sandbox runs as a dedicated sandbox account while
-    // HOME/USERPROFILE may still point at the real user profile. Loading
-    // PowerShell profiles in that mixed context is not a valid login shell.
-    command.insert(1, "-NoProfile".to_string());
-    command
 }
 
 pub(crate) fn prepare_brokered_shell_snapshot_env(
@@ -225,36 +163,33 @@ pub(crate) fn prepare_brokered_shell_snapshot_env(
             .get(CREDENTIAL_BROKER_ACTIVE_ENV_KEY)
             .is_some_and(|active| active == "1")
     {
-        if !cfg!(windows) {
-            env.retain(|key, _| {
-                !key.starts_with(SNAPSHOT_BROKERED_VALUE_ENV_PREFIX)
-                    && !key.starts_with(SNAPSHOT_BROKERED_UNSET_ENV_PREFIX)
-            });
-            for key in codex_network_proxy::brokered_credential_value_env_keys(env) {
-                if is_valid_shell_variable_name(&key)
-                    && let Some(value) = env.get(&key).cloned()
-                {
-                    env.insert(format!("{SNAPSHOT_BROKERED_VALUE_ENV_PREFIX}{key}"), value);
-                }
+        env.retain(|key, _| {
+            !key.starts_with(SNAPSHOT_BROKERED_VALUE_ENV_PREFIX)
+                && !key.starts_with(SNAPSHOT_BROKERED_UNSET_ENV_PREFIX)
+        });
+        for key in codex_network_proxy::brokered_credential_value_env_keys(env) {
+            if is_valid_shell_variable_name(&key)
+                && let Some(value) = env.get(&key).cloned()
+            {
+                env.insert(format!("{SNAPSHOT_BROKERED_VALUE_ENV_PREFIX}{key}"), value);
             }
-            for key in codex_network_proxy::brokered_credential_marker_env_keys(env) {
-                if !is_valid_shell_variable_name(&key) {
-                    continue;
-                }
-                if let Some(value) = env.get(&key).cloned() {
-                    env.entry(format!("{SNAPSHOT_BROKERED_VALUE_ENV_PREFIX}{key}"))
-                        .or_insert(value);
-                } else {
-                    env.insert(
-                        format!("{SNAPSHOT_BROKERED_UNSET_ENV_PREFIX}{key}"),
-                        "1".to_string(),
-                    );
-                }
+        }
+        for key in codex_network_proxy::brokered_credential_marker_env_keys(env) {
+            if !is_valid_shell_variable_name(&key) {
+                continue;
+            }
+            if let Some(value) = env.get(&key).cloned() {
+                env.entry(format!("{SNAPSHOT_BROKERED_VALUE_ENV_PREFIX}{key}"))
+                    .or_insert(value);
+            } else {
+                env.insert(
+                    format!("{SNAPSHOT_BROKERED_UNSET_ENV_PREFIX}{key}"),
+                    "1".to_string(),
+                );
             }
         }
         let bash_env = env.remove("BASH_ENV");
-        if !cfg!(windows)
-            && let Some(bash_env) = bash_env
+        if let Some(bash_env) = bash_env
             && !bash_env.is_empty()
         {
             env.insert(SNAPSHOT_ORIGINAL_BASH_ENV_ENV_KEY.to_string(), bash_env);
@@ -329,12 +264,12 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     env: &HashMap<String, String>,
     runtime_path_prepends: &RuntimePathPrepends,
 ) -> Vec<String> {
-    if cfg!(windows) {
-        return command.to_vec();
-    }
-
     let Some(snapshot) = shell_snapshot.filter(|snapshot| snapshot.exists()) else {
-        return replay_runtime_path_after_login(command, explicit_env_overrides, runtime_path_prepends);
+        return replay_runtime_path_after_login(
+            command,
+            explicit_env_overrides,
+            runtime_path_prepends,
+        );
     };
 
     if command.len() < 3 {
@@ -689,222 +624,5 @@ fn shell_single_quote(input: &str) -> String {
 }
 
 #[cfg(test)]
-mod prepare_powershell_command_tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn inserts_no_profile_for_elevated_windows_sandbox() {
-        let command = vec![
-            "powershell.exe".to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            WindowsSandboxSelection::Elevated,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(
-            rewritten,
-            vec![
-                "powershell.exe".to_string(),
-                "-NoProfile".to_string(),
-                "-Command".to_string(),
-                "Write-Output ok".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn inserts_no_profile_before_encoded_command() {
-        let command = vec![
-            "powershell.exe".to_string(),
-            "-EncodedCommand".to_string(),
-            "VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIABvAGsA".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            WindowsSandboxSelection::Elevated,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(
-            rewritten,
-            vec![
-                "powershell.exe".to_string(),
-                "-NoProfile".to_string(),
-                "-EncodedCommand".to_string(),
-                "VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIABvAGsA".to_string(),
-            ]
-        );
-    }
-
-    #[test_case::test_case(WindowsSandboxSelection::Elevated; "elevated")]
-    #[test_case::test_case(WindowsSandboxSelection::Mxc; "mxc")]
-    fn preserves_existing_no_profile(windows_sandbox: WindowsSandboxSelection) {
-        let command = vec![
-            "pwsh.exe".to_string(),
-            "-NoProfile".to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            windows_sandbox,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(rewritten, command);
-    }
-
-    #[test]
-    fn leaves_legacy_restricted_token_backend_alone() {
-        let command = vec![
-            r"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe"
-                .to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            WindowsSandboxSelection::RestrictedToken,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(rewritten, command);
-    }
-
-    #[test_case::test_case(WindowsSandboxSelection::Elevated; "elevated")]
-    #[test_case::test_case(WindowsSandboxSelection::Mxc; "mxc")]
-    fn leaves_unsandboxed_attempts_alone(windows_sandbox: WindowsSandboxSelection) {
-        let command = vec![
-            r"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe"
-                .to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ false,
-            windows_sandbox,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(rewritten, command);
-    }
-
-    #[test_case::test_case(WindowsSandboxSelection::Elevated; "elevated")]
-    #[test_case::test_case(WindowsSandboxSelection::Mxc; "mxc")]
-    fn leaves_non_powershell_alone(windows_sandbox: WindowsSandboxSelection) {
-        let command = vec![
-            "/bin/bash".to_string(),
-            "-lc".to_string(),
-            "echo ok".to_string(),
-        ];
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox(
-            &command,
-            Some(&ShellType::Bash),
-            /*sandbox_requested*/ true,
-            windows_sandbox,
-            /*environment_is_remote*/ false,
-        );
-
-        assert_eq!(rewritten, command);
-    }
-    #[test_case::test_case(WindowsSandboxSelection::Elevated, &["-NoProfile", "-Command", "Write-Output ok"]; "elevated")]
-    #[test_case::test_case(WindowsSandboxSelection::Mxc, &["-Command", "Write-Output ok"]; "mxc")]
-    fn local_sandboxed_powershell_uses_discovered_fallback(
-        windows_sandbox: WindowsSandboxSelection,
-        expected_args: &[&str],
-    ) {
-        let command = vec![
-            r"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe"
-                .to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-        let fallback_path = std::path::PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe");
-
-        let rewritten = prepare_powershell_command_for_windows_sandbox_with_fallback(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            windows_sandbox,
-            /*environment_is_remote*/ false,
-            |_| {
-                Some(codex_shell_command::shell_detect::DetectedShell {
-                    shell_type: ShellType::PowerShell,
-                    shell_path: fallback_path.clone(),
-                })
-            },
-        );
-
-        assert_eq!(
-            rewritten,
-            vec![fallback_path.to_string_lossy().to_string()]
-                .into_iter()
-                .chain(expected_args.iter().map(std::string::ToString::to_string))
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test_case::test_case(WindowsSandboxSelection::Elevated, &["-NoProfile", "-Command", "Write-Output ok"]; "elevated")]
-    #[test_case::test_case(WindowsSandboxSelection::Mxc, &["-Command", "Write-Output ok"]; "mxc")]
-    fn remote_sandboxed_powershell_keeps_remote_store_path(
-        windows_sandbox: WindowsSandboxSelection,
-        expected_args: &[&str],
-    ) {
-        let command = vec![
-            r"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe"
-                .to_string(),
-            "-Command".to_string(),
-            "Write-Output ok".to_string(),
-        ];
-
-        let mut discovery_called = false;
-        let rewritten = prepare_powershell_command_for_windows_sandbox_with_fallback(
-            &command,
-            Some(&ShellType::PowerShell),
-            /*sandbox_requested*/ true,
-            windows_sandbox,
-            /*environment_is_remote*/ true,
-            |_| {
-                discovery_called = true;
-                Some(codex_shell_command::shell_detect::DetectedShell {
-                    shell_type: ShellType::PowerShell,
-                    shell_path: std::path::PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe"),
-                })
-            },
-        );
-
-        assert!(!discovery_called);
-        assert_eq!(
-            rewritten,
-            vec![command[0].clone()]
-                .into_iter()
-                .chain(expected_args.iter().map(std::string::ToString::to_string))
-                .collect::<Vec<_>>()
-        );
-    }
-}
-
-#[cfg(all(test, unix))]
 #[path = "mod_tests.rs"]
 mod tests;

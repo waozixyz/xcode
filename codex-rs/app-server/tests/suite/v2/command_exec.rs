@@ -299,7 +299,6 @@ async fn command_exec_accepts_permission_profile() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn command_exec_enforces_managed_deny_read_requirements() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
@@ -511,7 +510,6 @@ async fn command_exec_permission_profile_does_not_reuse_default_network_proxy() 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn command_exec_permission_profile_project_roots_use_command_cwd() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;

@@ -25,7 +25,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub mod apps_test_server;
-#[cfg(unix)]
 pub mod code_mode_host;
 pub mod context_snapshot;
 pub mod exec_server;
@@ -93,23 +92,8 @@ pub fn assert_regex_match<'s>(pattern: &str, actual: &'s str) -> regex_lite::Cap
         .expect("regex did not match actual value")
 }
 
-pub fn test_path_buf_with_windows(unix_path: &str, windows_path: Option<&str>) -> PathBuf {
-    if cfg!(windows) {
-        if let Some(windows) = windows_path {
-            PathBuf::from(windows)
-        } else {
-            let mut path = PathBuf::from(r"C:\");
-            path.extend(
-                unix_path
-                    .trim_start_matches('/')
-                    .split('/')
-                    .filter(|segment| !segment.is_empty()),
-            );
-            path
-        }
-    } else {
-        PathBuf::from(unix_path)
-    }
+pub fn test_path_buf_with_windows(unix_path: &str, _windows_path: Option<&str>) -> PathBuf {
+    PathBuf::from(unix_path)
 }
 
 pub fn test_path_buf(unix_path: &str) -> PathBuf {
@@ -128,18 +112,9 @@ pub fn test_absolute_path(unix_path: &str) -> AbsolutePathBuf {
     test_absolute_path_with_windows(unix_path, /*windows_path*/ None)
 }
 
-#[cfg(unix)]
 #[allow(clippy::expect_used)]
 pub fn create_directory_symlink(source: &Path, link: &Path) {
     std::os::unix::fs::symlink(source, link).expect("create directory symlink");
-}
-
-#[cfg(windows)]
-#[allow(clippy::expect_used)]
-pub fn create_directory_symlink(source: &Path, link: &Path) {
-    // Running this test locally may require Windows Developer Mode or an elevated process.
-    std::os::windows::fs::symlink_dir(source, link)
-        .expect("create directory symlink; enable Developer Mode or run the test elevated");
 }
 
 pub trait TempDirExt {
@@ -757,16 +732,6 @@ macro_rules! codex_linux_sandbox_exe_or_skip {
         #[cfg(not(target_os = "linux"))]
         {
             None
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! skip_if_host_windows {
-    ($return_value:expr $(,)?) => {{
-        if cfg!(target_os = "windows") {
-            println!("Skipping test because it cannot execute on Windows.");
-            return $return_value;
         }
     }};
 }

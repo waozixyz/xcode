@@ -17,7 +17,6 @@ pub struct LocalLogsDir {
 
 #[derive(Debug)]
 struct LocalLogsDirLock {
-    #[cfg(unix)]
     _cleanup_lock: std::fs::File,
 }
 
@@ -43,7 +42,6 @@ impl LocalLogsDir {
                 tokio::task::spawn_blocking(move || {
                     let mut builder = std::fs::DirBuilder::new();
                     builder.recursive(true);
-                    #[cfg(unix)]
                     {
                         use std::os::unix::fs::DirBuilderExt;
 
@@ -51,8 +49,6 @@ impl LocalLogsDir {
                         builder.mode(0o700);
                     }
                     builder.create(&path)?;
-                    // Protect temporary log directories from cleanup while connections use them.
-                    #[cfg(unix)]
                     let directory = {
                         use std::os::unix::fs::MetadataExt;
 
@@ -72,7 +68,6 @@ impl LocalLogsDir {
                     };
 
                     Ok::<_, io::Error>(LocalLogsDirLock {
-                        #[cfg(unix)]
                         _cleanup_lock: directory,
                     })
                 })

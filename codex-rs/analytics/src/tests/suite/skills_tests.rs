@@ -83,17 +83,10 @@ fn normalize_path_for_skill_id_repo_root_not_in_skill_path_uses_absolute_path() 
 /// Foreign paths keep native telemetry spelling without depending on host filesystem lookup.
 #[test]
 fn normalize_path_for_skill_id_foreign_path_uses_native_spelling() {
-    let (uri, expected) = if cfg!(windows) {
-        (
-            "file:///Users/abc/.codex/skills/doc%20%23/SKILL.md",
-            "/Users/abc/.codex/skills/doc #/SKILL.md",
-        )
-    } else {
-        (
-            "file:///C:/Users/abc/.codex/skills/doc%20%23/SKILL.md",
-            "C:/Users/abc/.codex/skills/doc #/SKILL.md",
-        )
-    };
+    let (uri, expected) = (
+        "file:///C:/Users/abc/.codex/skills/doc%20%23/SKILL.md",
+        "C:/Users/abc/.codex/skills/doc #/SKILL.md",
+    );
     let path = normalize_path_for_skill_id(
         /*repo_url*/ None,
         /*repo_root*/ None,

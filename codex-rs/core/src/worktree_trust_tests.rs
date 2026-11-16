@@ -4,7 +4,6 @@ use super::resolve_root_git_project_for_trust;
 use super::write_linked_worktree_metadata;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_uri_for_trust;
-#[cfg(unix)]
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path::normalize_for_path_comparison;
 use codex_utils_path_uri::PathUri;
@@ -60,7 +59,6 @@ async fn portable_trust_roots_support_posix_windows_drive_and_unc_paths() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn opaque_uri_ancestry_remains_available_only_to_native_trust_lookup() {
     // This POSIX spelling would imply a Windows drive in an ordinary URI.
@@ -111,7 +109,6 @@ async fn resolve_root_git_project_for_trust_validates_main_checkout_ownership() 
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_rejects_dot_git_swapped_after_stat() {
     let tmp = TempDir::new().unwrap();
@@ -311,7 +308,6 @@ async fn resolve_root_git_project_for_trust_requires_repair_after_move() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_preserves_checkout_directory_alias() {
     let tmp = TempDir::new().unwrap();
@@ -326,7 +322,6 @@ async fn resolve_root_git_project_for_trust_preserves_checkout_directory_alias()
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_rejects_symlinked_metadata() {
     for filename in ["gitdir", "commondir"] {

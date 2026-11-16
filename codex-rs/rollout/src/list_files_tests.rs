@@ -94,7 +94,6 @@ async fn updated_candidates_preserve_layout_and_plain_sibling_preference() -> io
             .set_modified(UNIX_EPOCH + Duration::from_secs(200))?;
         File::create(directory.join("unrelated.jsonl"))?;
         std::fs::create_dir(directory.join("rollout-2026-09-26T10-00-01-invalid.jsonl"))?;
-        #[cfg(unix)]
         std::os::unix::fs::symlink(
             &path,
             directory.join(format!(

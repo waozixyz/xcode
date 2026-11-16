@@ -1,8 +1,5 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
-#[cfg(windows)]
-use std::fs;
-#[cfg(unix)]
 use std::os::unix::ffi::OsStringExt;
 use std::path::Path;
 use std::sync::Arc;
@@ -36,7 +33,6 @@ use super::default_shell_program;
 use super::run_command;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn hook_shell_startup_does_not_stop_on_controlling_terminal() {
     const CHILD_ENV: &str = "CODEX_HOOK_TERMINAL_TEST_CHILD";
@@ -140,9 +136,7 @@ async fn hook_shell_startup_does_not_stop_on_controlling_terminal() {
         result_sender,
     );
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     static FORKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         use std::sync::atomic::Ordering;
         extern "C" fn record_parent_fork() {
@@ -171,7 +165,6 @@ async fn hook_shell_startup_does_not_stop_on_controlling_terminal() {
     }
 
     let result = run_command(&runtime, &handler, command, &env, "{}", temp.path()).await;
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         #[cfg(all(target_os = "linux", target_env = "gnu"))]
         let native_chdir_supported = {
@@ -197,66 +190,6 @@ async fn hook_shell_startup_does_not_stop_on_controlling_terminal() {
     assert_eq!(result.exit_code, Some(0), "stderr: {}", result.stderr);
     assert_eq!(result.stdout, "hook-ran");
     assert_eq!(result.error, None);
-}
-
-#[cfg(windows)]
-#[tokio::test]
-async fn cmd_shell_runs_quoted_hook_command_path() {
-    let temp = tempdir().expect("create temp dir");
-    let hook_dir = temp.path().join("hook with spaces");
-    fs::create_dir(&hook_dir).expect("create hook dir");
-    let hook_path = hook_dir.join("hook.cmd");
-    fs::write(
-        &hook_path,
-        "@echo off\r\nif not \"%~1\"==\"notify\" exit /B 7\r\necho hook-ran\r\n",
-    )
-    .expect("write hook command");
-    let source_path =
-        AbsolutePathBuf::try_from(hook_path.clone()).expect("absolute hook command path");
-    let command = format!(r#""{}" notify"#, hook_path.display());
-    let env = HashMap::new();
-    let handler = ConfiguredHandler {
-        builtin: false,
-        plugin_trust: None,
-        event_name: HookEventName::SessionStart,
-        matcher: None,
-        timeout_sec: 10,
-        status_message: None,
-        additional_context_limit: Default::default(),
-        source_path: source_path.into(),
-        source: HookSource::User,
-        display_order: 0,
-        kind: ConfiguredHandlerKind::Command {
-            command: command.clone(),
-            r#async: false,
-            env: env.clone(),
-        },
-    };
-    let shells = [
-        CommandShell {
-            program: String::new(),
-            args: Vec::new(),
-        },
-        CommandShell {
-            program: std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string()),
-            args: vec!["/c".to_string()],
-        },
-    ];
-
-    for shell in shells {
-        let (result_sender, _result_receiver) = async_channel::unbounded();
-        let runtime = CommandHookRuntime::new(
-            shell,
-            Arc::new(std::env::vars_os().collect()),
-            ThreadId::new(),
-            result_sender,
-        );
-        let result = run_command(&runtime, &handler, &command, &env, "{}", temp.path()).await;
-
-        assert_eq!(result.exit_code, Some(0), "stderr: {}", result.stderr);
-        assert_eq!(result.stdout.trim(), "hook-ran");
-        assert!(result.error.is_none());
-    }
 }
 
 #[tokio::test]
@@ -318,16 +251,9 @@ time.sleep(30)
     let (runtime, _result_receiver) = runtime();
 
     // Keep user shell startup files out of the pipe I/O timeout test.
-    let runtime = runtime.reconfigured(if cfg!(windows) {
-        CommandShell {
-            program: "cmd.exe".to_string(),
-            args: vec!["/D".to_string(), "/C".to_string()],
-        }
-    } else {
-        CommandShell {
-            program: "/bin/sh".to_string(),
-            args: vec!["-c".to_string()],
-        }
+    let runtime = runtime.reconfigured(CommandShell {
+        program: "/bin/sh".to_string(),
+        args: vec!["-c".to_string()],
     });
 
     let result = timeout(
@@ -347,7 +273,7 @@ async fn command_hook_does_not_expose_configured_noise_auth_token() {
     let temp = tempdir().expect("create temp dir");
     let source_path = AbsolutePathBuf::try_from(temp.path().join("hooks.json"))
         .expect("absolute hook configuration path");
-    let command = if cfg!(windows) { "set" } else { "env" };
+    let command = "env";
     let env = HashMap::from([
         (
             CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN_ENV_VAR.to_ascii_lowercase(),
@@ -388,7 +314,6 @@ async fn command_hook_does_not_expose_configured_noise_auth_token() {
 
 #[tokio::test]
 async fn build_command_replays_snapshot_before_hook_overrides_and_scrubbing() {
-    #[cfg(unix)]
     let non_unicode_value = OsString::from_vec(vec![b'v', 0xff]);
     let environment = vec![
         (
@@ -414,17 +339,10 @@ async fn build_command_replays_snapshot_before_hook_overrides_and_scrubbing() {
             "configured-noise-token".to_string(),
         ),
     ]);
-    #[cfg(not(windows))]
     let (program, args, command_line) = (
         "/bin/sh",
         vec!["-c".to_string()],
         "printf '%s\\n' \"$CODEX_HOOK_SNAPSHOT\" \"$CODEX_HOOK_OVERRIDE\" \"$CODEX_HOOK_SAFE_ENV\" \"${CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN-absent}\" \"$CODEX_HOOK_NON_UNICODE\"",
-    );
-    #[cfg(windows)]
-    let (program, args, command_line) = (
-        "cmd.exe",
-        vec!["/D".to_string(), "/C".to_string()],
-        "echo %CODEX_HOOK_SNAPSHOT%&echo %CODEX_HOOK_OVERRIDE%&echo %CODEX_HOOK_SAFE_ENV%&if defined CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN (echo leaked) else (echo absent)",
     );
     let command = build_command(
         &CommandShell {
@@ -435,8 +353,6 @@ async fn build_command_replays_snapshot_before_hook_overrides_and_scrubbing() {
         &environment,
         &env,
     );
-    #[cfg(not(unix))]
-    let mut command = command;
     let output = command
         .spawn()
         .expect("spawn hook")
@@ -444,23 +360,14 @@ async fn build_command_replays_snapshot_before_hook_overrides_and_scrubbing() {
         .await
         .expect("hook output");
     assert!(output.status.success(), "{output:?}");
-    #[cfg(unix)]
     assert_eq!(
         output.stdout,
         b"captured\nconfigured\nvisible\nabsent\nv\xff\n"
-    );
-    #[cfg(windows)]
-    assert_eq!(
-        output.stdout,
-        b"captured\r\nconfigured\r\nvisible\r\nabsent\r\n"
     );
 }
 
 #[test]
 fn fallback_shell_uses_snapshot() {
-    #[cfg(windows)]
-    let (name, program) = ("comspec", r"C:\captured\cmd.exe");
-    #[cfg(not(windows))]
     let (name, program) = ("SHELL", "/captured/shell");
     assert_eq!(
         default_shell_program(&[(OsString::from(name), OsString::from(program))]),
@@ -732,7 +639,6 @@ print(json.dumps({{
     );
 }
 
-#[cfg(unix)]
 async fn process_is_running(pid: &str) -> bool {
     let output = tokio::process::Command::new("ps")
         .args(["-p", pid, "-o", "stat="])
@@ -746,7 +652,6 @@ async fn process_is_running(pid: &str) -> bool {
         .any(|state| !state.starts_with('Z'))
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cancelled_and_timed_out_hooks_kill_their_process_group() {
     enum Termination {
@@ -823,7 +728,6 @@ time.sleep(60)
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn completed_hook_preserves_background_descendant() {
     for exit_code in [0, 23] {
@@ -862,7 +766,6 @@ raise SystemExit({exit_code})
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn exited_hook_leader_with_open_descendant_output_still_times_out() {
     let temp = tempdir().expect("create temp dir");
@@ -895,7 +798,6 @@ Path('descendant-pid').write_text(str(child.pid))
     .expect("hook timeout must stop the descendant after the leader exits");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn hook_rejects_nul_arguments_before_execution() {
     for nul_in_shell_args in [false, true] {
@@ -927,7 +829,6 @@ async fn hook_rejects_nul_arguments_before_execution() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn hook_rejects_nul_in_configured_and_default_shell_program() {
     for configured in [false, true] {

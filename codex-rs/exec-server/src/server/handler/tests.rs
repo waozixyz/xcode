@@ -58,24 +58,12 @@ fn sleep_argv() -> Vec<String> {
     shell_argv("sleep 0.1", "ping -n 2 127.0.0.1 >NUL")
 }
 
-fn shell_argv(unix_script: &str, windows_script: &str) -> Vec<String> {
-    if cfg!(windows) {
-        vec![
-            windows_command_processor(),
-            "/C".to_string(),
-            windows_script.to_string(),
-        ]
-    } else {
-        vec![
-            "/bin/sh".to_string(),
-            "-c".to_string(),
-            unix_script.to_string(),
-        ]
-    }
-}
-
-fn windows_command_processor() -> String {
-    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+fn shell_argv(unix_script: &str, _windows_script: &str) -> Vec<String> {
+    vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        unix_script.to_string(),
+    ]
 }
 
 fn test_runtime_paths() -> ExecServerRuntimeOptions {

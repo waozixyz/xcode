@@ -67,18 +67,7 @@ async fn explicit_keys_and_commands_use_their_own_shared_runtime() {
             requires_openai_auth: false,
             ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
         };
-        #[cfg(unix)]
         let (command, args) = ("sh", vec!["-c".into(), "printf command-key".into()]);
-        #[cfg(windows)]
-        let (command, args) = (
-            "cmd.exe",
-            vec![
-                "/D".into(),
-                "/Q".into(),
-                "/C".into(),
-                "echo command-key".into(),
-            ],
-        );
         let commanded = ModelProviderInfo {
             auth: Some(ModelProviderAuthInfo {
                 command: command.into(),

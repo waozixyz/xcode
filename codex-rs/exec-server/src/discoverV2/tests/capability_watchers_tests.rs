@@ -198,7 +198,6 @@ async fn watch_events_invalidate_discovery_and_no_subscription_disables_caching(
         &manager.get_or_refresh_discovery(params.clone()).await?
     ));
 
-    #[cfg(unix)]
     {
         // A failed event refresh retains the response but retries without another event.
         let cache = root.join("codex/plugins/cache");

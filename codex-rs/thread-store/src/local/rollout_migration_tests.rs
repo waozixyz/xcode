@@ -4,7 +4,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use codex_app_server_protocol::build_turns_from_rollout_items;
@@ -2872,7 +2871,6 @@ fn cancelled_compression_workers_hold_migration_locks() {
                 )
                 .expect("decode complete rollout")
             } else {
-                #[cfg(unix)]
                 assert_eq!(
                     fs::metadata(&plain_path)
                         .expect("temporary metadata")

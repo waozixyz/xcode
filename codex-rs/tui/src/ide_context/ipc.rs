@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-#[cfg(any(unix, windows))]
 use serde_json::Value;
-#[cfg(any(unix, windows, test))]
 use serde_json::json;
 use thiserror::Error;
 
@@ -17,45 +15,30 @@ use super::IdeContext;
 // fetching IDE context includes router discovery and extension event-loop work, so a shorter TUI
 // deadline can incorrectly skip context even though the IDE answers normally.
 const IDE_CONTEXT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-#[cfg(any(unix, windows))]
 const MAX_IPC_FRAME_BYTES: usize = 256 * 1024 * 1024;
-#[cfg(any(unix, windows))]
 const TUI_SOURCE_CLIENT_ID: &str = "codex-tui";
-#[cfg(any(unix, windows))]
 const OPEN_IDE_HINT: &str =
     "Open this project in VS Code or Cursor with the Codex extension active.";
-#[cfg(any(unix, windows))]
 const IDE_DID_NOT_PROVIDE_CONTEXT_HINT: &str = "The IDE extension did not provide context.";
-#[cfg(any(unix, windows))]
 const KEEP_TRYING_HINT: &str = "Codex will keep trying on future messages.";
 
 #[derive(Debug, Error)]
 pub(crate) enum IdeContextError {
-    #[cfg(any(unix, windows))]
     #[error("failed to connect to IDE context provider: {0}")]
     Connect(std::io::Error),
-    #[cfg(any(unix, windows))]
     #[error("failed to request IDE context: {0}")]
     Send(std::io::Error),
-    #[cfg(any(unix, windows))]
     #[error("failed to read IDE context: {0}")]
     Read(std::io::Error),
-    #[cfg(any(unix, windows))]
     #[error("invalid IDE context response: {0}")]
     InvalidResponse(String),
-    #[cfg(any(unix, windows))]
     #[error("IDE context response exceeded maximum size")]
     ResponseTooLarge,
-    #[cfg(any(unix, windows))]
     #[error("IDE context request failed")]
     RequestFailed(String),
-    #[cfg(not(any(unix, windows)))]
-    #[error("IDE context is not supported on this platform")]
-    UnsupportedPlatform,
 }
 
 impl IdeContextError {
-    #[cfg(any(unix, windows))]
     pub(crate) fn user_facing_hint(&self) -> String {
         match self {
             IdeContextError::Connect(_) => OPEN_IDE_HINT.to_string(),
@@ -77,7 +60,6 @@ impl IdeContextError {
         }
     }
 
-    #[cfg(any(unix, windows))]
     pub(crate) fn prompt_skip_hint(&self) -> String {
         match self {
             IdeContextError::ResponseTooLarge => {
@@ -115,30 +97,14 @@ impl IdeContextError {
             IdeContextError::Read(_) => hint_with_retry("Codex could not read IDE context."),
         }
     }
-
-    #[cfg(not(any(unix, windows)))]
-    pub(crate) fn user_facing_hint(&self) -> String {
-        self.to_string()
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    pub(crate) fn prompt_skip_hint(&self) -> String {
-        self.to_string()
-    }
 }
 
-#[cfg(any(unix, windows))]
 fn hint_with_retry(message: &str) -> String {
     format!("{message} {KEEP_TRYING_HINT}")
 }
 
-#[cfg(unix)]
 type IdeContextStream = UnixDeadlineStream;
 
-#[cfg(windows)]
-type IdeContextStream = super::windows_pipe::WindowsPipeStream;
-
-#[cfg(unix)]
 pub(crate) fn fetch_ide_context(
     workspace_root: &Path,
     codex_home: &Path,
@@ -155,32 +121,10 @@ pub(crate) fn fetch_ide_context(
     )
 }
 
-#[cfg(windows)]
-pub(crate) fn fetch_ide_context(
-    workspace_root: &Path,
-    _codex_home: &Path,
-) -> Result<IdeContext, IdeContextError> {
-    fetch_ide_context_from_socket(
-        default_ipc_socket_path(),
-        workspace_root,
-        IDE_CONTEXT_REQUEST_TIMEOUT,
-    )
-}
-
-#[cfg(not(any(unix, windows)))]
-pub(crate) fn fetch_ide_context(
-    _workspace_root: &Path,
-    _codex_home: &Path,
-) -> Result<IdeContext, IdeContextError> {
-    Err(IdeContextError::UnsupportedPlatform)
-}
-
-#[cfg(unix)]
 fn primary_ipc_socket_path(codex_home: &Path) -> PathBuf {
     codex_home.join("ipc").join("ipc.sock")
 }
 
-#[cfg(unix)]
 fn legacy_ipc_socket_paths(temp_dir: &Path, uid: libc::uid_t) -> Vec<PathBuf> {
     let ipc_dir = temp_dir.join("codex-ipc");
     if uid == 0 {
@@ -190,28 +134,6 @@ fn legacy_ipc_socket_paths(temp_dir: &Path, uid: libc::uid_t) -> Vec<PathBuf> {
     }
 }
 
-#[cfg(windows)]
-fn default_ipc_socket_path() -> PathBuf {
-    PathBuf::from(r"\\.\pipe\codex-ipc")
-}
-
-#[cfg(not(any(unix, windows)))]
-fn default_ipc_socket_path() -> PathBuf {
-    PathBuf::new()
-}
-
-#[cfg(windows)]
-fn fetch_ide_context_from_socket(
-    socket_path: PathBuf,
-    workspace_root: &Path,
-    timeout: Duration,
-) -> Result<IdeContext, IdeContextError> {
-    let deadline = Instant::now() + timeout;
-    let mut stream = connect_stream(socket_path, deadline)?;
-    fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
-}
-
-#[cfg(unix)]
 fn fetch_ide_context_from_unix_socket_paths(
     primary_socket_path: PathBuf,
     legacy_socket_paths: Vec<PathBuf>,
@@ -245,13 +167,11 @@ fn fetch_ide_context_from_unix_socket_paths(
     fetch_ide_context_from_stream(&mut stream, workspace_root, deadline)
 }
 
-#[cfg(unix)]
 struct UnixDeadlineStream {
     stream: std::os::unix::net::UnixStream,
     deadline: Instant,
 }
 
-#[cfg(unix)]
 impl UnixDeadlineStream {
     fn connect(socket_path: PathBuf, deadline: Instant) -> std::io::Result<Self> {
         let stream = connect_unix_stream_before_deadline(&socket_path, deadline)?;
@@ -274,7 +194,6 @@ impl UnixDeadlineStream {
     }
 }
 
-#[cfg(unix)]
 fn connect_unix_stream_before_deadline(
     socket_path: &Path,
     deadline: Instant,
@@ -317,7 +236,6 @@ fn connect_unix_stream_before_deadline(
     Ok(unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd.into_raw_fd()) })
 }
 
-#[cfg(unix)]
 fn unix_socket_addr(socket_path: &Path) -> std::io::Result<(libc::sockaddr_un, libc::socklen_t)> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -369,7 +287,6 @@ fn unix_socket_addr(socket_path: &Path) -> std::io::Result<(libc::sockaddr_un, l
     Ok((addr, addr_len))
 }
 
-#[cfg(unix)]
 fn set_fd_close_on_exec(fd: libc::c_int) -> std::io::Result<()> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0 {
@@ -383,7 +300,6 @@ fn set_fd_close_on_exec(fd: libc::c_int) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn set_fd_nonblocking(fd: libc::c_int) -> std::io::Result<()> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 {
@@ -397,7 +313,6 @@ fn set_fd_nonblocking(fd: libc::c_int) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 fn is_in_progress_connect_error(error: &std::io::Error) -> bool {
     matches!(
         error.raw_os_error(),
@@ -409,7 +324,6 @@ fn is_in_progress_connect_error(error: &std::io::Error) -> bool {
     )
 }
 
-#[cfg(unix)]
 fn socket_error(fd: libc::c_int) -> std::io::Result<libc::c_int> {
     let mut socket_error = 0;
     let mut socket_error_len = libc::socklen_t::try_from(std::mem::size_of::<libc::c_int>())
@@ -435,7 +349,6 @@ fn socket_error(fd: libc::c_int) -> std::io::Result<libc::c_int> {
     Ok(socket_error)
 }
 
-#[cfg(unix)]
 fn remaining_timeout(deadline: Instant) -> std::io::Result<Duration> {
     deadline
         .checked_duration_since(Instant::now())
@@ -443,13 +356,11 @@ fn remaining_timeout(deadline: Instant) -> std::io::Result<Duration> {
         .ok_or_else(deadline_timeout_io_error)
 }
 
-#[cfg(unix)]
 fn remaining_timeout_ms(deadline: Instant) -> std::io::Result<libc::c_int> {
     let millis = remaining_timeout(deadline)?.as_millis().max(1);
     Ok(libc::c_int::try_from(millis).unwrap_or(libc::c_int::MAX))
 }
 
-#[cfg(unix)]
 fn wait_for_fd_ready(
     fd: libc::c_int,
     events: libc::c_short,
@@ -486,7 +397,6 @@ fn wait_for_fd_ready(
     }
 }
 
-#[cfg(unix)]
 impl std::io::Read for UnixDeadlineStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if buf.is_empty() {
@@ -504,7 +414,6 @@ impl std::io::Read for UnixDeadlineStream {
     }
 }
 
-#[cfg(unix)]
 impl std::io::Write for UnixDeadlineStream {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if buf.is_empty() {
@@ -527,7 +436,6 @@ impl std::io::Write for UnixDeadlineStream {
     }
 }
 
-#[cfg(unix)]
 fn validate_unix_socket_path(socket_path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::FileTypeExt;
     use std::os::unix::fs::MetadataExt;
@@ -610,23 +518,6 @@ fn validate_unix_peer_owner(stream: &std::os::unix::net::UnixStream) -> std::io:
     ensure_peer_uid_matches_current_user(peer_uid)
 }
 
-#[cfg(all(
-    unix,
-    not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "dragonfly"
-    ))
-))]
-fn validate_unix_peer_owner(_stream: &std::os::unix::net::UnixStream) -> std::io::Result<()> {
-    Ok(())
-}
-
-#[cfg(unix)]
 fn ensure_peer_uid_matches_current_user(peer_uid: libc::uid_t) -> std::io::Result<()> {
     if peer_uid != unsafe { libc::getuid() } {
         return Err(permission_denied_io_error(
@@ -637,16 +528,6 @@ fn ensure_peer_uid_matches_current_user(peer_uid: libc::uid_t) -> std::io::Resul
     Ok(())
 }
 
-#[cfg(windows)]
-fn connect_stream(
-    socket_path: PathBuf,
-    deadline: Instant,
-) -> Result<IdeContextStream, IdeContextError> {
-    super::windows_pipe::WindowsPipeStream::connect(socket_path, deadline)
-        .map_err(IdeContextError::Connect)
-}
-
-#[cfg(any(unix, windows))]
 fn answer_unsupported_request<T: std::io::Write + ?Sized>(
     stream: &mut T,
     message: &Value,
@@ -663,7 +544,6 @@ fn answer_unsupported_request<T: std::io::Write + ?Sized>(
     Ok(())
 }
 
-#[cfg(any(unix, windows))]
 fn fetch_ide_context_from_stream(
     stream: &mut IdeContextStream,
     workspace_root: &Path,
@@ -676,7 +556,6 @@ fn fetch_ide_context_from_stream(
     extract_ide_context(response)
 }
 
-#[cfg(any(unix, windows))]
 fn write_ide_context_request<T: std::io::Write + ?Sized>(
     stream: &mut T,
     request_id: &str,
@@ -695,7 +574,6 @@ fn write_ide_context_request<T: std::io::Write + ?Sized>(
     write_frame(stream, &ide_context_request)
 }
 
-#[cfg(any(unix, windows))]
 fn write_frame<T: std::io::Write + ?Sized>(stream: &mut T, message: &Value) -> std::io::Result<()> {
     let payload = serde_json::to_vec(message).map_err(|err| {
         std::io::Error::new(
@@ -714,7 +592,6 @@ fn write_frame<T: std::io::Write + ?Sized>(stream: &mut T, message: &Value) -> s
     stream.flush()
 }
 
-#[cfg(any(unix, windows))]
 fn read_frame<T: std::io::Read + ?Sized>(
     stream: &mut T,
     deadline: Instant,
@@ -732,7 +609,6 @@ fn read_frame<T: std::io::Read + ?Sized>(
         .map_err(|err| IdeContextError::InvalidResponse(format!("invalid JSON payload: {err}")))
 }
 
-#[cfg(any(unix, windows))]
 fn read_exact_before_deadline<T: std::io::Read + ?Sized>(
     stream: &mut T,
     buf: &mut [u8],
@@ -761,7 +637,6 @@ fn read_exact_before_deadline<T: std::io::Read + ?Sized>(
     ensure_deadline_not_expired(deadline)
 }
 
-#[cfg(any(unix, windows))]
 fn read_response_frame(
     stream: &mut IdeContextStream,
     request_id: &str,
@@ -809,7 +684,6 @@ fn read_response_frame(
     }
 }
 
-#[cfg(any(unix, windows))]
 fn ensure_deadline_not_expired(deadline: Instant) -> Result<(), IdeContextError> {
     if Instant::now() >= deadline {
         return Err(timeout_error());
@@ -818,12 +692,10 @@ fn ensure_deadline_not_expired(deadline: Instant) -> Result<(), IdeContextError>
     Ok(())
 }
 
-#[cfg(any(unix, windows))]
 fn timeout_error() -> IdeContextError {
     IdeContextError::Read(deadline_timeout_io_error())
 }
 
-#[cfg(any(unix, windows))]
 fn deadline_timeout_io_error() -> std::io::Error {
     std::io::Error::new(
         std::io::ErrorKind::TimedOut,
@@ -831,12 +703,10 @@ fn deadline_timeout_io_error() -> std::io::Error {
     )
 }
 
-#[cfg(unix)]
 fn permission_denied_io_error(message: &'static str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::PermissionDenied, message)
 }
 
-#[cfg(any(unix, windows))]
 fn extract_ide_context(response: Value) -> Result<IdeContext, IdeContextError> {
     ensure_success_response(&response)?;
     let ide_context = response
@@ -852,7 +722,6 @@ fn extract_ide_context(response: Value) -> Result<IdeContext, IdeContextError> {
         .map_err(|err| IdeContextError::InvalidResponse(err.to_string()))
 }
 
-#[cfg(any(unix, windows))]
 fn ensure_success_response(response: &Value) -> Result<(), IdeContextError> {
     match response.get("resultType").and_then(Value::as_str) {
         Some("success") => Ok(()),
@@ -869,18 +738,15 @@ fn ensure_success_response(response: &Value) -> Result<(), IdeContextError> {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     use pretty_assertions::assert_eq;
 
-    #[cfg(unix)]
     fn test_deadline() -> Instant {
         Instant::now() + Duration::from_secs(1)
     }
 
-    #[cfg(unix)]
     fn write_ide_context_response(
         stream: &mut impl std::io::Write,
         request_id: &str,
@@ -1127,7 +993,6 @@ mod tests {
         assert_listener_unused(&legacy_listener);
     }
 
-    #[cfg(unix)]
     #[test]
     fn unix_deadline_stream_uses_remaining_deadline_for_blocking_reads() {
         use std::os::unix::net::UnixStream;
@@ -1145,7 +1010,6 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(2));
     }
 
-    #[cfg(unix)]
     #[test]
     fn validate_unix_socket_path_rejects_unsafe_parent_directory() {
         use std::os::unix::fs::PermissionsExt;
@@ -1163,7 +1027,6 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    #[cfg(unix)]
     #[test]
     fn fetch_ide_context_uses_unregistered_request_route() {
         use std::os::unix::net::UnixListener;

@@ -146,7 +146,6 @@ fn approved_command_grants_root_metadata_unless_explicitly_denied() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn linux_root_metadata_writes_inherit_the_root_without_reopening_other_paths() {
     let temp = tempfile::tempdir().unwrap();

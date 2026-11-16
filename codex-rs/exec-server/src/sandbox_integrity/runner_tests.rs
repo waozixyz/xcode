@@ -179,10 +179,7 @@ fn records_every_outcome_and_times_preparation_without_paths() -> anyhow::Result
         ["preparation", "error", "preparation"],
         ["preparation", "error", "timeout"],
     ];
-    if matches!(
-        backend::SANDBOX_TYPE,
-        SandboxType::LinuxSeccomp | SandboxType::WindowsMxc
-    ) {
+    if backend::SANDBOX_TYPE == SandboxType::LinuxSeccomp {
         expected_outcomes.push(["sandbox_launcher", "missing", "other"]);
     }
     assert_eq!(

@@ -79,7 +79,6 @@ use crate::rpc::internal_error;
 use crate::rpc::invalid_params;
 use crate::rpc::invalid_request;
 use crate::rpc_server_requests::RpcServerRequestSender;
-#[cfg(unix)]
 use crate::shell_snapshot::CapturePurpose;
 use crate::telemetry::ExecServerTelemetry;
 use crate::telemetry::ProcessMetricGuard;
@@ -164,7 +163,6 @@ struct Inner {
     processes: Mutex<HashMap<ProcessId, ProcessEntry>>,
     rpc_output_retention: Option<Duration>,
     credential_brokers: codex_network_proxy::RemoteCredentialBrokerCache,
-    #[cfg(unix)]
     shell_snapshots: crate::shell_snapshot::ShellSnapshotCache,
     telemetry: ExecServerTelemetry,
 }
@@ -233,7 +231,6 @@ impl LocalProcess {
                 processes: Mutex::new(HashMap::new()),
                 rpc_output_retention,
                 credential_brokers: codex_network_proxy::RemoteCredentialBrokerCache::default(),
-                #[cfg(unix)]
                 shell_snapshots: crate::shell_snapshot::ShellSnapshotCache::default(),
                 telemetry,
             }),
@@ -369,12 +366,6 @@ impl LocalProcess {
                 let _ = notifications.try_notify(NETWORK_POLICY_DECISION_METHOD, &notification);
             }) as NetworkPolicyAuditObserver
         });
-        #[cfg(not(unix))]
-        if params.shell_snapshot.is_some() {
-            return Err(invalid_params(
-                "shell snapshots are unsupported on this platform".to_string(),
-            ));
-        }
         let prepared = prepare_exec_request_with_telemetry(
             &params,
             child_env(&params),
@@ -385,9 +376,7 @@ impl LocalProcess {
             &telemetry,
         )
         .await?;
-        #[cfg(unix)]
         let mut prepared = prepared;
-        #[cfg(unix)]
         let snapshot_file = self
             .inner
             .shell_snapshots
@@ -406,8 +395,6 @@ impl LocalProcess {
             SandboxType::None => Some(ProcessSandboxType::None),
             SandboxType::MacosSeatbelt => Some(ProcessSandboxType::MacosSeatbelt),
             SandboxType::LinuxSeccomp => Some(ProcessSandboxType::LinuxSeccomp),
-            SandboxType::WindowsRestrictedToken => Some(ProcessSandboxType::WindowsRestrictedToken),
-            SandboxType::WindowsMxc => Some(ProcessSandboxType::WindowsMxc),
         };
 
         let start = Arc::new(ProcessStart);
@@ -424,26 +411,21 @@ impl LocalProcess {
             );
         }
 
-        #[cfg(unix)]
         let inherited_fds = snapshot_file
             .iter()
             .map(std::os::fd::AsRawFd::as_raw_fd)
             .collect::<Vec<_>>();
-        #[cfg(not(unix))]
-        let inherited_fds = Vec::new();
         let spawned_result = codex_sandboxing::spawn_process(codex_sandboxing::SpawnRequest {
             command: &prepared.command,
             cwd: prepared.cwd.as_path(),
             env: &prepared.env,
             arg0: &prepared.arg0,
             sandbox: prepared.sandbox,
-            windows_sandbox: prepared.windows_sandbox_spawn_request(),
             tty: params.tty,
             stdin_open: params.tty || params.pipe_stdin,
             inherited_fds: codex_utils_pty::ChildFds::Attached(&inherited_fds),
         })
         .await;
-        #[cfg(unix)]
         drop(snapshot_file);
         let spawned = match spawned_result {
             Ok(spawned) => spawned,
@@ -776,8 +758,6 @@ pub(crate) fn apply_exec_metadata(
     metadata: Option<&crate::protocol::ExecMetadata>,
 ) {
     if let Some(metadata) = metadata {
-        #[cfg(windows)]
-        env.retain(|name, _| !name.eq_ignore_ascii_case(CODEX_THREAD_ID_ENV_VAR));
         match metadata.thread_id {
             Some(thread_id) => {
                 env.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
@@ -836,7 +816,6 @@ impl ExecBackend for LocalProcess {
         Box::pin(LocalProcess::start(self, params))
     }
 
-    #[cfg(unix)]
     fn prewarm_shell_snapshot(&self, params: ExecParams) -> ExecProcessFuture<'_, ()> {
         Box::pin(async move {
             if params.enforce_managed_network
@@ -1285,20 +1264,14 @@ mod tests {
     use opentelemetry_sdk::metrics::data::AggregatedMetrics;
     use opentelemetry_sdk::metrics::data::MetricData;
     use pretty_assertions::assert_eq;
-    #[cfg(not(target_os = "windows"))]
     use tokio::io::AsyncReadExt;
-    #[cfg(not(target_os = "windows"))]
     use tokio::io::AsyncWriteExt;
     use tokio::sync::oneshot;
     use tokio::time::timeout;
 
-    #[cfg(not(target_os = "windows"))]
     use crate::protocol::ExecServerNetworkPolicyDecision;
-    #[cfg(not(target_os = "windows"))]
     use crate::protocol::NETWORK_POLICY_REQUEST_METHOD;
-    #[cfg(not(target_os = "windows"))]
     use crate::protocol::NetworkPolicyRequestParams;
-    #[cfg(not(target_os = "windows"))]
     use crate::protocol::NetworkPolicyRequestResponse;
 
     #[cfg(target_os = "linux")]
@@ -1335,7 +1308,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn executor_proxy_sends_final_network_policy_notification() {
         let (outgoing_tx, mut outgoing_rx) = mpsc::channel(NOTIFICATION_CHANNEL_CAPACITY);
@@ -1491,10 +1463,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_process_rejects_non_native_cwd_before_launch() {
-        #[cfg(unix)]
         let uri = "file://server/share/checkout";
-        #[cfg(windows)]
-        let uri = "file:///usr/local/checkout";
         let cwd = PathUri::parse(uri).expect("non-native cwd URI");
         let source = cwd
             .to_abs_path()
@@ -1551,14 +1520,11 @@ mod tests {
             .await
             .err()
             .expect("valid boundary process ID should proceed to process preparation");
-        #[cfg(not(target_os = "windows"))]
         assert!(
             error
                 .message
                 .contains("executor-local network proxy launch requires an enabled proxy")
         );
-        #[cfg(target_os = "windows")]
-        assert_eq!(error, invalid_params("argv must not be empty".to_string()));
 
         for process_id in [
             String::new(),
@@ -1619,15 +1585,12 @@ mod tests {
             tool_call_id: Some("current-call".into()),
         });
 
-        let mut expected = HashMap::from([
+        let expected = HashMap::from([
             ("OVERLAY".to_string(), "overlay".to_string()),
             ("POLICY_SET".to_string(), "overlay-wins".to_string()),
             ("CODEX_THREAD_ID".into(), thread_id.to_string()),
             ("CODEX_TOOL_CALL_ID".into(), "current-call".into()),
         ]);
-        if cfg!(target_os = "windows") {
-            expected.insert("PATHEXT".to_string(), ".COM;.EXE;.BAT;.CMD".to_string());
-        }
 
         assert_eq!(child_env(&params), expected);
     }
@@ -1655,9 +1618,7 @@ mod tests {
             });
 
             let mut expected = HashMap::from([("OTHER".into(), "unchanged".into())]);
-            #[cfg(not(windows))]
             expected.insert("Codex_Thread_Id".into(), "mixed-case-thread".into());
-            #[cfg(not(windows))]
             expected.insert("codex_thread_id".into(), "lowercase-thread".into());
             if let Some(thread_id) = thread_id {
                 expected.insert("CODEX_THREAD_ID".into(), thread_id.to_string());
@@ -1935,10 +1896,7 @@ mod tests {
         let backend = LocalProcess::default();
         let mut process = spawn_test_process(&backend, "proc-background-child").await;
         let (outgoing_tx, outgoing_rx) = mpsc::channel(NOTIFICATION_CHANNEL_CAPACITY);
-        #[cfg(not(target_os = "windows"))]
         let mut outgoing_rx = outgoing_rx;
-        #[cfg(target_os = "windows")]
-        let _outgoing_rx = outgoing_rx;
         let requests = RpcNotificationSender::new(outgoing_tx).request_sender();
         *backend
             .inner
@@ -2002,12 +1960,6 @@ mod tests {
         let stream = tokio::net::TcpStream::connect(proxy_addr)
             .await
             .expect("proxy should remain available to a child holding inherited output streams");
-        #[cfg(target_os = "windows")]
-        {
-            assert!(proxy.network_proxy_restricting_sid(None).is_some());
-            drop(stream);
-        }
-        #[cfg(not(target_os = "windows"))]
         {
             let mut stream = stream;
             stream
@@ -2054,9 +2006,6 @@ mod tests {
         .expect("process should close");
         assert!(closed_response.closed);
         assert!(network_policy_shutdown.is_cancelled());
-        #[cfg(target_os = "windows")]
-        assert_eq!(proxy.network_proxy_restricting_sid(None), None);
-        #[cfg(not(target_os = "windows"))]
         assert!(tokio::net::TcpStream::connect(proxy_addr).await.is_err());
         backend.shutdown().await;
     }
@@ -2196,8 +2145,6 @@ mod tests {
             terminator: None,
             writer_handle: None,
             resizer: None,
-            #[cfg(windows)]
-            tty: false,
         })
         .session
     }

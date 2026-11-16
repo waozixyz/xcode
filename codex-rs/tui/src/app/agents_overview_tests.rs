@@ -1291,7 +1291,6 @@ async fn worktrees_overview_groups_by_project_or_directory() {
     });
 }
 
-#[cfg(unix)]
 #[test]
 fn overview_directory_group_keys_normalize_aliases() {
     use super::super::agents_overview_view::directory_group_key;

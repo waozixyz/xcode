@@ -21,12 +21,8 @@ use std::time::UNIX_EPOCH;
 
 pub const BUILD_COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 pub const WAIT: Duration = Duration::from_secs(/*secs*/ 10);
-const APP: &str = if cfg!(windows) { "codex.exe" } else { "codex" };
-const HELPER: &str = if cfg!(windows) {
-    "codex-voice-host.exe"
-} else {
-    "codex-voice-host"
-};
+const APP: &str = "codex";
+const HELPER: &str = "codex-voice-host";
 
 pub fn wait_for(mut ready: impl FnMut() -> bool) -> Result<()> {
     let deadline = Instant::now() + WAIT;
@@ -37,7 +33,6 @@ pub fn wait_for(mut ready: impl FnMut() -> bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 pub fn wait_for_helper_reaped(root: &std::path::Path) -> Result<()> {
     let pid: libc::pid_t = fs::read_to_string(root.join("helper-pid"))?.parse()?;
     wait_for(|| {

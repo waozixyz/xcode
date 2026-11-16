@@ -29,9 +29,9 @@ use tokio::io::BufReader;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(target_os = "macos")]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 60);
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(target_os = "macos"))]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
 
 enum TimingOutput {

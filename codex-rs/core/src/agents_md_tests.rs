@@ -27,7 +27,6 @@ use codex_exec_server::WalkOutcome;
 use codex_exec_server::WriteFileOptions;
 use codex_extension_api::Instructions;
 use codex_features::Feature;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::EnvironmentConfig;
 use codex_protocol::protocol::EnvironmentConfigState;
@@ -377,8 +376,6 @@ fn resolved_local_environments<const N: usize>(
                             environment_hooks: Default::default(),
                             allow_login_shell: true,
                             workspace_roots: Vec::new(),
-                            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                            windows_sandbox_type: codex_protocol::sandbox::SandboxType::None,
                             use_legacy_landlock: false,
                             permission_profile: PermissionProfileSnapshot::legacy(
                                 PermissionProfile::read_only(),
@@ -412,17 +409,10 @@ fn project_provenance(path: AbsolutePathBuf, cwd: AbsolutePathBuf) -> Instructio
 
 #[test]
 fn foreign_agents_md_uses_environment_native_paths() {
-    let (cwd, rendered_cwd) = if cfg!(windows) {
-        (
-            PathUri::parse("file:///codex%20runtime").expect("POSIX cwd URI"),
-            "/codex runtime",
-        )
-    } else {
-        (
-            PathUri::parse("file:///C:/codex%20runtime").expect("Windows cwd URI"),
-            r"C:\codex runtime",
-        )
-    };
+    let (cwd, rendered_cwd) = (
+        PathUri::parse("file:///C:/codex%20runtime").expect("Windows cwd URI"),
+        r"C:\codex runtime",
+    );
     let source_path = cwd.join("AGENTS.md").expect("AGENTS.md URI");
     let loaded = LoadedAgentsMd {
         user_instructions: None,
@@ -1702,7 +1692,6 @@ async fn agents_md_directory_is_ignored() {
     assert_eq!(discovery, Vec::<PathUri>::new());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn agents_md_special_file_is_ignored() {
     use std::ffi::CString;

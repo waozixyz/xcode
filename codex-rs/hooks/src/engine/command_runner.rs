@@ -3,11 +3,7 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::future::Future;
 use std::io::ErrorKind;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use std::path::Path;
-#[cfg(not(unix))]
-use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -16,22 +12,14 @@ use std::time::Instant;
 
 use async_channel::Sender;
 use codex_protocol::shell_environment::is_non_inheritable_env_var;
-#[cfg(unix)]
 use codex_utils_pty::Command;
-#[cfg(windows)]
-use codex_utils_pty::JobObject;
 use futures::future::try_join;
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
-#[cfg(not(unix))]
-use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tracing::Span;
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use super::ClaudeHooksEngine;
 use super::CommandShell;
@@ -280,12 +268,6 @@ pub(crate) async fn run_command(
     let mut command = build_command(&runtime.shell, command_line, &runtime.environment, env);
     command.current_dir(cwd);
 
-    #[cfg(windows)]
-    let (child, process_tree_job) = match JobObject::spawn_background(&mut command) {
-        Ok((child, job)) => (Ok(child), job),
-        Err(error) => (Err(error), None),
-    };
-    #[cfg(not(windows))]
     let child = command.spawn();
 
     let mut child = match child {
@@ -307,8 +289,6 @@ pub(crate) async fn run_command(
 
     let mut process_tree_guard = ProcessTreeGuard {
         process_id: child.id(),
-        #[cfg(windows)]
-        job: process_tree_job,
     };
 
     let stdin = child.stdin.take();
@@ -337,11 +317,6 @@ pub(crate) async fn run_command(
     .await
     {
         Ok(Ok(((), output))) => {
-            // Successfully completed hooks may intentionally leave detached helpers running.
-            #[cfg(windows)]
-            if let Some(job) = process_tree_guard.job.as_ref() {
-                let _ = job.preserve_descendants();
-            }
             process_tree_guard.process_id = None;
             finish_command_run(
                 started_at,
@@ -383,8 +358,6 @@ pub(crate) async fn run_command(
 // Needed only until command hooks move to the exec server, which owns process-tree cleanup.
 struct ProcessTreeGuard {
     process_id: Option<u32>,
-    #[cfg(windows)]
-    job: Option<JobObject>,
 }
 
 impl Drop for ProcessTreeGuard {
@@ -393,24 +366,8 @@ impl Drop for ProcessTreeGuard {
             return;
         };
 
-        #[cfg(unix)]
         {
             let _ = codex_utils_pty::process_group::kill_process_group(process_id);
-        }
-
-        #[cfg(windows)]
-        {
-            if let Some(job) = self.job.as_ref() {
-                let _ = job.terminate();
-            } else {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/PID", &process_id.to_string(), "/T", "/F"])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn();
-            }
         }
     }
 }
@@ -453,33 +410,13 @@ fn build_command(
         Command::new(&shell.program)
     };
     if shell.program.is_empty() {
-        #[cfg(windows)]
-        command.arg("/C");
-        #[cfg(not(windows))]
         command.arg("-lc");
     } else {
         command.args(&shell.args);
     }
-    #[cfg(windows)]
-    if shell.program.is_empty() || shell.args.iter().any(|arg| arg.eq_ignore_ascii_case("/c")) {
-        command.raw_arg(format!(r#""{command_line}""#));
-    } else {
-        command.arg(command_line);
-    }
-    #[cfg(not(windows))]
     command.arg(command_line);
 
-    #[cfg(unix)]
     command.process_mode(codex_utils_pty::ProcessMode::NewSession);
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
-    #[cfg(not(unix))]
-    command
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
 
     // Both launchers start with an empty environment. Replay the session snapshot
     // before hook overrides, filtering restricted names from both sources.
@@ -497,26 +434,11 @@ fn build_command(
 }
 
 fn default_shell_program(environment: &[(OsString, OsString)]) -> OsString {
-    #[cfg(windows)]
-    let (environment_variable, fallback_program) = ("COMSPEC", "cmd.exe");
-
-    #[cfg(not(windows))]
     let (environment_variable, fallback_program) = ("SHELL", "/bin/sh");
 
     environment
         .iter()
-        .find(|(key, _)| {
-            #[cfg(windows)]
-            {
-                key.to_str()
-                    .is_some_and(|key| key.eq_ignore_ascii_case(environment_variable))
-            }
-
-            #[cfg(not(windows))]
-            {
-                key == OsStr::new(environment_variable)
-            }
-        })
+        .find(|(key, _)| key == OsStr::new(environment_variable))
         .map(|(_, value)| value.clone())
         .unwrap_or_else(|| OsString::from(fallback_program))
 }

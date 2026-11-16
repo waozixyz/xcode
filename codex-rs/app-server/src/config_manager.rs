@@ -512,10 +512,7 @@ impl ConfigManager {
             cwd,
         )
         .await
-        .and_then(|config| {
-            config.validate_windows_mxc_requirement()?;
-            Ok(config)
-        })
+        .and_then(|config| Ok(config))
     }
 
     /// Validates saved and requested providers before resume overrides or policy can replace them.
@@ -588,7 +585,6 @@ impl ConfigManager {
         )
         .await
         .and_then(|config| {
-            config.validate_windows_mxc_requirement()?;
             Ok(config)
         })
     }
@@ -629,10 +625,7 @@ impl ConfigManager {
             Some(cwd.to_path_buf()),
         )
         .await
-        .and_then(|config| {
-            config.validate_windows_mxc_requirement()?;
-            Ok(config)
-        })
+        .and_then(|config| Ok(config))
     }
 
     #[instrument(level = "trace", skip_all)]

@@ -67,7 +67,6 @@ async fn remote_project_trust_guards_thread_start_and_preserves_repository_decis
     let read_trust = async |cwd: &Path, host| {
         read_remote_project_trust(app_server.request_handle(), cwd, host).await
     };
-    #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
         let non_utf8 = project_root.join(std::ffi::OsString::from_vec(vec![0xff]));
@@ -223,9 +222,6 @@ async fn remote_project_trust_guards_thread_start_and_preserves_repository_decis
     );
 
     let key = project_trust_key(&project_root);
-    #[cfg(windows)]
-    let (legacy_key, lookup_cwd) = (key.to_ascii_uppercase(), canonical_project_cwd.clone());
-    #[cfg(unix)]
     let (legacy_key, lookup_cwd) = {
         let alias = temp_dir.path().join("project-alias");
         std::os::unix::fs::symlink(&project_root, &alias)?;

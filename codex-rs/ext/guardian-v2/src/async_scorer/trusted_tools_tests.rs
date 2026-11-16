@@ -13,11 +13,8 @@ use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
-#[cfg(unix)]
 use super::PluginCapability;
-#[cfg(unix)]
 use super::is_home_owned_path;
-#[cfg(unix)]
 use super::is_home_owned_plugin_capability;
 use super::trusted_tool_context;
 
@@ -214,7 +211,6 @@ async fn trusts_connector_declared_by_home_owned_plugin() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rejects_paths_that_escape_codex_home_through_symlinks() -> Result<()> {
     skip_if_no_network!(Ok(()));

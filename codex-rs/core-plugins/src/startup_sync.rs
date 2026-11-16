@@ -1101,7 +1101,6 @@ fn extract_zipball_to_dir(bytes: &[u8], destination: &Path) -> Result<(), String
                 output_path.display()
             )
         })?;
-        #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
 

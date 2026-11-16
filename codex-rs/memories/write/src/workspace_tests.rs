@@ -75,7 +75,6 @@ async fn memory_storage_size_counts_nested_files_but_not_git_or_symlinks() -> an
         for (path, content) in files {
             fs::write(root.join(path), content)?;
         }
-        #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
             symlink(root.join("memory_summary.md"), root.join("file-link"))?;

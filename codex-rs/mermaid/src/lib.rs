@@ -40,9 +40,13 @@ pub fn render(source: &str, max_width: usize) -> Result<String, RenderError> {
     let grid = native_render(source, max_width)?;
     let mut text = String::with_capacity(grid.points.count as usize * 2);
     for y in 0..grid.height as usize {
-        if y != 0 { text.push('\n'); }
+        if y != 0 {
+            text.push('\n');
+        }
         for point in grid.row(y) {
-            if *point != 0 { text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?); }
+            if *point != 0 {
+                text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?);
+            }
         }
     }
     Ok(text)
@@ -57,7 +61,10 @@ pub fn render_spans(source: &str, max_width: usize) -> Result<Vec<Vec<Span>>, Re
         let row = grid.row(y);
         let mut start = 0;
         while start < row.len() {
-            if row[start] == 0 { start += 1; continue; }
+            if row[start] == 0 {
+                start += 1;
+                continue;
+            }
             let role = match roles[start] {
                 0 => Role::Edge,
                 1 => Role::Node,
@@ -69,14 +76,23 @@ pub fn render_spans(source: &str, max_width: usize) -> Result<Vec<Vec<Span>>, Re
             while end < row.len() && (row[end] == 0 || roles[end] == roles[start]) {
                 let point = row[end];
                 if point != 0 {
-                    bytes += if point < 0x80 { 1 } else if point < 0x800 { 2 }
-                             else if point < 0x10000 { 3 } else { 4 };
+                    bytes += if point < 0x80 {
+                        1
+                    } else if point < 0x800 {
+                        2
+                    } else if point < 0x10000 {
+                        3
+                    } else {
+                        4
+                    };
                 }
                 end += 1;
             }
             let mut text = String::with_capacity(bytes);
             for point in &row[start..end] {
-                if *point != 0 { text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?); }
+                if *point != 0 {
+                    text.push(char::from_u32(*point).ok_or(RenderError::Unsupported)?);
+                }
             }
             line.push(Span { text, role });
             start = end;
@@ -87,21 +103,32 @@ pub fn render_spans(source: &str, max_width: usize) -> Result<Vec<Vec<Span>>, Re
 }
 
 fn native_render(source: &str, max_width: usize) -> Result<NativeGrid, RenderError> {
-    if source.len() > MAX_SOURCE { return Err(RenderError::Limit); }
+    if source.len() > MAX_SOURCE {
+        return Err(RenderError::Limit);
+    }
     let grid = unsafe {
-        xcoder_mermaid_grid(NativeSource { data: source.as_ptr(), length: source.len() as i64 },
-                            max_width.min(i64::MAX as usize) as i64)
+        xcoder_mermaid_grid(
+            NativeSource {
+                data: source.as_ptr(),
+                length: source.len() as i64,
+            },
+            max_width.min(i64::MAX as usize) as i64,
+        )
     };
     match grid.status {
-        0 => {},
+        0 => {}
         2 => return Err(RenderError::Limit),
         3 => return Err(RenderError::TooWide),
         _ => return Err(RenderError::Unsupported),
     }
     let cells = i64::from(grid.width).checked_mul(i64::from(grid.height));
-    if grid.width <= 0 || grid.height <= 0 || cells != Some(grid.points.count)
-        || grid.points.count != grid.roles.count || grid.points.count > 64 * 1024
-        || grid.points.data.is_null() || grid.roles.data.is_null()
+    if grid.width <= 0
+        || grid.height <= 0
+        || cells != Some(grid.points.count)
+        || grid.points.count != grid.roles.count
+        || grid.points.count > 64 * 1024
+        || grid.points.data.is_null()
+        || grid.roles.data.is_null()
     {
         return Err(RenderError::Unsupported);
     }
@@ -143,15 +170,20 @@ impl NativeGrid {
     fn row(&self, y: usize) -> &[u32] {
         let start = y * self.width as usize;
         let row = &self.points()[start..start + self.width as usize];
-        let end = row.iter().rposition(|point| {
-            *point != 0 && char::from_u32(*point).is_none_or(|ch| !ch.is_whitespace())
-        }).map_or(0, |x| x + 1);
+        let end = row
+            .iter()
+            .rposition(|point| {
+                *point != 0 && char::from_u32(*point).is_none_or(|ch| !ch.is_whitespace())
+            })
+            .map_or(0, |x| x + 1);
         &row[..end]
     }
 }
 
 impl Drop for NativeGrid {
-    fn drop(&mut self) { unsafe { xcoder_mermaid_grid_free(self) }; }
+    fn drop(&mut self) {
+        unsafe { xcoder_mermaid_grid_free(self) };
+    }
 }
 
 unsafe extern "C" {

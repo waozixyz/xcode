@@ -37,7 +37,7 @@ impl SizeMonitor {
         size: Size,
         draw_tx: broadcast::Sender<()>,
     ) -> Option<Self> {
-        if !cfg!(unix) || !matches!(terminal_info.multiplexer, Some(Multiplexer::Tmux { .. })) {
+        if !matches!(terminal_info.multiplexer, Some(Multiplexer::Tmux { .. })) {
             return None;
         }
         Self::spawn(size, draw_tx, || {

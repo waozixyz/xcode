@@ -17,7 +17,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut args = std::env::args_os();
     let _ = args.next();
     let argv1 = args.next();
-    #[cfg(unix)]
     if argv1.as_deref() == Some(OsStr::new(codex_exec_server::CODEX_ARG0_EXEC_HELPER_ARG1)) {
         codex_exec_server::run_arg0_exec_helper_main();
     }

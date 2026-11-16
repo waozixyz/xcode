@@ -624,15 +624,13 @@ mod tests {
     /// commands tree-sitter extracts make a script dangerous, Ziran's must
     /// too. Returns (identical command lists, Ziran-only dangerous) or a problem.
     fn literal_parity(script: &str) -> Result<(bool, bool), String> {
-        use crate::command_safety::is_dangerous_command::DangerousCommandPlatform;
         use crate::command_safety::is_dangerous_command::dangerous_command_match_with_depth;
         let command = bash(script);
         let dangerous = |commands: &Option<Vec<Vec<String>>>| {
             commands.as_ref().is_some_and(|commands| {
-                commands.iter().any(|command| {
-                    dangerous_command_match_with_depth(command, 1, DangerousCommandPlatform::host())
-                        .is_some()
-                })
+                commands
+                    .iter()
+                    .any(|command| dangerous_command_match_with_depth(command, 1).is_some())
             })
         };
         let expected = tree_sitter_literal_commands(&command);

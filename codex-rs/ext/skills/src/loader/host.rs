@@ -422,6 +422,6 @@ pub(crate) async fn canonicalize_for_skill_identity(
 #[path = "host_tests.rs"]
 mod tests;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "host_io_tests.rs"]
 mod io_tests;

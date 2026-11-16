@@ -7,6 +7,8 @@ export CARGO_TARGET_DIR := $(CURDIR)/codex-rs/target
 export XCODER_RUNTIME_DIR := $(CURDIR)/build/native-runtime
 export RUSTC ZIRAN
 export CARGO_BUILD_JOBS ?= 1
+# `local` (default) skips LTO for fast builds; published releases use `release`.
+export XCODER_CARGO_PROFILE ?= local
 # UI plugins retain their separate JavaScript sandbox; tool execution is native.
 UI_FEATURES ?=
 CARGO_FEATURE_FLAGS := $(if $(UI_FEATURES),--features $(UI_FEATURES),)
@@ -15,7 +17,7 @@ BACKGROUND_BUILD := python3 scripts/low-priority-build.py
 .PHONY: all native-test native-test-build prebuild-tests test runtime-check install
 all:
 	mkdir -p build/bin
-	$(BACKGROUND_BUILD) $(CARGO) build --manifest-path codex-rs/Cargo.toml --release -p codex-cli -p codex-code-mode-host $(CARGO_FEATURE_FLAGS)
+	$(BACKGROUND_BUILD) $(CARGO) build --manifest-path codex-rs/Cargo.toml --profile $(XCODER_CARGO_PROFILE) -p codex-cli -p codex-code-mode-host $(CARGO_FEATURE_FLAGS)
 	python3 scripts/package-xcoder.py
 
 native-test-build:

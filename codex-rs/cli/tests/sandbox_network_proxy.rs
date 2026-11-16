@@ -1,5 +1,3 @@
-#![cfg(any(target_os = "linux", target_os = "macos"))]
-
 use std::net::TcpListener;
 
 use anyhow::Result;

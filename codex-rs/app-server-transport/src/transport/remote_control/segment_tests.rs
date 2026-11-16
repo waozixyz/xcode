@@ -9,24 +9,18 @@ use super::segment::ClientSegmentReassembler;
 use super::segment::REMOTE_CONTROL_SEGMENT_MAX_BYTES;
 use super::segment::split_server_envelope_for_transport;
 use crate::outgoing_message::OutgoingMessage;
-#[cfg(unix)]
 use crate::outgoing_message::OutgoingResponse;
 use base64::Engine;
-#[cfg(unix)]
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ConfigWarningNotification;
-#[cfg(unix)]
 use codex_app_server_protocol::InitializeResponse;
 use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCNotification;
-#[cfg(unix)]
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerNotificationEnvelope;
-#[cfg(unix)]
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use serde_json::json;
 
 #[test]
@@ -120,7 +114,6 @@ fn splits_large_server_messages_into_wire_chunks() {
     }));
 }
 
-#[cfg(unix)]
 #[test]
 fn invalid_response_becomes_remote_control_jsonrpc_error() {
     use std::ffi::OsString;

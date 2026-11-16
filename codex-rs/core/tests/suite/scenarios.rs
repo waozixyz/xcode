@@ -64,7 +64,6 @@ use codex_protocol::protocol::AdditionalContextEntry;
 use codex_protocol::protocol::AdditionalContextKind;
 use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
-#[cfg(not(target_os = "windows"))]
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::TurnEnvironmentSelection;
@@ -210,7 +209,6 @@ mod mcp_sharing;
 #[path = "scenarios_guardian_agent_messages_tests.rs"]
 mod guardian_agent_messages;
 
-#[cfg(not(target_os = "windows"))]
 #[path = "scenarios_guardian_handoff.rs"]
 mod guardian_handoff;
 
@@ -223,7 +221,6 @@ mod preparation;
 #[path = "scenarios_content_filter.rs"]
 mod content_filter;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "scenarios_credential_masking.rs"]
 mod credential_masking;
 
@@ -235,9 +232,6 @@ mod web_search;
 
 #[path = "scenarios_shared_instructions.rs"]
 mod shared_instructions;
-
-#[path = "scenarios_mxc.rs"]
-mod mxc;
 
 #[path = "scenarios_tools_namespace_budget.rs"]
 mod tools_namespace_budget;
@@ -2292,7 +2286,6 @@ async fn multi_agent_catalog_parameters(
     Ok(())
 }
 
-#[cfg_attr(windows, ignore = "the fixture uses a Unix shell command")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn astra_settings_release_check_with_direct_and_code_mode_tools() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -3024,7 +3017,6 @@ async fn subagent_browser_auth_resolves_user_prompt() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test]
 async fn guardian_elastic_budgeting_request_history() -> Result<()> {
     use codex_config::test_support::CloudConfigBundleFixture;
@@ -3154,7 +3146,6 @@ async fn guardian_elastic_budgeting_request_history() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn guardian_code_mode_messaging_request_history() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -3520,7 +3511,6 @@ async fn app_tool_exposure_request_history() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn model_catalog_refresh_preserves_tools_and_history() -> Result<()> {
     let requests = super::spawn_agent_description::model_catalog_refresh_requests(

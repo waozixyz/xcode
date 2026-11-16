@@ -13,9 +13,8 @@ pub struct CommandToolOptions {
 #[cfg(test)]
 pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
     create_exec_command_tool_with_environment_id(
-        options,
-        /*include_environment_id*/ false,
-        /*include_windows_shell_guidance*/ cfg!(windows),
+        options, /*include_environment_id*/ false,
+        /*include_windows_shell_guidance*/ false,
     )
 }
 
@@ -24,11 +23,8 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     include_environment_id: bool,
     include_windows_shell_guidance: bool,
 ) -> ToolSpec {
-    let yield_time_ms_description = if cfg!(windows) {
-        "Maximum time to wait before returning a session ID for a still-running command. Commands that finish sooner return immediately. For ordinary commands, omit this parameter to use the 10000 ms default. Effective range on Windows is 10000-30000 ms."
-    } else {
-        "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
-    };
+    let yield_time_ms_description =
+        "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms.";
     let mut properties = BTreeMap::from([
         (
             "cmd".to_string(),

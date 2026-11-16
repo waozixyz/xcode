@@ -27,7 +27,6 @@ pub fn is_likely_sandbox_denied(
         return false;
     }
 
-    #[cfg(unix)]
     {
         const EXIT_CODE_SIGNAL_BASE: i32 = 128;
         const SIGSYS_CODE: i32 = libc::SIGSYS;

@@ -67,7 +67,7 @@ class ValidationTest(unittest.TestCase):
             root = Path(temporary)
             paths = {**{suite: 'build/native-dispatch/' + name
                         for suite, name in validation.NATIVE_TESTS.items()},
-                     **{suite: 'codex-rs/target/release/deps/' + suite.replace('-', '_') + '-fixture'
+                     **{suite: 'codex-rs/target/' + validation.PROFILE + '/deps/' + suite.replace('-', '_') + '-fixture'
                         for suite in validation.RUST_SUITES}}
             rows = []
             for suite, name in paths.items():

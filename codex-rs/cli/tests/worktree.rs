@@ -10,8 +10,6 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 use std::time::Instant;
-#[cfg(not(unix))]
-use tempfile::TempDir;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
@@ -139,20 +137,12 @@ async fn interactive_worktree_start_and_fork_bind_owner_before_turn() -> anyhow:
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[cfg_attr(
-    windows,
-    ignore = "requires a non-elevated terminal with daemon breakaway support"
-)]
 async fn daemon_worktree_start_and_fork_bind_owner_before_turn() -> anyhow::Result<()> {
     worktree_start_and_fork("daemon").await
 }
 
 async fn worktree_start_and_fork(backend: &str) -> anyhow::Result<()> {
-    // Leave room for the local control socket on Unix platforms with short sun_path limits.
-    #[cfg(unix)]
     let root = tempfile::Builder::new().tempdir_in("/tmp")?;
-    #[cfg(not(unix))]
-    let root = TempDir::new()?;
     let root = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(root.path())?
         .canonicalize()?
         .into_path_buf();
@@ -281,13 +271,8 @@ trust_level = "trusted"
     let _daemon = if backend == "daemon" {
         let bin = home.join("packages/app-server-daemon/current/bin");
         fs::create_dir_all(&bin)?;
-        let managed = bin.join(if cfg!(windows) { "codex.exe" } else { "codex" });
-        // Hard links change the executable's ctime and invalidate Rosetta's translation cache.
-        #[cfg(unix)]
+        let managed = bin.join("codex");
         std::os::unix::fs::symlink(program.canonicalize()?, &managed)?;
-        #[cfg(not(unix))]
-        fs::hard_link(&program, &managed)
-            .or_else(|_| codex_utils_cargo_bin::copy_executable(&program, &managed))?;
         fs::create_dir(home.join("app-server-daemon"))?;
         fs::write(
             home.join("app-server-daemon/settings.json"),
@@ -644,8 +629,7 @@ trust_level = "trusted"
             }
         })
         .await;
-        let elevated_handoff = cfg!(windows)
-            && output.contains("start the Windows daemon from a non-elevated terminal");
+        let elevated_handoff = false;
         assert_eq!(exit, i32::from(elevated_handoff), "{output}");
         assert!(!output.contains("The checkout was kept"), "{output}");
         let metrics = server
@@ -711,10 +695,6 @@ trust_level = "trusted"
                 ("update_interval_setting", "default"),
                 ("shutdown_grace_setting", "default"),
             ]);
-            #[cfg(windows)]
-            if codex_app_server_daemon::is_elevated()? {
-                expected_tags.insert("daemon_selection_reason", "elevated_windows");
-            }
             if backend == "daemon" {
                 expected_tags.extend([
                     ("auto_update", "disabled"),

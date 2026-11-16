@@ -121,17 +121,6 @@ impl TerminalHyperlink {
         if url.host().is_some() || image::ImageFormat::from_path(path).is_err() {
             return None;
         }
-        // A Windows junction can lead to a UNC share. Check parents before following any of them.
-        #[cfg(windows)]
-        for ancestor in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
-            use std::os::windows::fs::MetadataExt;
-            use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
-            if ancestor.symlink_metadata().ok()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT
-                != 0
-            {
-                return None;
-            }
-        }
         let target = path.canonicalize().ok()?;
         let url = Url::from_file_path(&target).ok()?;
         if url.host().is_some()
@@ -1439,7 +1428,6 @@ mod tests {
             );
         }
 
-        #[cfg(unix)]
         {
             let outside = tempfile::tempdir().expect("outside directory");
             let outside_file = outside.path().join("outside.rs");

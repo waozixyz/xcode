@@ -1,4 +1,3 @@
-#[cfg(unix)]
 use std::path::Path;
 use std::time::Duration;
 
@@ -12,11 +11,8 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use super::respond_to_terminal_queries;
-#[cfg(unix)]
 use crate::SandboxType;
-#[cfg(unix)]
 use crate::SpawnRequest;
-#[cfg(unix)]
 use crate::spawn_process;
 
 #[tokio::test]
@@ -32,8 +28,6 @@ async fn driver_backed_terminal_queries_are_answered() -> anyhow::Result<()> {
         terminator: None,
         writer_handle: None,
         resizer: None,
-        #[cfg(windows)]
-        tty: true,
     }));
     let SpawnedProcess {
         session: _session,
@@ -63,7 +57,6 @@ async fn driver_backed_terminal_queries_are_answered() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn direct_terminal_queries_are_answered() -> anyhow::Result<()> {
     let script =
@@ -76,7 +69,6 @@ async fn direct_terminal_queries_are_answered() -> anyhow::Result<()> {
         env: &env,
         arg0: &None,
         sandbox: SandboxType::None,
-        windows_sandbox: None,
         tty: true,
         stdin_open: true,
         inherited_fds: codex_utils_pty::ChildFds::Inherited(&[]),

@@ -187,16 +187,6 @@ impl HookEnvironmentExecutor for EnvironmentCommandExecutor {
                 ShellType::Sh | ShellType::Bash | ShellType::Zsh => format!(
                     "IFS= read -r codex_hook_input; printf '%s' \"$codex_hook_input\" | (\n{command}\n)"
                 ),
-                // A script block can reset `$?`. Run the hook at the top level and preserve its
-                // exit code before PowerShell's -Command reduces it to 0 or 1.
-                ShellType::PowerShell => format!(
-                    "$global:LASTEXITCODE = 0\n\
-                     [Console]::In.ReadLine() | {command}\n\
-                     if ($?) {{ exit 0 }}\n\
-                     if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}\n\
-                     exit 1"
-                ),
-                ShellType::Cmd => bail!("environment command hooks require PowerShell on Windows"),
             };
             let argv = shell.derive_exec_args(&script, environment.config().allow_login_shell);
             // Keep network attribution registered until the hook and its output are complete.

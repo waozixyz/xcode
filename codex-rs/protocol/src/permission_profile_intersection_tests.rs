@@ -317,7 +317,6 @@ fn unsupported_unresolved_and_optional_policy_shapes_fail_closed() {
     ));
 }
 
-#[cfg(unix)]
 #[test]
 fn canonical_grants_cannot_escape_through_readable_or_writable_symlinks() {
     let temp = TempDir::new().expect("workspace");

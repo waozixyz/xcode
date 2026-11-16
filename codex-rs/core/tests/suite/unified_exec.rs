@@ -1,7 +1,6 @@
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::EnvironmentConfig;
 use codex_core::TurnInputRequest;
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_features::Feature;
 use codex_protocol::approvals::ExecApprovalKind;
 use codex_protocol::protocol::ReviewDecision;
@@ -21,7 +20,6 @@ use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::PermissionProfileSnapshot;
 use codex_protocol::models::ResponseItem;
@@ -49,7 +47,6 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
-use core_test_support::skip_if_host_windows;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
 use core_test_support::skip_if_target_windows;
@@ -571,8 +568,6 @@ async fn exec_command_uses_installed_environment_shell_policy_with_explicit_over
                         .clone(),
                     ..Default::default()
                 },
-                windows_sandbox_level: WindowsSandboxLevel::from_config(&harness.test().config),
-                windows_sandbox_type: harness.test().config.permissions.windows_sandbox_type,
                 use_legacy_landlock: harness.test().config.features.use_legacy_landlock(),
                 exec_policy: None,
                 mcp_policy: None,
@@ -630,7 +625,6 @@ async fn exec_command_uses_installed_environment_shell_policy_with_explicit_over
 async fn unified_exec_intercepts_apply_patch_exec_command() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let builder = test_codex();
     let harness = TestCodexHarness::with_builder(builder).await?;
@@ -955,7 +949,6 @@ async fn unified_exec_respects_workdir_override() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses a POSIX pwd command and workdir path");
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -1363,43 +1356,6 @@ async fn unified_exec_short_lived_network_denial_emits_failed_end_event() -> Res
     Ok(())
 }
 
-#[cfg(windows)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_rejects_unelevated_windows_sandbox_with_managed_network() -> Result<()> {
-    let server = start_mock_server().await;
-    let (test, permission_profile) = unified_exec_network_denial_test(&server).await?;
-    let call_id = "uexec-unelevated-managed-network";
-    let args = json!({
-        "cmd": "echo should not run",
-        "yield_time_ms": 1_000,
-    });
-    let responses = mount_unified_exec_network_denial_responses(&server, call_id, &args).await?;
-
-    submit_unified_exec_turn(
-        &test,
-        "run an unelevated managed-network command",
-        permission_profile,
-    )
-    .await?;
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
-
-    let output_item = responses
-        .last_request()
-        .expect("model should receive the rejected tool call output")
-        .function_call_output(call_id);
-    let output = extract_output_text(&output_item)
-        .expect("rejected tool call should include model-visible text");
-    assert!(
-        output.contains("managed networking requires the elevated Windows sandbox backend"),
-        "unexpected output: {output}"
-    );
-
-    Ok(())
-}
-
 async fn unified_exec_network_denial_test(
     server: &wiremock::MockServer,
 ) -> Result<(TestCodex, PermissionProfile)> {
@@ -1437,8 +1393,6 @@ allow_local_binding = true
                 .permissions
                 .set_permission_profile(permission_profile_for_config)
                 .expect("set permission profile");
-            #[cfg(windows)]
-            config.set_windows_sandbox_enabled(/*value*/ true);
         });
     let test = builder.build_with_auto_env(server).await?;
     assert!(
@@ -1824,7 +1778,6 @@ async fn unified_exec_emits_one_begin_and_one_end_event() -> Result<()> {
     skip_if_target_windows!(Ok(()), "uses bash and a POSIX sleep command");
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -2910,7 +2863,6 @@ async fn unified_exec_emits_end_event_when_session_dies_via_stdin() -> Result<()
 async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -3011,7 +2963,6 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> 
 async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -3611,7 +3562,6 @@ PY
 async fn unified_exec_runs_under_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
-    skip_if_host_windows!(Ok(()));
 
     let server = start_mock_server().await;
 
@@ -3688,7 +3638,6 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_enforces_glob_deny_read_policy() -> Result<()> {
     use codex_protocol::models::PermissionProfile;

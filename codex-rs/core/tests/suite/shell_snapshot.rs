@@ -1,38 +1,22 @@
 use anyhow::Result;
 use codex_core::TurnInputRequest;
-#[cfg(unix)]
 use codex_core::config::Constrained;
-#[cfg(unix)]
 use codex_core::config::NetworkProxySpec;
-#[cfg(unix)]
 use codex_core::shell::get_shell_by_model_provided_path;
-#[cfg(unix)]
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_features::Feature;
-#[cfg(unix)]
 use codex_network_proxy::NetworkProxyConfig;
-#[cfg(unix)]
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
-#[cfg(unix)]
 use codex_protocol::config_types::EnvironmentVariablePattern;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
-#[cfg(unix)]
 use codex_protocol::config_types::ShellEnvironmentPolicy;
-#[cfg(unix)]
 use codex_protocol::config_types::TrustLevel;
-#[cfg(unix)]
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
-#[cfg(unix)]
 use codex_protocol::models::PermissionProfileSnapshot;
-#[cfg(unix)]
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
-#[cfg(unix)]
 use codex_protocol::protocol::EnvironmentConfig;
-#[cfg(unix)]
 use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecCommandBeginEvent;
@@ -40,19 +24,15 @@ use codex_protocol::protocol::ExecCommandEndEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
-#[cfg(unix)]
 use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
-#[cfg(unix)]
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
-#[cfg(unix)]
 use core_test_support::skip_if_remote;
-#[cfg(unix)]
 use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::local_requests;
@@ -327,7 +307,6 @@ fn assert_posix_snapshot_sections(snapshot: &str) {
     );
 }
 
-#[cfg(unix)]
 fn shell_snapshot_v2_prewarm_builder(profile_home: &Path) -> TestCodexBuilder {
     let configured_home = profile_home.to_string_lossy().into_owned();
     let shell = get_shell_by_model_provided_path(&PathBuf::from("/bin/bash"));
@@ -355,7 +334,6 @@ fn shell_snapshot_v2_prewarm_builder(profile_home: &Path) -> TestCodexBuilder {
         })
 }
 
-#[cfg(unix)]
 async fn run_no_shell_turn(harness: &TestCodexHarness) -> Result<()> {
     let response = mount_sse_once(
         harness.server(),
@@ -385,7 +363,6 @@ async fn run_no_shell_turn(harness: &TestCodexHarness) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_returns_before_inherited_output_closes() -> Result<()> {
     use std::io::Write;
@@ -443,7 +420,6 @@ async fn shell_snapshot_v2_returns_before_inherited_output_closes() -> Result<()
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_warms_after_hooks_without_blocking_the_model() -> Result<()> {
     skip_if_remote!(Ok(()), "profile fixture uses a host-local HOME directory");
@@ -499,7 +475,6 @@ async fn shell_snapshot_v2_warms_after_hooks_without_blocking_the_model() -> Res
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_recovers_after_failed_prewarm() -> Result<()> {
     skip_if_remote!(Ok(()), "prewarming is local-only");
@@ -546,7 +521,6 @@ async fn shell_snapshot_v2_recovers_after_failed_prewarm() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_prewarm_preserves_the_sandbox() -> Result<()> {
     skip_if_remote!(Ok(()), "profile fixture uses a host-local HOME directory");
@@ -595,7 +569,6 @@ async fn shell_snapshot_v2_prewarm_preserves_the_sandbox() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_prewarm_stops_on_shutdown() -> Result<()> {
     skip_if_remote!(Ok(()), "profile fixture uses a host-local HOME directory");
@@ -631,7 +604,6 @@ async fn shell_snapshot_v2_prewarm_stops_on_shutdown() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case::test_case(|config| {
     config.active_project.trust_level = Some(TrustLevel::Untrusted);
     config.permissions.approval_policy = Constrained::allow_any(AskForApproval::UnlessTrusted);
@@ -662,7 +634,6 @@ async fn shell_snapshot_v2_prewarm_skips_ineligible_sessions(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case::test_case("SessionStart")]
 #[test_case::test_case("UserPromptSubmit")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -694,7 +665,6 @@ async fn shell_snapshot_v2_does_not_warm_a_hook_stopped_turn(hook_event: &str) -
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case::test_case(PermissionProfile::workspace_write(); "read only reviewer")]
 #[test_case::test_case(PermissionProfile::External { network: NetworkSandboxPolicy::Enabled }; "reviewer without shell tools")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -771,8 +741,6 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
         workspace_roots: requests.environment_requests[0].workspace_roots.clone(),
         permission_profile: PermissionProfileSnapshot::legacy(PermissionProfile::Disabled),
         shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
-        windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
-        windows_sandbox_type: test.config.permissions.windows_sandbox_type,
         use_legacy_landlock: test.config.features.use_legacy_landlock(),
         exec_policy: None,
         mcp_policy: None,
@@ -819,7 +787,6 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn legacy_snapshot_omits_filtered_and_overridden_exports() -> Result<()> {
     skip_if_remote!(Ok(()), "legacy snapshots require a local environment");
@@ -915,7 +882,6 @@ exec /bin/bash --noprofile --norc "$@"
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_filters_profile_secrets_without_creating_files() -> Result<()> {
     skip_if_remote!(Ok(()), "profile fixture uses a host-local HOME directory");
@@ -983,7 +949,6 @@ async fn shell_snapshot_v2_filters_profile_secrets_without_creating_files() -> R
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_v2_preserves_legacy_snapshots_for_user_shell() -> Result<()> {
     skip_if_remote!(Ok(()), "legacy shell snapshots require a local environment");
@@ -1043,7 +1008,6 @@ async fn linux_unified_exec_uses_shell_snapshot() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_snapshot_preserves_shell_environment_policy_set() -> Result<()> {
     let builder = test_codex().with_config(|config| {
@@ -1092,7 +1056,6 @@ async fn unified_exec_snapshot_preserves_shell_environment_policy_set() -> Resul
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_exec_snapshot_still_intercepts_apply_patch() -> Result<()> {
     let builder = test_codex().with_config(|config| {
@@ -1195,7 +1158,6 @@ async fn unified_exec_snapshot_still_intercepts_apply_patch() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_snapshot_deleted_after_shutdown_with_skills() -> Result<()> {
     let builder = test_codex().with_config(|config| {

@@ -201,7 +201,6 @@ impl ExecServerTelemetry {
         });
     }
 
-    #[cfg(unix)]
     pub(crate) fn shell_snapshot_captured(
         &self,
         duration: Duration,
@@ -230,7 +229,6 @@ impl ExecServerTelemetry {
 
     /// One observation per eligible execution preparation, excluding prewarm.
     /// `used` means selected for replay, not that restoration or execution succeeded.
-    #[cfg(unix)]
     pub(crate) fn shell_snapshot_command(
         &self,
         wait: Duration,

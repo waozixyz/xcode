@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::time::Duration;
 
 use sha1::digest::Output;
 
@@ -14,7 +13,9 @@ const DEV_NULL: &str = "/dev/null";
 const REGULAR_FILE_MODE: &str = "100644";
 // Normal edits finish well within 100 ms; pathological inputs fall back to a coarse,
 // content-exact diff without stalling tool completion.
-const DIFF_TIMEOUT: Duration = Duration::from_millis(100);
+/// Bounds the line-diff search, like the 100 ms deadline it replaces but
+/// deterministic: past it, remaining differences render as removal plus insertion.
+const DIFF_BUDGET: u64 = 20_000_000;
 
 struct TrackedContent {
     content: String,
@@ -353,14 +354,12 @@ impl TurnDiffTracker {
             DEV_NULL.to_string()
         };
 
-        let mut config = similar::TextDiff::configure();
-        config.timeout(DIFF_TIMEOUT);
-        let unified = config
-            .diff_lines(left_content.unwrap_or(""), right_content.unwrap_or(""))
-            .unified_diff()
-            .context_radius(3)
-            .header(&old_header, &new_header)
-            .to_string();
+        let unified =
+            codex_utils_text_diff::unified(left_content.unwrap_or(""), right_content.unwrap_or(""))
+                .context_radius(3)
+                .header(&old_header, &new_header)
+                .budget(DIFF_BUDGET)
+                .render();
         diff.push_str(&unified);
         Some(diff)
     }

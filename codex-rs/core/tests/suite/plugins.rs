@@ -32,7 +32,6 @@ use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
-#[cfg(unix)]
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
@@ -57,7 +56,6 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_remote;
-#[cfg(unix)]
 use core_test_support::skip_if_sandbox;
 use core_test_support::skip_if_target_windows;
 use core_test_support::stdio_server_bin;
@@ -595,7 +593,6 @@ async fn persisted_remote_plugin_command_attribution_flows_through_turn_context(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(codex_exec_server::LOCAL_ENVIRONMENT_ID; "local")]
 #[test_case(codex_exec_server::REMOTE_ENVIRONMENT_ID; "remote")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -728,7 +725,6 @@ printf 'STDIN_OK\n'
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_plugin_measurements_require_the_frontend_version() -> Result<()> {
     skip_if_no_network!(Ok(()));

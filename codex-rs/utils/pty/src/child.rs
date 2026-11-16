@@ -11,11 +11,9 @@ use tokio::process::ChildStderr;
 use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "posix_child.rs"]
 pub(super) mod posix;
 
-#[cfg(unix)]
 #[path = "child_reaper.rs"]
 pub(super) mod reaper;
 
@@ -29,12 +27,10 @@ pub struct Child {
 
 pub(super) enum ChildKind {
     Tokio(tokio::process::Child),
-    #[cfg(unix)]
     TokioReapOnly {
         child: Option<tokio::process::Child>,
         reaper: std::sync::mpsc::Sender<reaper::ChildToReap>,
     },
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
     Native(posix::NativeChild),
 }
 
@@ -42,11 +38,9 @@ impl Child {
     pub fn id(&self) -> Option<u32> {
         match &self.inner {
             ChildKind::Tokio(child) => child.id(),
-            #[cfg(unix)]
             ChildKind::TokioReapOnly { child, .. } => {
                 child.as_ref().and_then(tokio::process::Child::id)
             }
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
             ChildKind::Native(child) => child.id(),
         }
     }
@@ -56,7 +50,6 @@ impl Child {
         self.stdin.take();
         match &mut self.inner {
             ChildKind::Tokio(child) => child.wait().await,
-            #[cfg(unix)]
             ChildKind::TokioReapOnly { child, .. } => {
                 child
                     .as_mut()
@@ -64,7 +57,6 @@ impl Child {
                     .wait()
                     .await
             }
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
             ChildKind::Native(child) => child.wait().await,
         }
     }
@@ -106,7 +98,6 @@ impl Child {
         self.stdin.take();
         match &mut self.inner {
             ChildKind::Tokio(child) => child.kill().await,
-            #[cfg(unix)]
             ChildKind::TokioReapOnly { child, .. } => {
                 child
                     .as_mut()
@@ -114,19 +105,17 @@ impl Child {
                     .kill()
                     .await
             }
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
             ChildKind::Native(child) => child.kill().await,
         }
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "child_tests.rs"]
 mod tests;
 
 impl Drop for ChildKind {
     fn drop(&mut self) {
-        #[cfg(unix)]
         if let Self::TokioReapOnly { child, reaper } = self
             && let Some(child) = child.take()
             && child.id().is_some()

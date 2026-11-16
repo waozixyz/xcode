@@ -52,7 +52,6 @@ fn hover_transitions_are_deduplicated_and_restore_after_leaving_a_link() {
 }
 
 #[test]
-#[cfg(unix)]
 fn capture_release_restores_pointer_even_after_moving_off_link() {
     for shape in [Link, Resize, Arrow] {
         let screen = super::super::alternate_screen::AlternateScreen::default();

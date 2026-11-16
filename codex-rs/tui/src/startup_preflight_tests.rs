@@ -164,7 +164,6 @@ fn startup_keeps_composer_when_home_state_cannot_be_confirmed() -> std::io::Resu
         |_| None,
     ));
 
-    #[cfg(unix)]
     {
         let system_config_path =
             AbsolutePathBuf::from_absolute_path(temporary_directory.path().join("system.toml"))?;
@@ -211,7 +210,6 @@ fn startup_keeps_composer_for_workload_identity_markers() -> std::io::Result<()>
         }
     }
 
-    #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
 
@@ -272,7 +270,6 @@ fn startup_keeps_composer_when_system_configuration_is_possible() -> std::io::Re
         |_| None,
     ));
 
-    #[cfg(unix)]
     {
         let blocking_parent = temporary_directory.path().join("blocking-parent");
         std::fs::write(&blocking_parent, "not a directory")?;

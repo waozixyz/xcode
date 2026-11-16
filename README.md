@@ -18,11 +18,10 @@ it when the corresponding upstream V8 artifacts are available).
 The initial native backend targets Linux with bubblewrap, a C compiler, Rust
 1.95 and a built Ziran toolchain. `ziran lock` resolves the pinned toolchain;
 local development uses an ignored `ziran.local.toml` override.
-The Make targets run Rust work at nice 19 and the lowest best-effort I/O priority in a shared
-user-systemd scope: a 1.5 GiB soft RAM target, 2 GiB hard RAM limit and up to
-64 GiB of swap, with one Cargo job by default. Active compiler pages still require RAM. On a host without a
-user-systemd manager, explicitly setting `XCODER_BUILD_SCOPE=0` omits only the
-memory scope. Completed artifacts are reused when a build is resumed.
+The Make targets run Rust work at nice 19 and the lowest best-effort I/O priority, with one
+Cargo job by default (set `CARGO_BUILD_JOBS` to use more). They add no memory limit of their
+own; run them under a build queue or scope that sizes memory for the machine. Completed
+artifacts are reused when a build is resumed.
 
 Run `make test` for Rust/C ABI, Ziran-backed Mermaid and fuzzy-match, native
 sandbox, callback, host transport and offline full-CLI local tests. The CLI fixture runs a real shell tool through the
@@ -95,20 +94,10 @@ Run the following on Mac or Linux to install Codex CLI:
 curl -fsSL https://chatgpt.com/codex/install.sh | sh
 ```
 
-Run the following on Windows to install Codex CLI:
-
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
-
 The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
 
 ```shell
 curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
-```
-
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
 ```
 
 Codex CLI can also be installed via the following package managers:

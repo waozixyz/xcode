@@ -326,7 +326,6 @@ fn viewer_reuses_path_and_refreshes_static_document() {
     let reused_url = context.link_for("chart.html").expect("reused viewer link");
 
     assert_eq!(reused_url, first_url);
-    #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         assert_eq!(
@@ -334,16 +333,6 @@ fn viewer_reuses_path_and_refreshes_static_document() {
                 .expect("read reused viewer metadata")
                 .ino(),
             original_viewer_metadata.ino()
-        );
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        assert_eq!(
-            fs::metadata(&viewer_path)
-                .expect("read reused viewer metadata")
-                .creation_time(),
-            original_viewer_metadata.creation_time()
         );
     }
 

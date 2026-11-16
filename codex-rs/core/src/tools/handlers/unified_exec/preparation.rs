@@ -23,12 +23,10 @@ use crate::tools::handlers::parse_arguments_with_base_path;
 use crate::tools::handlers::resolve_sandbox_permissions;
 use crate::tools::sandboxing::ApprovalAction;
 use crate::tools::sandboxing::ExecApprovalRequirement;
-use crate::windows_sandbox::windows_sandbox_level_for_legacy_checks;
 use codex_features::Feature;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxType;
 use codex_sandboxing::SandboxablePreference;
-use codex_shell_command::is_dangerous_command::DangerousCommandPlatform;
 use codex_shell_command::shell_detect::detect_shell_type;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathConvention;
@@ -68,13 +66,6 @@ impl PreparedExecCommand {
         let environment = &self.turn_environment;
         let session_shell = session.user_shell();
         let configured_shell = environment.shell.as_ref().unwrap_or(session_shell.as_ref());
-        // Legacy executors omit the platform. Unknown reported platforms use the
-        // more conservative Windows rules rather than silently weakening checks.
-        let command_platform = match environment.executor_platform_os.as_deref() {
-            Some("linux" | "macos") => DangerousCommandPlatform::Posix,
-            Some("windows") | Some(_) => DangerousCommandPlatform::Windows,
-            None => DangerousCommandPlatform::host(),
-        };
         session
             .services
             .exec_policy
@@ -84,10 +75,6 @@ impl PreparedExecCommand {
                     approval_policy: step.settings.approval_policy(),
                     permission_profile: environment.permission_profile().clone(),
                     environment_policy: environment.config().exec_policy.as_ref(),
-                    windows_sandbox_level: windows_sandbox_level_for_legacy_checks(
-                        environment.config().windows_sandbox_type,
-                        environment.config().windows_sandbox_level,
-                    ),
                     sandbox_permissions: if self.permissions.permissions_preapproved {
                         SandboxPermissions::UseDefault
                     } else {
@@ -97,7 +84,6 @@ impl PreparedExecCommand {
                     allow_prefix_rules: step.turn.allow_prefix_rules(),
                 },
                 configured_shell,
-                command_platform,
             )
             .await
     }
@@ -150,10 +136,6 @@ impl<'a> ParsedExecCommand<'a> {
             && SandboxManager::new().select_initial(
                 turn_environment.permission_profile(),
                 SandboxablePreference::Auto,
-                codex_protocol::sandbox::effective_windows_sandbox_type(
-                    turn_environment.config().windows_sandbox_type,
-                    turn_environment.config().windows_sandbox_level,
-                ),
                 step.turn.network.is_some(),
             ) != SandboxType::None;
         // `to_abs_path()` alone cannot identify foreign drive paths: `file:///C:/repo` is

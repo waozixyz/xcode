@@ -25,7 +25,6 @@ impl Drop for InstallLock {
 pub(crate) async fn acquire_install_lock(root: &Path) -> Result<InstallLock> {
     let lock = root.join("install.lock");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    #[cfg(unix)]
     let use_lockf = {
         // Match the installer so both processes coordinate on the same lock.
         let choice = tokio::process::Command::new("/bin/sh")
@@ -95,14 +94,8 @@ pub(crate) async fn acquire_install_lock(root: &Path) -> Result<InstallLock> {
     };
     let mut options = OpenOptions::new();
     options.create(true).truncate(false).write(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(0);
-    }
     loop {
         let acquired = options.open(&lock);
-        #[cfg(unix)]
         let acquired = acquired.and_then(|file| {
             {
                 use std::os::fd::AsRawFd;
@@ -125,11 +118,7 @@ pub(crate) async fn acquire_install_lock(root: &Path) -> Result<InstallLock> {
                     _directory_owner: None,
                 });
             }
-            Err(error)
-                if error.kind() == std::io::ErrorKind::WouldBlock
-                    || cfg!(windows)
-                        && (error.raw_os_error() == Some(32)
-                            || error.kind() == std::io::ErrorKind::PermissionDenied) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(error) => return Err(error).context("failed to acquire daemon installer lock"),
         }
         if tokio::time::Instant::now() >= deadline {

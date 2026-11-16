@@ -409,14 +409,7 @@ async fn remote_file_system_can_read_after_checkout_removal_with_legacy_helper_l
             Some(cwd) => cwd.to_abs_path().expect("native legacy cwd").to_path_buf(),
             None => std::env::current_dir().expect("legacy executor cwd"),
         };
-        #[cfg(unix)]
         let mut command = tokio::process::Command::new("cat");
-        #[cfg(windows)]
-        let mut command = {
-            let mut command = tokio::process::Command::new("cmd.exe");
-            command.args(["/C", "type"]);
-            command
-        };
         let output = command
             .current_dir(helper_cwd)
             .arg(params.path.to_abs_path().expect("native file").as_path())
@@ -968,10 +961,7 @@ async fn record_metadata_params(
 }
 
 fn non_native_cwd() -> PathUri {
-    #[cfg(unix)]
     let uri = "file://server/share/checkout";
-    #[cfg(windows)]
-    let uri = "file:///usr/local/checkout";
 
     PathUri::parse(uri).expect("non-native cwd URI")
 }

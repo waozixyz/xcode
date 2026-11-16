@@ -40,9 +40,6 @@ pub fn create_env(
 /// Exposes the shared root-session identity and harness version to shell commands.
 pub(crate) fn inject_session_env(env: &mut HashMap<String, String>, session_id: SessionId) {
     env.insert(CODEX_SESSION_ID_ENV_VAR.to_string(), session_id.to_string());
-    if cfg!(windows) {
-        env.retain(|key, _| !key.eq_ignore_ascii_case(CODEX_VERSION_ENV_VAR));
-    }
     env.insert(
         CODEX_VERSION_ENV_VAR.to_string(),
         env!("CARGO_PKG_VERSION").to_string(),
@@ -57,11 +54,7 @@ pub(crate) fn inject_permission_profile_env(
     env: &mut HashMap<String, String>,
     active_permission_profile: Option<&ActivePermissionProfile>,
 ) {
-    if cfg!(windows) {
-        env.retain(|key, _| !key.eq_ignore_ascii_case(CODEX_PERMISSION_PROFILE_ENV_VAR));
-    } else {
-        env.remove(CODEX_PERMISSION_PROFILE_ENV_VAR);
-    }
+    env.remove(CODEX_PERMISSION_PROFILE_ENV_VAR);
     if let Some(active_permission_profile) = active_permission_profile {
         env.insert(
             CODEX_PERMISSION_PROFILE_ENV_VAR.to_string(),
@@ -79,19 +72,6 @@ pub fn inject_apply_patch_env(env: &mut HashMap<String, String>) {
         CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS_ENV_VAR.to_string(),
         "1".to_string(),
     );
-}
-
-#[cfg(all(test, target_os = "windows"))]
-fn create_env_from_vars<I>(
-    vars: I,
-    policy: &ShellEnvironmentPolicy,
-    thread_id: Option<ThreadId>,
-) -> HashMap<String, String>
-where
-    I: IntoIterator<Item = (String, String)>,
-{
-    let thread_id = thread_id.map(|thread_id| thread_id.to_string());
-    shell_environment::create_env_from_vars(vars, policy, thread_id.as_deref())
 }
 
 #[cfg(test)]

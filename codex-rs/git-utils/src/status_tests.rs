@@ -33,11 +33,7 @@ async fn metadata_status_does_not_execute_submodule_clean_filter() {
                 "-c",
                 "core.autocrlf=false",
                 "-c",
-                if cfg!(windows) {
-                    "core.hooksPath=NUL"
-                } else {
-                    "core.hooksPath=/dev/null"
-                },
+                "core.hooksPath=/dev/null",
             ])
             .args(args)
             .current_dir(cwd)
@@ -133,7 +129,6 @@ async fn status_requests_from_sibling_directories_use_the_known_worktree_root() 
     assert_eq!(results, (Some(false), Some(false)));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn status_keys_coalesce_symlink_aliases_of_the_same_worktree() {
     let temp_dir = TempDir::new().expect("create temp directory");

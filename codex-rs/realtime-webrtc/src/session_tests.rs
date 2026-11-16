@@ -150,17 +150,11 @@ fn package_availability_requires_helper_and_native_runtime() {
     std::fs::create_dir_all(voice.join("bin")).unwrap();
     std::fs::create_dir_all(voice.join("lib")).unwrap();
     assert!(!package_has_runtime(&root));
-    let helper = voice.join(if cfg!(windows) {
-        "bin/codex-voice-host.exe"
-    } else {
-        "bin/codex-voice-host"
-    });
+    let helper = voice.join("bin/codex-voice-host");
     std::fs::write(&helper, b"synthetic helper").unwrap();
     assert!(!package_has_runtime(&root));
     let runtime = voice.join(if cfg!(target_os = "macos") {
         "lib/libgstreamer-1.0.0.dylib"
-    } else if cfg!(windows) {
-        "bin/gstreamer-1.0-0.dll"
     } else {
         "lib/libgstreamer-1.0.so.0"
     });

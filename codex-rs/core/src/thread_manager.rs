@@ -1780,7 +1780,7 @@ impl ThreadManager {
         source_thread_id: ThreadId,
     ) -> CodexResult<(StartThreadOptions, CodexThreadSettingsOverrides)> {
         let parent = self.get_thread(source_thread_id).await?;
-        let (config, settings, windows_sandbox_level, environments, reasoning_effort_pin) =
+        let (config, settings, environments, reasoning_effort_pin) =
             parent.session.fork_config().await;
         let mut thread_extension_init = ExtensionDataInit::default();
         thread_extension_init.insert(reasoning_effort_pin);
@@ -1797,7 +1797,6 @@ impl ThreadManager {
             },
             CodexThreadSettingsOverrides {
                 collaboration_mode: Some(settings.collaboration_mode),
-                windows_sandbox_level: Some(windows_sandbox_level),
                 ..Default::default()
             },
         ))
@@ -2772,14 +2771,6 @@ impl ThreadManagerState {
             starting.retain(|runtime| runtime.strong_count() != 0);
             starting.push(Arc::downgrade(&startup_invalidations));
         }
-        let windows_sandbox_proxy_settings_mode = if matches!(
-            &session_source,
-            SessionSource::Internal(InternalSessionSource::Guardian)
-        ) {
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve
-        } else {
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile
-        };
         // A resumed actor and its descendants share an owner, not the harness default's credentials.
         let (runtime_auth, plugins_manager, analytics_events_client) = if Arc::ptr_eq(
             &auth_manager,
@@ -2926,7 +2917,6 @@ impl ThreadManagerState {
             } else {
                 GitEnrichmentPolicy::Fresh
             },
-            windows_sandbox_proxy_settings_mode,
         })
         .await;
         let (session, io) = match spawn_result {

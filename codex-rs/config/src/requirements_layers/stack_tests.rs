@@ -467,24 +467,12 @@ fn composition_strategy_applies_to_non_cloud_layers() {
         domain: "com.openai.codex".to_string(),
         key: "requirements_toml_base64".to_string(),
     };
-    let system_file = if cfg!(windows) {
-        "C:\\requirements.toml"
-    } else {
-        "/etc/codex/requirements.toml"
-    };
+    let system_file = "/etc/codex/requirements.toml";
     let system_source = RequirementSource::SystemRequirementsToml {
         file: AbsolutePathBuf::from_absolute_path(system_file).expect("absolute path"),
     };
-    let high_path = if cfg!(windows) {
-        "C:\\secret"
-    } else {
-        "/secret"
-    };
-    let low_path = if cfg!(windows) {
-        "C:\\other-secret"
-    } else {
-        "/other-secret"
-    };
+    let high_path = "/secret";
+    let low_path = "/other-secret";
 
     let composed = compose_requirements_for_hostname(
         vec![
@@ -1033,40 +1021,6 @@ fn webmcp_requirements_preserve_managed_layer_precedence() {
 }
 
 #[test]
-fn windows_requirements_use_regular_toml_merge() {
-    let composed = compose(vec![
-        layer(
-            "req_low",
-            "Low",
-            r#"
-[windows]
-allowed_sandbox_implementations = ["unelevated"]
-"#,
-        ),
-        layer(
-            "req_high",
-            "High",
-            r#"
-[windows]
-allowed_sandbox_implementations = ["elevated"]
-"#,
-        ),
-    ])
-    .expect("compose requirements")
-    .expect("requirements present");
-
-    assert_eq!(
-        composed,
-        expected_requirements(
-            r#"
-[windows]
-allowed_sandbox_implementations = ["elevated"]
-"#
-        )
-    );
-}
-
-#[test]
 fn remote_sandbox_config_is_applied_per_layer() {
     let composed = compose_requirements_for_hostname(
         vec![
@@ -1348,180 +1302,9 @@ managed_dir = "/managed/high"
 }
 
 #[test]
-fn active_windows_managed_dir_conflicts_fail_closed() {
-    let err = compose_with_hook_directory_field(
-        vec![
-            layer(
-                "req_low",
-                "Low",
-                r#"
-[hooks]
-windows_managed_dir = 'C:\managed\low'
-"#,
-            ),
-            layer(
-                "req_high",
-                "High",
-                r#"
-[hooks]
-windows_managed_dir = 'C:\managed\high'
-"#,
-            ),
-        ],
-        HookDirectoryField::WindowsManagedDir,
-    )
-    .expect_err("conflicting windows managed dirs should fail closed");
-
-    assert!(err.to_string().contains("hooks.windows_managed_dir"));
-    assert!(err.to_string().contains("High (req_high)"));
-    assert!(err.to_string().contains("Low (req_low)"));
-}
-
-#[test]
-fn inactive_hook_dir_conflicts_do_not_fail_composition() {
-    let composed = compose_with_hook_directory_field(
-        vec![
-            layer(
-                "req_low",
-                "Low",
-                r#"
-[hooks]
-managed_dir = "/managed/hooks"
-windows_managed_dir = 'C:\managed\low'
-
-[[hooks.PreToolUse]]
-matcher = "Bash"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "low"
-"#,
-            ),
-            layer(
-                "req_high",
-                "High",
-                r#"
-[hooks]
-managed_dir = "/managed/hooks"
-windows_managed_dir = 'C:\managed\high'
-
-[[hooks.PreToolUse]]
-matcher = "Edit"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "high"
-"#,
-            ),
-        ],
-        HookDirectoryField::ManagedDir,
-    )
-    .expect("inactive windows managed dir conflict should not fail")
-    .expect("requirements present");
-
-    assert_eq!(
-        composed,
-        expected_requirements(
-            r#"
-[hooks]
-managed_dir = "/managed/hooks"
-windows_managed_dir = 'C:\managed\high'
-
-[[hooks.PreToolUse]]
-matcher = "Edit"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "high"
-
-[[hooks.PreToolUse]]
-matcher = "Bash"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "low"
-"#
-        )
-    );
-
-    let composed = compose_with_hook_directory_field(
-        vec![
-            layer(
-                "req_low",
-                "Low",
-                r#"
-[hooks]
-managed_dir = "/managed/low"
-windows_managed_dir = 'C:\managed\hooks'
-
-[[hooks.PreToolUse]]
-matcher = "Bash"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "low"
-"#,
-            ),
-            layer(
-                "req_high",
-                "High",
-                r#"
-[hooks]
-managed_dir = "/managed/high"
-windows_managed_dir = 'C:\managed\hooks'
-
-[[hooks.PreToolUse]]
-matcher = "Edit"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "high"
-"#,
-            ),
-        ],
-        HookDirectoryField::WindowsManagedDir,
-    )
-    .expect("inactive managed dir conflict should not fail")
-    .expect("requirements present");
-
-    assert_eq!(
-        composed,
-        expected_requirements(
-            r#"
-[hooks]
-managed_dir = "/managed/high"
-windows_managed_dir = 'C:\managed\hooks'
-
-[[hooks.PreToolUse]]
-matcher = "Edit"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "high"
-
-[[hooks.PreToolUse]]
-matcher = "Bash"
-
-[[hooks.PreToolUse.hooks]]
-type = "command"
-command = "low"
-"#
-        )
-    );
-}
-
-#[test]
 fn permissions_deny_read_unions_while_profiles_use_regular_toml_merge() {
-    let high_path = if cfg!(windows) {
-        "C:\\secret"
-    } else {
-        "/secret"
-    };
-    let low_path = if cfg!(windows) {
-        "C:\\other-secret"
-    } else {
-        "/other-secret"
-    };
+    let high_path = "/secret";
+    let low_path = "/other-secret";
     let composed = compose(vec![
         layer(
             "req_low",
@@ -1571,11 +1354,7 @@ extends = ":workspace"
 
 #[test]
 fn permissions_network_merges_with_higher_precedence_filesystem_requirements() {
-    let denied_path = if cfg!(windows) {
-        "C:\\secret"
-    } else {
-        "/secret"
-    };
+    let denied_path = "/secret";
     let low = layer(
         "req_low",
         "Low",
@@ -1640,11 +1419,7 @@ extends = ":workspace"
 
 #[test]
 fn deny_read_only_layers_do_not_leave_empty_permissions_tables() {
-    let path = if cfg!(windows) {
-        "C:\\secret"
-    } else {
-        "/secret"
-    };
+    let path = "/secret";
     let composed = compose(vec![layer(
         "req_high",
         "High",

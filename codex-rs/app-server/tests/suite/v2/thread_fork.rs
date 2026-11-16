@@ -108,9 +108,6 @@ use super::analytics::mount_analytics_capture;
 use super::analytics::thread_initialized_event;
 use super::analytics::wait_for_analytics_payload;
 
-#[cfg(windows)]
-const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
-#[cfg(not(windows))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 async fn list_threads(mcp: &mut TestAppServer) -> Result<ThreadListResponse> {
@@ -1796,7 +1793,6 @@ async fn thread_fork_creates_reference_backed_paginated_thread() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn thread_fork_accepts_resumed_rollout_under_symlinked_sessions_root() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;

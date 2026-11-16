@@ -83,18 +83,6 @@ impl Command for PostNotification<'_> {
             f.write_str(&sequence)
         }
     }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> io::Result<()> {
-        Err(std::io::Error::other(
-            "tried to execute PostNotification using WinAPI; use ANSI instead",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        true
-    }
 }
 
 #[cfg(test)]

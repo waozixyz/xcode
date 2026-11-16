@@ -114,14 +114,8 @@ async fn daemon_menu_is_read_only_and_confirmation_can_cancel_or_handoff() {
         assert!(
             matches!(rx.try_recv().unwrap(), AppEvent::ConfirmDaemonUpdate(selected) if selected == source)
         );
-        app.daemon_cli_executable = Some(
-            AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
-                r"C:\cli-build\bin\codex"
-            } else {
-                "/x/cli-build/bin/codex"
-            })
-            .unwrap(),
-        );
+        app.daemon_cli_executable =
+            Some(AbsolutePathBuf::from_absolute_path("/x/cli-build/bin/codex").unwrap());
         app.confirm_daemon_update(source);
         insta::assert_snapshot!(
             snapshot,

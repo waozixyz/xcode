@@ -99,13 +99,9 @@ fn read_clipboard_image(
     }
 
     let _span = tracing::debug_span!("get_image").entered();
-    let bitmap = clipboard.get_image().map_err(|e| {
-        if cfg!(windows) && !matches!(e, arboard::Error::ContentNotAvailable) {
-            PasteImageError::ClipboardUnavailable(e.to_string())
-        } else {
-            PasteImageError::NoImage(e.to_string())
-        }
-    })?;
+    let bitmap = clipboard
+        .get_image()
+        .map_err(|e| PasteImageError::NoImage(e.to_string()))?;
     let width = bitmap.width as u32;
     let height = bitmap.height as u32;
     tracing::debug!("clipboard image opened from image: {width}x{height}");
@@ -397,7 +393,6 @@ mod pasted_search_query_tests {
 mod pasted_paths_tests {
     use super::*;
 
-    #[cfg(not(windows))]
     #[test]
     fn normalize_file_url() {
         let input = "file:///tmp/example.png";

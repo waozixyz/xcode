@@ -125,19 +125,9 @@ impl PathUri {
             return uri;
         }
 
-        #[cfg(unix)]
         let path_bytes = {
             use std::os::unix::ffi::OsStrExt;
             path.as_path().as_os_str().as_bytes().to_vec()
-        };
-        #[cfg(windows)]
-        let path_bytes = {
-            use std::os::windows::ffi::OsStrExt;
-            path.as_path()
-                .as_os_str()
-                .encode_wide()
-                .flat_map(u16::to_le_bytes)
-                .collect::<Vec<_>>()
         };
         Self::from_opaque_path_bytes(&path_bytes)
     }
@@ -575,23 +565,11 @@ impl PathUri {
             ));
         }
         if let Some(path_bytes) = decode_bad_path_uri(&self.0) {
-            #[cfg(unix)]
             let decoded_path = {
                 use std::os::unix::ffi::OsStringExt;
                 Some(std::path::PathBuf::from(std::ffi::OsString::from_vec(
                     path_bytes,
                 )))
-            };
-            #[cfg(windows)]
-            let decoded_path = {
-                use std::os::windows::ffi::OsStringExt;
-                path_bytes.len().is_multiple_of(2).then(|| {
-                    let path_wide = path_bytes
-                        .chunks_exact(2)
-                        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                        .collect::<Vec<_>>();
-                    std::path::PathBuf::from(std::ffi::OsString::from_wide(&path_wide))
-                })
             };
             if let Some(decoded_path) = decoded_path
                 && let Ok(path) = AbsolutePathBuf::from_absolute_path_checked(decoded_path)
@@ -997,13 +975,6 @@ pub enum PathConvention {
 
 impl PathConvention {
     /// Returns the path convention used by the current process.
-    #[cfg(windows)]
-    pub const fn native() -> Self {
-        Self::Windows
-    }
-
-    /// Returns the path convention used by the current process.
-    #[cfg(unix)]
     pub const fn native() -> Self {
         Self::Posix
     }

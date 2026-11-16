@@ -280,11 +280,6 @@ include_view_image_tool = false
 }
 
 #[test_case::test_case(
-    "[windows]\nsandbox_private_desktop = false",
-    "Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  session-flags: `windows.sandbox_private_desktop` is ignored. Remove windows.sandbox_private_desktop; legacy Windows sandboxes always use a private desktop.";
-    "private_desktop"
-)]
-#[test_case::test_case(
     "[auto_review]\nextra_policy = 'Additional rules.'\nexperimental_policy_template = 'Custom template.'",
     concat!(
         "Codex is ignoring 2 unrecognized configuration settings. Check for typos or deprecated settings.",

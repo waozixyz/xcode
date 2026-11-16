@@ -240,8 +240,6 @@ async fn local_projectless_defaults_respect_trust_scope_and_explicit_settings() 
     use codex_protocol::protocol::AskForApproval as Approval;
     for (settings, project_marker, expected_profile, expected_approval, sandbox_ready) in [
         ("", false, ":workspace", None, true),
-        #[cfg(target_os = "windows")]
-        ("", false, ":read-only", None, false),
         ("", true, ":read-only", None, true),
         (
             "sandbox_mode = \"read-only\"\n",
@@ -343,10 +341,6 @@ async fn local_projectless_defaults_respect_trust_scope_and_explicit_settings() 
         if expected_approval.is_some() {
             assert_eq!(startup.approval_policy, None);
         }
-        assert_eq!(
-            startup.prompt_windows_sandbox,
-            cfg!(target_os = "windows") && !sandbox_ready && settings.is_empty() && !project_marker
-        );
         assert_eq!(
             (
                 config.permissions.permission_profile(),

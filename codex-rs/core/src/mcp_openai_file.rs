@@ -347,123 +347,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_uploaded_argument_value_uses_environment_that_becomes_ready_during_turn() {
-        use wiremock::Mock;
-        use wiremock::MockServer;
-        use wiremock::ResponseTemplate;
-        use wiremock::matchers::body_json;
-        use wiremock::matchers::header;
-        use wiremock::matchers::method;
-        use wiremock::matchers::path;
-
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/backend-api/files"))
-            .and(header("chatgpt-account-id", "account_id"))
-            .and(body_json(serde_json::json!({
-                "file_name": "file_report.csv",
-                "file_size": 5,
-                "use_case": "codex",
-            })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "file_id": "file_123",
-                "upload_url": format!("{}/upload/file_123", server.uri()),
-            })))
-            .expect(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("PUT"))
-            .and(path("/upload/file_123"))
-            .respond_with(ResponseTemplate::new(200))
-            .expect(1)
-            .mount(&server)
-            .await;
-        Mock::given(method("POST"))
-            .and(path("/backend-api/files/file_123/uploaded"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "status": "success",
-                "download_url": format!("{}/download/file_123", server.uri()),
-                "file_name": "file_report.csv",
-                "mime_type": "text/csv",
-                "file_size_bytes": 5,
-            })))
-            .expect(1)
-            .mount(&server)
-            .await;
-
-        let (session, mut turn_context) = make_session_and_context().await;
-        let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
-        let dir = tempdir().expect("temp dir");
-        let local_path = dir.path().join("file_report.csv");
-        tokio::fs::write(&local_path, b"hello")
-            .await
-            .expect("write local file");
-        set_primary_environment_cwd(&mut turn_context, dir.path());
-        let environment = turn_context
-            .initial_environments
-            .primary()
-            .expect("ready primary environment");
-        let selection = environment.selection();
-        let environment_config = environment.config().clone();
-        let local_windows_sandbox_type = environment_config.windows_sandbox_type;
-        let environments = crate::environment_selection::ThreadEnvironments::new(
-            session.services.turn_environments.environment_manager(),
-            crate::shell::default_user_shell(),
-            crate::session::ThreadEnvironmentDefaults::new(
-                environment_config,
-                local_windows_sandbox_type,
-            ),
-            crate::shell_snapshot::ShellSnapshot::disabled(),
-            Default::default(),
-            /*non_blocking_snapshots*/ true,
-        );
-        environments.update_selections(std::slice::from_ref(&selection));
-        turn_context.initial_environments = environments.snapshot().await;
-        turn_context
-            .initial_environments
-            .starting()
-            .next()
-            .expect("environment should initially be starting")
-            .wait_until_ready()
-            .await
-            .expect("environment should become ready");
-        let step_environments = turn_context.initial_environments.refresh_readiness();
-
-        let mut config = (*turn_context.config).clone();
-        config.chatgpt_base_url = format!("{}/backend-api", server.uri());
-        turn_context.config = Arc::new(config);
-        let mut step_context = StepContext::for_test(Arc::new(turn_context));
-        Arc::get_mut(&mut step_context)
-            .expect("step context should be uniquely owned")
-            .environments = step_environments;
-
-        let rewritten = build_uploaded_argument_value(
-            &session,
-            &step_context,
-            Some(&auth),
-            FileArgumentLocation {
-                field_name: "file",
-                index: None,
-            },
-            &["mime_type".to_string(), "file_name".to_string()],
-            "file_report.csv",
-            /*hosted_upload*/ None,
-        )
-        .await
-        .expect("rewrite should upload the local file");
-
-        assert_eq!(
-            rewritten,
-            serde_json::json!({
-                "download_url": format!("{}/download/file_123", server.uri()),
-                "file_id": "file_123",
-                "mime_type": "text/csv",
-                "file_name": "file_report.csv",
-            })
-        );
-    }
-
-    #[tokio::test]
     async fn build_uploaded_argument_value_rejects_oversized_file_before_reading() {
         let (session, mut turn_context) = make_session_and_context().await;
         let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
@@ -714,5 +597,118 @@ mod tests {
 
         assert!(error.contains("failed to upload"));
         assert!(error.contains("file"));
+    }
+
+    #[tokio::test]
+    async fn build_uploaded_argument_value_uses_environment_that_becomes_ready_during_turn() {
+        use wiremock::Mock;
+        use wiremock::MockServer;
+        use wiremock::ResponseTemplate;
+        use wiremock::matchers::body_json;
+        use wiremock::matchers::header;
+        use wiremock::matchers::method;
+        use wiremock::matchers::path;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/backend-api/files"))
+            .and(header("chatgpt-account-id", "account_id"))
+            .and(body_json(serde_json::json!({
+                "file_name": "file_report.csv",
+                "file_size": 5,
+                "use_case": "codex",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "file_id": "file_123",
+                "upload_url": format!("{}/upload/file_123", server.uri()),
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/upload/file_123"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/backend-api/files/file_123/uploaded"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "status": "success",
+                "download_url": format!("{}/download/file_123", server.uri()),
+                "file_name": "file_report.csv",
+                "mime_type": "text/csv",
+                "file_size_bytes": 5,
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let (session, mut turn_context) = make_session_and_context().await;
+        let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+        let dir = tempdir().expect("temp dir");
+        let local_path = dir.path().join("file_report.csv");
+        tokio::fs::write(&local_path, b"hello")
+            .await
+            .expect("write local file");
+        set_primary_environment_cwd(&mut turn_context, dir.path());
+        let environment = turn_context
+            .initial_environments
+            .primary()
+            .expect("ready primary environment");
+        let selection = environment.selection();
+        let environment_config = environment.config().clone();
+        let environments = crate::environment_selection::ThreadEnvironments::new(
+            session.services.turn_environments.environment_manager(),
+            crate::shell::default_user_shell(),
+            crate::session::ThreadEnvironmentDefaults::new(environment_config),
+            crate::shell_snapshot::ShellSnapshot::disabled(),
+            Default::default(),
+            /*non_blocking_snapshots*/ true,
+        );
+        environments.update_selections(std::slice::from_ref(&selection));
+        turn_context.initial_environments = environments.snapshot().await;
+        turn_context
+            .initial_environments
+            .starting()
+            .next()
+            .expect("environment should initially be starting")
+            .wait_until_ready()
+            .await
+            .expect("environment should become ready");
+        let step_environments = turn_context.initial_environments.refresh_readiness();
+
+        let mut config = (*turn_context.config).clone();
+        config.chatgpt_base_url = format!("{}/backend-api", server.uri());
+        turn_context.config = Arc::new(config);
+        let mut step_context = StepContext::for_test(Arc::new(turn_context));
+        Arc::get_mut(&mut step_context)
+            .expect("step context should be uniquely owned")
+            .environments = step_environments;
+
+        let rewritten = build_uploaded_argument_value(
+            &session,
+            &step_context,
+            Some(&auth),
+            FileArgumentLocation {
+                field_name: "file",
+                index: None,
+            },
+            &["mime_type".to_string(), "file_name".to_string()],
+            "file_report.csv",
+            /*hosted_upload*/ None,
+        )
+        .await
+        .expect("rewrite should upload the local file");
+
+        assert_eq!(
+            rewritten,
+            serde_json::json!({
+                "download_url": format!("{}/download/file_123", server.uri()),
+                "file_id": "file_123",
+                "mime_type": "text/csv",
+                "file_name": "file_report.csv",
+            })
+        );
     }
 }

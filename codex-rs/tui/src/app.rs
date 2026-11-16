@@ -17,8 +17,6 @@ use crate::app_event::PluginRemoteSectionError;
 use crate::app_event::RateLimitRefreshOrigin;
 use crate::app_event::RunningTaskExitAction;
 use crate::app_event::ThreadTitleDestination;
-#[cfg(target_os = "windows")]
-use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_event_sender::AppEventSender;
 use crate::app_server_session::AppServerBootstrap;
 use crate::app_server_session::AppServerSession;
@@ -202,7 +200,6 @@ mod agent_message_consolidation;
 mod agent_navigation;
 mod agent_picker;
 mod agent_status_feed;
-#[cfg(any(unix, windows))]
 mod agents_overview;
 mod agents_overview_actions;
 mod agents_overview_details;
@@ -313,7 +310,6 @@ use self::agent_navigation::AgentNavigationState;
 use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
-pub(crate) use self::platform_actions::WindowsSandboxHost;
 use self::platform_actions::*;
 use self::side::SideParentStatus;
 use self::side::SideParentStatusChange;
@@ -646,8 +642,6 @@ pub(crate) struct App {
     /// This is thread-scoped state (`Option<ThreadId>`) instead of a global bool
     /// so shutdown events from other threads still take the normal failover path.
     pending_shutdown_exit_thread_id: Option<ThreadId>,
-
-    windows_sandbox: WindowsSandboxState,
 
     thread_event_channels: HashMap<ThreadId, ThreadEventChannel>,
     pending_realtime_speech_replay: HashMap<ThreadId, Vec<(String, ThreadItemPayload)>>,

@@ -43,7 +43,6 @@ fn hooks_file_deserializes_existing_json_shape() {
                     matcher: Some("^Bash$".to_string()),
                     hooks: vec![HookHandlerConfig::Command {
                         command: "python3 /tmp/pre.py".to_string(),
-                        command_windows: None,
                         timeout_sec: Some(10),
                         r#async: false,
                         status_message: Some("checking".to_string()),
@@ -177,7 +176,6 @@ additionalContextLimit = 4096
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "python3 /tmp/pre.py".to_string(),
-                    command_windows: None,
                     timeout_sec: Some(10),
                     r#async: false,
                     status_message: Some("checking".to_string()),
@@ -215,7 +213,6 @@ command = "python3 /tmp/pre.py"
                     matcher: Some("^Bash$".to_string()),
                     hooks: vec![HookHandlerConfig::Command {
                         command: "python3 /tmp/pre.py".to_string(),
-                        command_windows: None,
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
@@ -256,13 +253,11 @@ command = "python3 /enterprise/place/pre.py"
         parsed,
         ManagedHooksRequirementsToml {
             managed_dir: Some(std::path::PathBuf::from("/enterprise/place")),
-            windows_managed_dir: None,
             hooks: Box::new(HookEventsToml {
                 pre_tool_use: vec![MatcherGroup {
                     matcher: Some("^Bash$".to_string()),
                     hooks: vec![HookHandlerConfig::Command {
                         command: "python3 /enterprise/place/pre.py".to_string(),
-                        command_windows: None,
                         timeout_sec: None,
                         r#async: false,
                         status_message: None,
@@ -297,9 +292,6 @@ command_windows = "powershell -File C:\\enterprise\\hooks\\pre.ps1"
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "bash /enterprise/hooks/pre.sh".to_string(),
-                    command_windows: Some(
-                        r"powershell -File C:\enterprise\hooks\pre.ps1".to_string(),
-                    ),
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
@@ -333,9 +325,6 @@ commandWindows = "powershell -File C:\\enterprise\\hooks\\pre.ps1"
                 matcher: Some("^Bash$".to_string()),
                 hooks: vec![HookHandlerConfig::Command {
                     command: "bash /enterprise/hooks/pre.sh".to_string(),
-                    command_windows: Some(
-                        r"powershell -File C:\enterprise\hooks\pre.ps1".to_string(),
-                    ),
                     timeout_sec: None,
                     r#async: false,
                     status_message: None,
@@ -351,7 +340,6 @@ commandWindows = "powershell -File C:\\enterprise\\hooks\\pre.ps1"
 fn hook_handler_omits_unset_additional_context_limit() {
     let handler = HookHandlerConfig::Command {
         command: "python3 /tmp/pre.py".to_string(),
-        command_windows: None,
         timeout_sec: None,
         r#async: false,
         status_message: None,

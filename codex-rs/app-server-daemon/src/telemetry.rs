@@ -12,10 +12,6 @@ pub struct StartError {
 
 impl StartError {
     pub fn failure_reason(&self) -> &'static str {
-        #[cfg(windows)]
-        if self.error.is::<crate::DetachedLaunchRestricted>() {
-            return "spawn";
-        }
         match self.error.downcast_ref::<StartFailure>() {
             Some(StartFailure::Spawn(_)) => "spawn",
             Some(StartFailure::EarlyChildExit(_)) => "early_child_exit",

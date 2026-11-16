@@ -242,7 +242,6 @@ fn bedrock_credential_export_config(
     credentials_path: &Path,
     invocations_path: &Path,
 ) -> anyhow::Result<AwsCredentialExportConfig> {
-    #[cfg(unix)]
     let (command, args) = {
         let script_path = credentials_path.with_extension("sh");
         codex_utils_cargo_bin::write_executable(
@@ -252,26 +251,6 @@ fn bedrock_credential_export_config(
         (
             script_path.to_string_lossy().into_owned(),
             vec![
-                invocations_path.to_string_lossy().into_owned(),
-                credentials_path.to_string_lossy().into_owned(),
-            ],
-        )
-    };
-
-    #[cfg(windows)]
-    let (command, args) = {
-        let script_path = credentials_path.with_extension("cmd");
-        std::fs::write(
-            &script_path,
-            "@echo off\r\n>> \"%~1\" echo invoked\r\ntype \"%~2\"\r\n",
-        )?;
-        (
-            "cmd.exe".to_string(),
-            vec![
-                "/D".to_string(),
-                "/Q".to_string(),
-                "/C".to_string(),
-                script_path.to_string_lossy().into_owned(),
                 invocations_path.to_string_lossy().into_owned(),
                 credentials_path.to_string_lossy().into_owned(),
             ],

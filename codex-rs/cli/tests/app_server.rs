@@ -177,7 +177,6 @@ fn app_server_keeps_sqlite_logs_in_overridden_sqlite_home() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn app_server_preserves_the_existing_sqlite_logs_symlink() -> Result<()> {
     let home = TempDir::new()?;

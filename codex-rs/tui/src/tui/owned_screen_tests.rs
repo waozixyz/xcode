@@ -1,7 +1,5 @@
 //! Exercise session ownership in an isolated process so global terminal modes cannot race tests.
 
-#![cfg(unix)]
-
 use super::MouseCapture;
 use super::TuiEvent;
 use crate::pager_overlay::Overlay;

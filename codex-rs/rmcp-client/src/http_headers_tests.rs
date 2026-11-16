@@ -13,7 +13,6 @@ fn helper_output_errors_do_not_echo_secrets() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn helper_attempt_is_shared_after_cancellation() {
     use tempfile::tempdir;
@@ -144,17 +143,10 @@ async fn helper_attempt_is_shared_after_cancellation() {
 async fn nonzero_helper_exit_is_cached() {
     let temp = tempfile::tempdir().expect("temporary helper directory");
     let failed_invocations = temp.path().join("failed-invocations");
-    let command = if cfg!(windows) {
-        format!(
-            r#"echo x>>"{0}" & echo {{"X-Gateway":"valid"}} & exit /b 23"#,
-            failed_invocations.display()
-        )
-    } else {
-        format!(
-            "echo x >> '{0}'; printf '{{\"X-Gateway\":\"valid\"}}'; exit 23",
-            failed_invocations.display()
-        )
-    };
+    let command = format!(
+        "echo x >> '{0}'; printf '{{\"X-Gateway\":\"valid\"}}'; exit 23",
+        failed_invocations.display()
+    );
     let failed = HttpHeadersProvider::new(
         "https://example.com/mcp",
         &command,
@@ -168,7 +160,6 @@ async fn nonzero_helper_exit_is_cached() {
     assert_eq!(invocations.lines().count(), 1);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn failed_refresh_is_shared_without_replacing_credentials() {
     let temp = tempfile::tempdir().expect("temporary helper directory");
@@ -195,7 +186,6 @@ async fn failed_refresh_is_shared_without_replacing_credentials() {
     assert_eq!(std::fs::read_to_string(invocations).unwrap(), "xxx");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn connection_headers_are_cached_and_origin_bound() {
     use axum::Router;
@@ -297,7 +287,6 @@ async fn connection_headers_are_cached_and_origin_bound() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn concurrent_rejected_posts_share_one_headers_refresh() {
     use axum::Router;
@@ -399,7 +388,6 @@ async fn concurrent_rejected_posts_share_one_headers_refresh() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn helper_refresh_preserves_oauth_challenges_and_retries_at_most_once() {
     use codex_exec_server::RouteAwareHttpClient;
@@ -503,7 +491,6 @@ async fn helper_refresh_preserves_oauth_challenges_and_retries_at_most_once() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn refresh_retry_rechecks_deadline_and_redirects() {
     use codex_exec_server::RouteAwareHttpClient;

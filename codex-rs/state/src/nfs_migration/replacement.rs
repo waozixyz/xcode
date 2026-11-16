@@ -61,7 +61,6 @@ impl Replacement {
             }
         } else {
             let builder = fs::DirBuilder::new();
-            #[cfg(unix)]
             let builder = {
                 use std::os::unix::fs::DirBuilderExt;
                 let mut builder = builder;
@@ -181,16 +180,11 @@ impl Replacement {
         // An existing source must be the link installed before the interruption.
         if source_exists {
             let same_file = {
-                #[cfg(unix)]
                 {
                     use std::os::unix::fs::MetadataExt;
                     let source = fs::metadata(&self.source)?;
                     let prepared = fs::metadata(self.replacement_path())?;
                     (source.dev(), source.ino()) == (prepared.dev(), prepared.ino())
-                }
-                #[cfg(not(unix))]
-                {
-                    false
                 }
             };
             ensure!(

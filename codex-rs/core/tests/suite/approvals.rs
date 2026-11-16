@@ -2,7 +2,6 @@
 
 use anyhow::Context;
 use anyhow::Result;
-#[cfg(unix)]
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_config::types::ApprovalsReviewer;
 use codex_core::CodexThread;
@@ -15,11 +14,9 @@ use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::config_types::CollaborationMode;
-#[cfg(unix)]
 use codex_protocol::config_types::EnvironmentVariablePattern;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Settings;
-#[cfg(unix)]
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
@@ -63,7 +60,6 @@ use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -2143,7 +2139,6 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
 async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -2258,7 +2253,6 @@ async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() 
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(true, None; "absent_heading_preserves_original_notice")]
 #[test_case(true, Some("Permission rule remembered"); "catalog_notice_with_full_permissions")]
 #[test_case(false, Some("Permission rule remembered"); "catalog_notice_with_permissions_omitted")]
@@ -2402,7 +2396,6 @@ async fn approving_execpolicy_amendment_emits_one_saved_prefix_notice(
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
 async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts() -> Result<()> {
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::UnlessTrusted;
@@ -2762,7 +2755,6 @@ async fn spawned_subagent_execpolicy_amendment_propagates_to_parent_session() ->
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case("direct", false, false; "explicit_zsh")]
 #[test_case("direct", true, false; "non_login_in_login_enabled_session")]
 #[test_case("direct", true, true; "login_startup")]
@@ -3135,7 +3127,6 @@ ZDOTDIR = "{}"
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case("escalated")]
 #[test_case("disabled")]
 #[test_case("failed")]
@@ -3585,7 +3576,6 @@ GH_TOKEN = "{REAL_GITHUB_TOKEN}"
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(true; "credential_startup")]
 #[test_case(false; "ordinary_application_env")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3705,7 +3695,6 @@ ENV = "{}"
 /// The test proves both halves of that contract: the wrapper writes outside the
 /// `:workspace` sandbox, while its inherited profile name remains `:workspace`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[cfg(unix)]
 async fn allowed_escalated_exec_command_inherits_active_permission_profile() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -3798,7 +3787,6 @@ touch {outside_path:?}
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(Some(ReviewDecision::Approved); "approved")]
 #[test_case(Some(ReviewDecision::denied("rejected by user")); "denied")]
 #[test_case(None; "allow_rule_skips_approval_without_widening")]
@@ -3899,7 +3887,6 @@ async fn explicit_escalation_with_denied_reads(decision: Option<ReviewDecision>)
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
 async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Result<()> {
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -3952,7 +3939,6 @@ async fn invalid_requested_prefix_rule_falls_back_for_compound_command() -> Resu
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
 async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -4354,7 +4340,6 @@ allow_local_binding = true
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test(flavor = "current_thread")]
 async fn network_approval_retry_keeps_deny_read_sandbox_for_escalated_command() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -4702,7 +4687,6 @@ allow_local_binding = true
 
 // todo(dylan) add ScenarioSpec support for rules
 #[tokio::test(flavor = "current_thread")]
-#[cfg(unix)]
 async fn compound_command_with_one_safe_command_still_requires_approval() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

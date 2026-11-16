@@ -393,7 +393,6 @@ fn creation_peels_annotated_tags_to_the_checked_out_commit() {
     assert_eq!(run_git(&worktree.root, &["rev-parse", "HEAD"]), commit);
 }
 
-#[cfg(unix)]
 #[test]
 fn creation_rejects_a_working_directory_that_escapes_through_a_base_symlink() {
     let fixture = RepositoryFixture::new();
@@ -694,7 +693,6 @@ fn listing_skips_worktrees_without_a_safe_source_working_directory() {
     fs::remove_dir_all(&missing.cwd).expect("fixture operation succeeds");
     fs::remove_dir_all(&file.cwd).expect("fixture operation succeeds");
     fs::write(&file.cwd, "not a directory").expect("fixture operation succeeds");
-    #[cfg(unix)]
     {
         let escaping = create_worktree(&manager, &source_cwd, /*base*/ None)
             .expect("fixture operation succeeds");
@@ -783,7 +781,6 @@ fn listing_rejects_a_stale_registration_reused_by_the_same_repository() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn listing_rejects_checkout_and_bucket_aliases_but_allows_a_root_alias() {
     let fixture = RepositoryFixture::new();
@@ -833,7 +830,6 @@ fn listing_rejects_checkout_and_bucket_aliases_but_allows_a_root_alias() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn listing_preserves_inventory_when_a_branch_name_is_not_utf8() {
     use std::os::unix::ffi::OsStrExt;
@@ -937,7 +933,6 @@ fn listing_ignores_worktrees_outside_the_desktop_bucket_layout() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn creation_listing_and_thread_binding_preserve_native_repository_paths() {
     use std::ffi::OsString;

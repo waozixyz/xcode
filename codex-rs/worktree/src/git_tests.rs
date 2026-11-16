@@ -4,7 +4,6 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-#[cfg(unix)]
 use anyhow::Context;
 use anyhow::Result;
 use pretty_assertions::assert_eq;
@@ -76,7 +75,6 @@ fn discovers_filter_drivers_with_dotted_names() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn checkout_does_not_execute_configured_hooks_fsmonitor_or_filters() -> Result<()> {
     let (directory, root) = repository()?;
@@ -154,7 +152,6 @@ fn checkout_does_not_execute_configured_hooks_fsmonitor_or_filters() -> Result<(
     Ok(())
 }
 
-#[cfg(unix)]
 fn write_marker_script(path: &Path, marker: &Path) -> Result<()> {
     let marker = marker.to_str().context("marker path is not valid UTF-8")?;
     codex_utils_cargo_bin::write_executable(
@@ -164,7 +161,6 @@ fn write_marker_script(path: &Path, marker: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn default_base_ignores_unrelated_non_utf8_refs() -> Result<()> {
     let (_directory, root) = repository()?;

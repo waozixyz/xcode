@@ -125,7 +125,6 @@ async fn configured_log_directory_is_initialized_on_use_and_retries_after_failur
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn configured_log_directory_lock_is_shared_by_reader_and_writer_config_clones()
 -> anyhow::Result<()> {
@@ -239,8 +238,8 @@ async fn open_read_write_pool_initializes_fresh_database_settings() -> anyhow::R
         (false, true, Some(SqliteJournalMode::Wal)),
         (true, false, None),
         (true, false, Some(SqliteJournalMode::Delete)),
-        (true, cfg!(unix), None),
-        (true, cfg!(unix), Some(SqliteJournalMode::Delete)),
+        (true, true, None),
+        (true, true, Some(SqliteJournalMode::Delete)),
     ] {
         let sqlite_home = crate::runtime::test_support::unique_temp_dir();
         tokio::fs::create_dir_all(&sqlite_home).await?;
@@ -388,7 +387,7 @@ async fn open_read_write_pool_preserves_delete_under_write_lock() -> anyhow::Res
     });
     let sqlite = SqliteConfig::new_for_testing(sqlite_home.as_path().abs())
         .enable_delete_mode_on_nfs(/*enabled*/ true);
-    sqlite.is_nfs.set(cfg!(unix))?;
+    sqlite.is_nfs.set(true)?;
     let database_path = sqlite.logs_db_path();
     let existing_pool = SqlitePoolOptions::new()
         .max_connections(1)
@@ -503,7 +502,6 @@ async fn open_read_write_pool_preserves_empty_database_lock_error() -> anyhow::R
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn required_nfs_migration_preserves_runtime_data_and_backups_after_restart()
 -> anyhow::Result<()> {
@@ -600,7 +598,6 @@ async fn required_nfs_migration_preserves_runtime_data_and_backups_after_restart
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn required_nfs_migration_refuses_active_wal_and_retries_after_close() -> anyhow::Result<()> {
     use std::future::Future;

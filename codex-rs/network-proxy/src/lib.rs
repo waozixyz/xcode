@@ -34,10 +34,6 @@ mod state;
 mod system_dns;
 mod tcp_upstream;
 mod upstream;
-#[cfg(target_os = "windows")]
-mod windows_proxy_ingress;
-#[cfg(target_os = "windows")]
-mod windows_tcp_attribution;
 
 pub use attribution::PROXY_ATTRIBUTION_TOKEN_ENV_KEY;
 pub use attribution::write_attribution_frame;
@@ -72,6 +68,7 @@ pub use credential_broker::credential_broker_provider_context_env_keys;
 pub use credential_broker::credential_broker_provider_sources_allowed;
 pub use credential_broker::is_credential_broker_provider_env_key;
 pub use environment_policy::EnvironmentNetworkPolicy;
+pub use environment_policy::EnvironmentNetworkPolicyExt;
 pub use mitm_hook::InjectedHeaderConfig;
 pub use mitm_hook::MitmHookActionsConfig;
 pub use mitm_hook::MitmHookBodyConfig;

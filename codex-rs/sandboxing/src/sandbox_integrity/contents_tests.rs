@@ -82,7 +82,6 @@ fn deny_read_globs_protect_matching_contents_without_disabling_other_checks() ->
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn contents_follow_links_and_resolved_write_grants() -> io::Result<()> {
     let directory = tempfile::tempdir()?;

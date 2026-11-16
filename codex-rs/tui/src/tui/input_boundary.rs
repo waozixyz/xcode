@@ -1,10 +1,8 @@
 //! Restore terminal ownership on initialization failures and quarantine protected-screen input.
 
 use std::io;
-#[cfg(unix)]
 use std::io::IsTerminal;
 use std::io::Result;
-#[cfg(unix)]
 use std::io::stdin;
 use std::time::Duration;
 use std::time::Instant;
@@ -26,7 +24,6 @@ impl Drop for TerminalInitializationGuard {
 ///
 /// Partial control sequences remain quarantined; an unresolved boundary fails after one second.
 pub(crate) fn discard_pending_terminal_input() -> Result<()> {
-    #[cfg(unix)]
     let _ = crossterm::event::discard_buffered_input()?;
 
     let deadline = Instant::now() + Duration::from_secs(/*secs*/ 1);
@@ -44,14 +41,12 @@ pub(crate) fn discard_pending_terminal_input() -> Result<()> {
             continue;
         }
 
-        #[cfg(unix)]
         if crossterm::event::discard_buffered_input()?
             != crossterm::event::InputDiscardStatus::Complete
         {
             continue;
         }
 
-        #[cfg(any(unix, windows))]
         match terminal_input_is_readable() {
             Ok(true) => continue,
             Ok(false) => {}
@@ -64,7 +59,6 @@ pub(crate) fn discard_pending_terminal_input() -> Result<()> {
 }
 
 /// Check Crossterm's terminal input source without consuming input or changing descriptor flags.
-#[cfg(unix)]
 pub(super) fn terminal_input_is_readable() -> Result<bool> {
     use std::os::fd::AsRawFd;
 
@@ -94,24 +88,4 @@ pub(super) fn terminal_input_is_readable() -> Result<bool> {
         )));
     }
     Ok(result > 0 && fd.revents & libc::POLLIN != 0)
-}
-
-/// Check the same Windows console input queue consumed by Crossterm.
-#[cfg(windows)]
-fn terminal_input_is_readable() -> Result<bool> {
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::Console::GetNumberOfConsoleInputEvents;
-    use windows_sys::Win32::System::Console::GetStdHandle;
-    use windows_sys::Win32::System::Console::STD_INPUT_HANDLE;
-
-    let handle = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
-    if handle == INVALID_HANDLE_VALUE || handle.is_null() {
-        return Err(io::Error::other("terminal input handle is unavailable"));
-    }
-
-    let mut pending = 0;
-    if unsafe { GetNumberOfConsoleInputEvents(handle, &mut pending) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(pending != 0)
 }

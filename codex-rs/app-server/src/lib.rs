@@ -131,7 +131,6 @@ mod gateway_oauth_notifications;
 mod image_url;
 pub mod in_process;
 mod log_write_warning;
-#[cfg(unix)]
 mod managed_daemon;
 mod mcp_refresh;
 mod message_processor;
@@ -224,12 +223,10 @@ enum ShutdownAction {
 #[derive(Clone, Copy)]
 enum ShutdownSignal {
     Forceable,
-    #[cfg(unix)]
     GracefulOnly,
 }
 
 async fn shutdown_signal() -> IoResult<ShutdownSignal> {
-    #[cfg(unix)]
     {
         use tokio::signal::unix::SignalKind;
         use tokio::signal::unix::signal;
@@ -241,18 +238,6 @@ async fn shutdown_signal() -> IoResult<ShutdownSignal> {
             _ = term.recv() => Ok(ShutdownSignal::Forceable),
             _ = hangup.recv() => Ok(ShutdownSignal::GracefulOnly),
         }
-    }
-
-    #[cfg(windows)]
-    {
-        let console_signal = async {
-            if tokio::signal::ctrl_c().await.is_err() {
-                // A detached daemon has no console; keep its local control path active.
-                std::future::pending::<()>().await;
-            }
-        };
-        console_signal.await;
-        Ok(ShutdownSignal::Forceable)
     }
 }
 
@@ -532,11 +517,8 @@ pub async fn run_main_with_transport_options(
         }
         None => None,
     };
-    #[cfg(target_os = "windows")]
-    let _registered_core = codex_windows_sandbox::registered_core_requested();
     let managed_daemon = matches!(&transport, AppServerTransport::UnixSocket { .. })
         && runtime_options.managed_daemon;
-    #[cfg(unix)]
     let nofile_limit_result = managed_daemon.then(managed_daemon::raise_nofile_limit);
     let loader_overrides = loader_overrides_with_test_user_config_file(
         loader_overrides,
@@ -598,7 +580,6 @@ pub async fn run_main_with_transport_options(
             })?
         }
     };
-    config.validate_windows_mxc_requirement()?;
     config.auth_config().validate()?;
     let auth_manager =
         AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ false)
@@ -782,7 +763,6 @@ pub async fn run_main_with_transport_options(
         );
     }
 
-    #[cfg(unix)]
     if let Some(Err(err)) = nofile_limit_result {
         warn!(%err, "failed to raise managed app-server file descriptor limit");
     }
@@ -850,14 +830,7 @@ pub async fn run_main_with_transport_options(
                 socket_path.clone(),
                 transport_event_tx.clone(),
                 transport_shutdown_token.clone(),
-                if cfg!(windows)
-                    && std::env::var_os(codex_app_server_transport::DAEMON_SHUTDOWN_SOCKET_ENV)
-                        .is_some()
-                {
-                    DaemonShutdownAccess::Managed
-                } else {
-                    DaemonShutdownAccess::Disabled
-                },
+                DaemonShutdownAccess::Disabled,
                 websocket_compression,
             )
             .await?;

@@ -3,7 +3,10 @@ include!("../../native/zi2c_build.rs");
 fn main() {
     let root = compile_ziran("native/dispatch.zi", "xcoder_dispatch", &[]);
     // Custom cells compile against the runtime module with this toolchain.
-    println!("cargo:rerun-if-changed={}", root.join("native/runtime.zi").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("native/runtime.zi").display()
+    );
     let toolchain = ziran(&root, ["pkg", "path", "ziran"])
         .output()
         .expect("resolve Ziran toolchain");

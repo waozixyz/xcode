@@ -1,7 +1,6 @@
 use super::super::*;
 use pretty_assertions::assert_eq;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn repo_migration_skips_redirected_generated_destinations() -> std::io::Result<()> {
     let root = TempDir::new()?;
@@ -211,7 +210,6 @@ async fn import_repo_agents_md_overwrites_empty_targets() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn repo_agents_md_migration_skips_symlink_targets() {
     let root = TempDir::new().expect("create tempdir");
@@ -401,7 +399,6 @@ async fn import_repo_hooks_preserves_disabled_codex_hooks_feature() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn repo_hooks_migration_skips_symlink_targets() {
     let root = TempDir::new().expect("create tempdir");

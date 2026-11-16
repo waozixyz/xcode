@@ -8,8 +8,6 @@ use crate::diagnostics::io_error_from_config_error;
 use crate::state::LoaderOverrides;
 use crate::strict_config::config_error_from_ignored_toml_value_fields;
 use codex_file_system::ExecutorFileSystem;
-#[cfg(windows)]
-use codex_file_system::GetMetadataOptions;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use codex_utils_path_uri::PathUri;
@@ -18,7 +16,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use toml::Value as TomlValue;
 
-#[cfg(unix)]
 const CODEX_MANAGED_CONFIG_SYSTEM_PATH: &str = "/etc/codex/managed_config.toml";
 
 #[derive(Debug, Clone)]
@@ -62,44 +59,12 @@ pub(super) async fn load_config_layers_internal(
         ..
     } = overrides;
 
-    #[cfg(windows)]
-    let ignore_default_managed_config = managed_config_path.is_none();
-    #[cfg(not(windows))]
     let ignore_default_managed_config = false;
 
     let managed_config_path = AbsolutePathBuf::from_absolute_path(
         managed_config_path.unwrap_or_else(|| managed_config_default_path(codex_home)),
     )?;
 
-    #[cfg(windows)]
-    let startup_warnings = if ignore_default_managed_config {
-        let path_uri = PathUri::from_abs_path(&managed_config_path);
-        match fs
-            .get_metadata(
-                &path_uri,
-                GetMetadataOptions::default(),
-                /*sandbox*/ None,
-            )
-            .await
-        {
-            Ok(_) => vec![format!(
-                "Ignoring deprecated managed config file at {}; CODEX_HOME/managed_config.toml is no longer supported on Windows. Use %ProgramData%\\OpenAI\\Codex\\requirements.toml for enforced settings or config.toml for defaults.",
-                managed_config_path.as_path().display()
-            )],
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(err) => {
-                tracing::debug!(
-                    error = %err,
-                    path = %managed_config_path.as_path().display(),
-                    "Failed to check deprecated managed config file"
-                );
-                Vec::new()
-            }
-        }
-    } else {
-        Vec::new()
-    };
-    #[cfg(not(windows))]
     let startup_warnings = Vec::new();
 
     let managed_config = if ignore_default_managed_config {
@@ -220,14 +185,8 @@ fn validate_config_toml_strictly(
 ///
 /// On Windows, the default path is only checked so callers can warn that it is ignored.
 pub(super) fn managed_config_default_path(codex_home: &Path) -> PathBuf {
-    #[cfg(unix)]
     {
         let _ = codex_home;
         PathBuf::from(CODEX_MANAGED_CONFIG_SYSTEM_PATH)
-    }
-
-    #[cfg(not(unix))]
-    {
-        codex_home.join("managed_config.toml")
     }
 }

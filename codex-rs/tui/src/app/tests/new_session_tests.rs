@@ -1192,7 +1192,6 @@ async fn cloud_switch_wait_routes_ctrl_d_to_the_draft_or_queues_shutdown() -> Re
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cloud_switch_wait_preserves_legacy_vim_escape_and_search_acceptance() -> Result<()> {
     use crate::app::cloud_switch_wait::ClipboardHandoff;

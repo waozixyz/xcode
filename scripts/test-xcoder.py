@@ -12,6 +12,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPT = ROOT / 'backup/xcoder-validation.json'
+PROFILE = os.environ.get('XCODER_CARGO_PROFILE', 'local')
 installer = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))
 digest = installer['digest']
 # Native tests built by `make native-test-build`, by suite name.
@@ -45,7 +46,7 @@ def prebuilt_tests():
     for row in rows:
         relative = Path(row['path'])
         allowed = ('build/native-dispatch' if row['suite'] in NATIVE_TESTS
-                   else 'codex-rs/target/release/deps')
+                   else 'codex-rs/target/' + PROFILE + '/deps')
         if relative.is_absolute() or '..' in relative.parts or relative.parent != Path(allowed):
             raise RuntimeError('Unsafe prebuilt local-test path')
         if row['suite'] in NATIVE_TESTS:
@@ -96,7 +97,7 @@ def main():
     commands = ([
         [str(ROOT / row['path'])] for row in manifest['tests']
     ] + [[sys.executable, 'tests/native_cell_test.py']] if manifest is not None else [
-        [args.cargo, 'test', '--manifest-path', 'codex-rs/Cargo.toml', '--release',
+        [args.cargo, 'test', '--manifest-path', 'codex-rs/Cargo.toml', '--profile', PROFILE,
          '-p', package, '--lib']
         for package in RUST_SUITES
     ])

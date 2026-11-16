@@ -3,7 +3,6 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
-#[cfg(unix)]
 #[test]
 fn completed_probe_returns_stdout() {
     let mut command = Command::new("/bin/sh");
@@ -18,7 +17,6 @@ fn completed_probe_returns_stdout() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn hanging_probe_times_out_and_reaps_child() {
     let pid_file = tempfile::NamedTempFile::new().unwrap();
@@ -54,7 +52,6 @@ fn hanging_probe_times_out_and_reaps_child() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn completed_probe_does_not_wait_for_descendant_holding_stdout() {
     let mut command = Command::new("/bin/sh");

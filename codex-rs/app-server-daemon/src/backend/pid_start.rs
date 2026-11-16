@@ -4,8 +4,6 @@
 //! Recover a deleted Unix cwd without changing workspace defaults for usable directories.
 
 use super::PidBackend;
-#[cfg(windows)]
-use super::PidCommandKind;
 use super::PidFileState;
 use super::PidRecord;
 use super::read_process_start_time;
@@ -20,28 +18,11 @@ use tokio::process::Command;
 
 impl PidBackend {
     pub(super) async fn start_inner(&self, replacement: Option<PidRecord>) -> Result<Option<u32>> {
-        #[cfg(windows)]
-        crate::backend::windows::ensure_not_elevated()?;
         if let Some(parent) = self.pid_file.parent() {
             codex_uds::prepare_private_socket_directory(parent)
                 .await
                 .with_context(|| format!("failed to create pid directory {}", parent.display()))?;
         }
-        #[cfg(windows)]
-        let workdir = {
-            let workdir = self
-                .pid_file
-                .parent()
-                .context("daemon pid path has no parent")?
-                .join("workdir");
-            fs::create_dir_all(&workdir).await.with_context(|| {
-                format!(
-                    "failed to create daemon working directory {}",
-                    workdir.display()
-                )
-            })?;
-            workdir
-        };
         let reservation_lock = self.acquire_reservation_lock().await?;
         loop {
             match fs::OpenOptions::new()
@@ -158,7 +139,6 @@ impl PidBackend {
                 .context("daemon pid path has no parent")?,
         )?;
 
-        #[cfg(unix)]
         {
             unsafe {
                 command.pre_exec(|| {
@@ -170,50 +150,7 @@ impl PidBackend {
             }
         }
 
-        #[cfg(windows)]
-        {
-            use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
-            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
-            use windows_sys::Win32::System::Threading::DETACHED_PROCESS;
-            // A Windows process pins its working directory for its lifetime.
-            // Keep both managed children out of the launching project's directory.
-            // Sandbox setup may broaden the cwd ACL, so do not use the private state directory.
-            command.current_dir(&workdir);
-            // Never retry inside the parent's Job Object: that would report a
-            // successful launch that dies when the terminal/SSH session closes.
-            command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB);
-            if matches!(self.command_kind, PidCommandKind::UpdateLoop { .. }) {
-                match fs::remove_file(self.pid_file.with_extension("ready")).await {
-                    Ok(()) => {}
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => return Err(err).context("failed to clear updater readiness"),
-                }
-            }
-            match self.command_kind {
-                PidCommandKind::AppServer { .. } => {
-                    command.env(codex_app_server_transport::DAEMON_SHUTDOWN_SOCKET_ENV, "1");
-                }
-                PidCommandKind::UpdateLoop { .. } => {
-                    let shutdown_file = self.pid_file.with_extension("shutdown");
-                    match fs::remove_file(&shutdown_file).await {
-                        Ok(()) => {}
-                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(err) => {
-                            return Err(err).context("failed to clear updater shutdown request");
-                        }
-                    }
-                    command.env(
-                        codex_app_server_transport::DAEMON_SHUTDOWN_FILE_ENV,
-                        shutdown_file,
-                    );
-                }
-            }
-        }
-
         let started = std::time::Instant::now();
-        #[cfg(windows)]
-        let child = super::super::windows::spawn_without_inheriting_stdio(&mut command);
-        #[cfg(not(windows))]
         let child = command.spawn().map_err(anyhow::Error::from);
         let child = crate::diagnostics::result("process_spawn", started, child);
         let mut child = match child {
@@ -223,11 +160,7 @@ impl PidBackend {
                     let _ = fs::remove_file(&self.pid_file).await;
                 }
                 return Err(err).with_context(|| {
-                    let job_hint = if cfg!(windows) {
-                        " (the Windows host job must allow breakaway)"
-                    } else {
-                        ""
-                    };
+                    let job_hint = "";
                     StartFailure::Spawn(format!(
                         "failed to spawn detached app-server process using {}{job_hint}",
                         self.codex_bin.display()
@@ -242,13 +175,10 @@ impl PidBackend {
         let started = std::time::Instant::now();
         let record = async {
             let process_start_time = read_process_start_time(pid).await?;
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
             let process_identity = super::identity::read_process_details(pid)
                 .await
                 .ok()
                 .map(|(_, identity)| identity);
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-            let process_identity = None;
             anyhow::Ok(PidRecord {
                 pid,
                 process_start_time,
@@ -311,11 +241,6 @@ impl PidBackend {
             return Err(err).with_context(|| {
                 format!("failed to publish pid file {}", self.pid_file.display())
             });
-        }
-        #[cfg(windows)]
-        if matches!(self.command_kind, PidCommandKind::UpdateLoop { .. }) {
-            self.finish_updater_start(&record, replacement.as_ref())
-                .await?;
         }
         drop(reservation_lock);
         Ok(Some(pid))

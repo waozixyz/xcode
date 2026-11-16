@@ -20,7 +20,6 @@ use crate::LoadThreadHistoryParams;
 use crate::PrepareForkParams;
 use crate::ThreadStore;
 
-#[cfg(unix)]
 #[tokio::test]
 async fn rejects_reference_lineage_escaping_symlinked_sessions_root() {
     let home = TempDir::new().expect("temp dir");
@@ -410,7 +409,6 @@ async fn indexed_ancestor_must_be_managed_and_owned_by_the_indexed_thread() {
     )
     .await;
 
-    #[cfg(unix)]
     {
         fs::copy(&external, &active).expect("restore active rollout");
         fs::write(

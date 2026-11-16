@@ -4,7 +4,6 @@ use codex_exec_server::CopyOptions;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::EnvironmentAccess;
 use codex_exec_server::EnvironmentAccessExt;
-#[cfg(unix)]
 use codex_exec_server::ExecServerRuntimeOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::FILE_READ_CHUNK_SIZE;
@@ -44,8 +43,6 @@ use test_case::test_case;
 use super::support::FileSystemImplementation;
 use super::support::absolute_path;
 use super::support::create_file_system_context;
-#[cfg(windows)]
-use super::support::is_unsupported_restricted_token_host;
 use super::support::read_only_sandbox;
 use super::support::workspace_write_sandbox;
 
@@ -164,10 +161,6 @@ async fn file_system_create_directory_creates_nested_directories(
             sandbox.as_ref(),
         )
         .await;
-    #[cfg(windows)]
-    if is_unsupported_restricted_token_host(&result) {
-        return Ok(());
-    }
     result.with_context(|| format!("mode={implementation}, sandboxed={sandboxed}"))?;
     assert!(nested_dir.is_dir());
 
@@ -201,10 +194,6 @@ async fn file_system_write_file_writes_bytes(
             sandbox.as_ref(),
         )
         .await;
-    #[cfg(windows)]
-    if is_unsupported_restricted_token_host(&result) {
-        return Ok(());
-    }
     result.with_context(|| format!("mode={implementation}, sandboxed={sandboxed}"))?;
     assert_eq!(std::fs::read(file_path)?, b"hello from trait");
 
@@ -774,10 +763,6 @@ async fn file_system_remove_no_follow_removes_file_and_empty_directory(
             sandbox.as_ref(),
         )
         .await;
-    #[cfg(windows)]
-    if is_unsupported_restricted_token_host(&result) {
-        return Ok(());
-    }
     result.with_context(|| format!("mode={implementation}, sandboxed={sandboxed}"))?;
     assert!(!file_path.exists());
 
@@ -1063,11 +1048,7 @@ async fn full_disk_reads_reject_foreign_permission_paths(
     std::fs::write(&file, b"note")?;
     let file = PathUri::from_host_native_path(file)?;
     let root = PathUri::from_host_native_path(tmp.path())?;
-    let foreign = PathUri::parse(if cfg!(windows) {
-        "file:///private"
-    } else {
-        "file:///C:/private"
-    })?;
+    let foreign = PathUri::parse("file:///C:/private")?;
     let policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry::new(
             FileSystemPath::Special {
@@ -1195,7 +1176,6 @@ async fn file_system_restricted_reads_require_sandbox() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sandboxed_file_operations_cannot_read_helper_siblings() -> Result<()> {
     let helper_paths = crate::common::exec_server::test_codex_helper_paths()?;
@@ -1345,10 +1325,6 @@ pub(crate) async fn assert_sandboxed_canonicalize_resolves_directory_alias(
 /// Verifies that effective additional permissions extend a read-only sandbox with a writable root.
 #[test_case(FileSystemImplementation::Local ; "local")]
 #[test_case(FileSystemImplementation::Remote ; "remote")]
-#[cfg_attr(
-    windows,
-    ignore = "Windows restricted-token sandbox cannot enforce split writable roots"
-)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn file_system_sandboxed_write_allows_additional_write_root(
     implementation: FileSystemImplementation,

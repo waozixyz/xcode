@@ -9,7 +9,6 @@ use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use codex_network_proxy::NetworkProxy;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::SandboxErr;
 use codex_protocol::models::AdditionalPermissionProfile;
@@ -28,7 +27,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "shell_snapshot_sandbox_tests.rs"]
 mod tests;
 
@@ -42,7 +41,6 @@ pub(crate) struct ShellSnapshotSandbox {
     workspace_roots: Vec<PathUri>,
     sandbox_exe: Option<PathBuf>,
     use_legacy_landlock: bool,
-    windows_sandbox_level: WindowsSandboxLevel,
     network: Option<NetworkProxy>,
     environment_id: String,
     additional_permissions: Option<AdditionalPermissionProfile>,
@@ -86,7 +84,6 @@ impl ShellSnapshotSandbox {
             workspace_roots: attempt.workspace_roots.to_vec(),
             sandbox_exe: attempt.sandbox_exe.cloned(),
             use_legacy_landlock: attempt.use_legacy_landlock,
-            windows_sandbox_level: attempt.windows_sandbox_level,
             network: attempt.network_proxy(network).cloned(),
             environment_id: environment_id.to_string(),
             additional_permissions: additional_permissions.cloned(),
@@ -104,7 +101,6 @@ impl ShellSnapshotSandbox {
             &self.workspace_roots,
             &self.sandbox_exe,
             self.use_legacy_landlock,
-            self.windows_sandbox_level,
             self.network
                 .as_ref()
                 .map(|network| (network.http_addr(), network.socks_addr())),
@@ -174,16 +170,9 @@ impl ShellSnapshotSandbox {
                 sandbox_policy_cwd: &self.sandbox_policy_cwd,
                 sandbox_exe: self.sandbox_exe.as_deref(),
                 use_legacy_landlock: self.use_legacy_landlock,
-                windows_sandbox_level: self.windows_sandbox_level,
             })
             .context("failed to prepare shell snapshot sandbox")?
             .into_command_request();
-        let workspace_roots = self
-            .workspace_roots
-            .iter()
-            .map(PathUri::to_abs_path)
-            .collect::<std::io::Result<Vec<_>>>()
-            .context("failed to resolve shell snapshot workspace roots")?;
         let cancellation = self
             .network_denial_cancellation_token
             .as_ref()
@@ -199,7 +188,6 @@ impl ShellSnapshotSandbox {
                 expiration,
                 capture_policy: ExecCapturePolicy::SensitiveFullBuffer,
             },
-            workspace_roots,
         )
         .await
         .context("failed to prepare shell snapshot execution")?;

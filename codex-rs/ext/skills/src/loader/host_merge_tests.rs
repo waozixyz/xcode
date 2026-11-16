@@ -293,7 +293,6 @@ async fn preserves_plugin_skill_errors() {
     assert_eq!(outcome.errors.len(), 1);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn recognizes_symlinked_migrated_command_roots() {
     let fixture = PluginSkillsFixture::new();
@@ -381,7 +380,6 @@ async fn duplicate_host_root_paths_preserve_first_root_scope() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn deduplicated_symlinked_skill_preserves_first_discovery_path() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);

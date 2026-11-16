@@ -442,7 +442,6 @@ mod tests {
     }
 
     /// Direct database selection must preserve native path bytes.
-    #[cfg(unix)]
     #[tokio::test]
     async fn direct_db_preserves_non_utf8_path() {
         use std::os::unix::ffi::OsStrExt;

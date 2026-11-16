@@ -954,7 +954,6 @@ fn validate_reserved_strokes(binding: &RuntimeChordBinding) -> Result<(), String
         ));
     }
 
-    #[cfg(unix)]
     if strokes.contains(&crate::key_hint::ctrl(KeyCode::Char('z')).parts()) {
         return Err(format!(
             "Ambiguous `{path}` = `{}`: `ctrl-z` is reserved for suspending the terminal on Unix. \

@@ -32,9 +32,7 @@ const CLEARED_AUTH_ENV: &[(&str, Option<&str>)] = &[
 const READ_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 60);
 
 fn write_fake_gcloud(home: &Path) -> Result<PathBuf> {
-    #[cfg(unix)]
     let script = home.join("gcloud");
-    #[cfg(unix)]
     codex_utils_cargo_bin::write_executable(
         &script,
         r#"#!/bin/sh
@@ -42,13 +40,6 @@ if [ -f fail ]; then exit 1; fi
 printf '%s\n' "$GOOGLE_APPLICATION_CREDENTIALS" >> credential-log
 printf '%s\n' setup-token
 "#,
-    )?;
-    #[cfg(windows)]
-    let script = home.join("gcloud.cmd");
-    #[cfg(windows)]
-    std::fs::write(
-        &script,
-        "@echo off\r\nif exist fail exit /b 1\r\nsetlocal EnableDelayedExpansion\r\necho(!GOOGLE_APPLICATION_CREDENTIALS!>>credential-log\r\nendlocal\r\necho setup-token\r\n",
     )?;
     Ok(script)
 }
@@ -314,7 +305,6 @@ async fn setup_gcp_rejects_policy_and_endpoint_conflicts_before_saving() -> Resu
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn setup_gcp_stops_the_credential_command_when_network_permission_is_revoked() -> Result<()> {
     use core_test_support::process::wait_for_pid_file;

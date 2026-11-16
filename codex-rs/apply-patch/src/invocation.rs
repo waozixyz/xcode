@@ -1032,7 +1032,6 @@ PATCH"#,
         }
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn test_delete_symlink_still_verifies() {
         use std::os::unix::fs::symlink;

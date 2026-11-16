@@ -146,7 +146,7 @@ fn read_windows_vscode_detection() -> VscodeDetection {
     )
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn read_windows_vscode_detection_with_timeout(
     spawn: impl FnOnce() -> Option<std::process::Child> + Send + 'static,
     timeout: std::time::Duration,
@@ -204,10 +204,6 @@ fn read_windows_vscode_detection_with_timeout(
         VscodeDetection::Other
     }
 }
-
-#[cfg(all(test, unix))]
-#[path = "windows_term_program_tests.rs"]
-mod windows_term_program_tests;
 
 /// Restore keyboard reporting and return the settings from the same tmux probe.
 pub(super) fn enable_keyboard_enhancement(writer: &mut impl Write) -> super::tmux::Options {
@@ -321,19 +317,6 @@ impl Command for ResetKeyboardEnhancementFlags {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
         f.write_str("\x1b[<u")
     }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "keyboard enhancement reset is not implemented for the legacy Windows API",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        false
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,19 +326,6 @@ impl Command for EnableModifyOtherKeys {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
         f.write_str("\x1b[>4;2m")
     }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "modifyOtherKeys enable is not implemented for the legacy Windows API",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        false
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,19 +334,6 @@ pub(super) struct DisableModifyOtherKeys;
 impl Command for DisableModifyOtherKeys {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
         f.write_str("\x1b[>4;0m")
-    }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> std::io::Result<()> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "modifyOtherKeys reset is not implemented for the legacy Windows API",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        false
     }
 }
 

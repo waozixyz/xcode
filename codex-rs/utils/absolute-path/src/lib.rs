@@ -34,10 +34,6 @@ impl AbsolutePathBuf {
                 return home;
             } else if let Some(rest) = rest.strip_prefix('/') {
                 return home.join(rest.trim_start_matches('/'));
-            } else if cfg!(windows)
-                && let Some(rest) = rest.strip_prefix('\\')
-            {
-                return home.join(rest.trim_start_matches('\\'));
             }
         }
         path.to_path_buf()
@@ -145,13 +141,6 @@ impl AbsolutePathBuf {
 }
 
 fn normalize_path_for_platform(path: &Path) -> Cow<'_, Path> {
-    if cfg!(windows)
-        && let Some(path) = path.to_str()
-        && let Some(normalized) = normalize_windows_device_path(path)
-    {
-        return Cow::Owned(PathBuf::from(normalized));
-    }
-
     Cow::Borrowed(path)
 }
 
@@ -256,18 +245,7 @@ pub mod test_support {
     ///
     /// On Windows, `/tmp/example` maps to `C:\tmp\example`.
     pub fn test_path_buf(unix_path: &str) -> PathBuf {
-        if cfg!(windows) {
-            let mut path = PathBuf::from(r"C:\");
-            path.extend(
-                unix_path
-                    .trim_start_matches('/')
-                    .split('/')
-                    .filter(|segment| !segment.is_empty()),
-            );
-            path
-        } else {
-            PathBuf::from(unix_path)
-        }
+        PathBuf::from(unix_path)
     }
 
     /// Extension methods for converting paths into [`AbsolutePathBuf`] values in tests.
@@ -415,7 +393,6 @@ mod tests {
     use crate::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
     use std::fs;
-    #[cfg(unix)]
     use std::process::Command;
     use tempfile::tempdir;
 
@@ -430,7 +407,6 @@ mod tests {
         assert_eq!(abs_path_buf.as_path(), absolute_path.as_path());
     }
 
-    #[cfg(unix)]
     #[test]
     fn absolute_paths_do_not_read_current_dir() {
         let status = Command::new(std::env::current_exe().expect("current test binary"))
@@ -443,7 +419,6 @@ mod tests {
         assert!(status.success());
     }
 
-    #[cfg(unix)]
     #[test]
     #[ignore]
     fn absolute_paths_with_removed_current_dir_child() {
@@ -511,19 +486,6 @@ mod tests {
         assert_eq!(
             normalize_windows_device_path(r"\\?\GLOBALROOT\Device"),
             None
-        );
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn from_absolute_path_strips_windows_verbatim_prefix() {
-        let path =
-            AbsolutePathBuf::from_absolute_path_checked(r"\\?\D:\c\x\worktrees\2508\swift-base")
-                .expect("verbatim drive path should be absolute");
-
-        assert_eq!(
-            path.as_path(),
-            Path::new(r"D:\c\x\worktrees\2508\swift-base")
         );
     }
 
@@ -704,7 +666,6 @@ mod tests {
         assert_eq!(abs_path_buf.as_path(), home.join("code").as_path());
     }
 
-    #[cfg(unix)]
     #[test]
     fn canonicalize_preserving_symlinks_keeps_logical_symlink_path() {
         let temp_dir = tempdir().expect("temp dir");
@@ -719,7 +680,6 @@ mod tests {
         assert_eq!(canonicalized, link);
     }
 
-    #[cfg(unix)]
     #[test]
     fn canonicalize_preserving_symlinks_keeps_logical_missing_child_under_symlink() {
         let temp_dir = tempdir().expect("temp dir");
@@ -746,7 +706,6 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::NotFound);
     }
 
-    #[cfg(unix)]
     #[test]
     fn canonicalize_existing_preserving_symlinks_keeps_logical_symlink_path() {
         let temp_dir = tempdir().expect("temp dir");
@@ -759,39 +718,5 @@ mod tests {
             canonicalize_existing_preserving_symlinks(&link).expect("canonicalize symlink");
 
         assert_eq!(canonicalized, link);
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn home_directory_backslash_subpath_is_expanded_in_deserialization() {
-        let Some(home) = home_dir() else {
-            return;
-        };
-        let temp_dir = tempdir().expect("base dir");
-        let abs_path_buf = {
-            let _guard = AbsolutePathBufGuard::new(temp_dir.path());
-            let input =
-                serde_json::to_string(r#"~\code"#).expect("string should serialize as JSON");
-            serde_json::from_str::<AbsolutePathBuf>(&input).expect("is valid abs path")
-        };
-        assert_eq!(abs_path_buf.as_path(), home.join("code").as_path());
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn canonicalize_preserving_symlinks_avoids_verbatim_prefixes() {
-        let temp_dir = tempdir().expect("temp dir");
-
-        let canonicalized =
-            canonicalize_preserving_symlinks(temp_dir.path()).expect("canonicalize");
-
-        assert_eq!(
-            canonicalized,
-            dunce::canonicalize(temp_dir.path()).expect("canonicalize temp dir")
-        );
-        assert!(
-            !canonicalized.to_string_lossy().starts_with(r"\\?\"),
-            "expected a non-verbatim Windows path, got {canonicalized:?}"
-        );
     }
 }

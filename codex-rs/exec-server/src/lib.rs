@@ -42,17 +42,12 @@ mod rpc;
 mod rpc_server_requests;
 mod rpc_timing;
 mod runtime_options;
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod sandbox_integrity;
-mod sandbox_selection;
 mod sandboxed_file_open;
 mod sandboxed_file_system;
 mod server;
-#[cfg(unix)]
 mod shell_snapshot;
-#[cfg(unix)]
 mod shell_snapshot_file;
-#[cfg(unix)]
 mod shell_snapshot_process;
 mod telemetry;
 mod trace_context;
@@ -108,7 +103,6 @@ pub use codex_file_system::WalkEntryKind;
 pub use codex_file_system::WalkError;
 pub use codex_file_system::WalkOptions;
 pub use codex_file_system::WalkOutcome;
-pub use codex_file_system::WindowsSandboxSelection;
 pub use codex_file_system::WriteFileOptions;
 pub use codex_protocol::shell_environment::CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN_ENV_VAR;
 pub use environment::CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID_ENV_VAR;
@@ -255,8 +249,4 @@ pub use server::run_main;
 pub use server::run_main_with_telemetry;
 pub use telemetry::ExecServerTelemetry;
 
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 pub use sandbox_integrity::run_integrity_checks;
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-pub async fn run_integrity_checks(_request: &codex_sandboxing::SandboxExecRequest) {}

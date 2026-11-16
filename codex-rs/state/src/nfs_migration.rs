@@ -139,7 +139,6 @@ impl NfsDbMigration {
             if !regular_file_exists(&path)? {
                 continue;
             }
-            #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 if std::fs::metadata(path)?.permissions().mode() & 0o777 != 0o600 {
@@ -247,7 +246,6 @@ impl NfsDbMigration {
             // POSIX locks held by another pool in this process.
             source_files.push(File::open(source)?);
             let source_permissions = source_files[0].metadata()?.permissions();
-            #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 ensure!(

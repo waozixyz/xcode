@@ -1,6 +1,4 @@
 use anyhow::Result;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_core::StartThreadOptions;
 use codex_core::TurnInputRequest;
 use codex_protocol::protocol::TurnEnvironmentRequests;
@@ -22,7 +20,6 @@ use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::REMOTE_ENVIRONMENT_ID;
 use codex_exec_server::RemoveOptions;
 use codex_features::Feature;
-#[cfg(unix)]
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
@@ -37,9 +34,7 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
-#[cfg(unix)]
 use codex_protocol::protocol::Op;
-#[cfg(unix)]
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::ThreadSettingsOverrides;
@@ -150,10 +145,6 @@ fn restrictive_workspace_write_profile() -> PermissionProfile {
 }
 
 fn workspace_write_with_read_only_root(read_only_root: AbsolutePathBuf) -> PermissionProfile {
-    if cfg!(windows) {
-        return restrictive_workspace_write_profile();
-    }
-
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         // TODO(anp): Rationalize these write-confinement tests so sandboxed project-instruction
         // discovery works on macOS without unrestricted reads.
@@ -186,7 +177,6 @@ fn workspace_write_with_read_only_root(read_only_root: AbsolutePathBuf) -> Permi
     )
 }
 
-#[cfg(unix)]
 fn workspace_write_with_unreadable_path(unreadable_path: AbsolutePathBuf) -> PermissionProfile {
     let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
         FileSystemSandboxEntry {
@@ -210,22 +200,8 @@ fn workspace_write_with_unreadable_path(unreadable_path: AbsolutePathBuf) -> Per
     )
 }
 
-#[cfg(unix)]
 fn create_file_symlink(source: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(source, link)
-}
-
-#[cfg(windows)]
-fn create_file_symlink(source: &std::path::Path, link: &std::path::Path) -> std::io::Result<()> {
-    std::os::windows::fs::symlink_file(source, link)
-}
-
-#[cfg(not(any(unix, windows)))]
-fn create_file_symlink(_source: &std::path::Path, _link: &std::path::Path) -> std::io::Result<()> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "file symlinks are unsupported on this platform",
-    ))
 }
 
 pub async fn mount_apply_patch(
@@ -894,7 +870,6 @@ async fn apply_patch_cli_rejects_path_traversal_outside_workspace() -> Result<()
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn intercepted_apply_patch_verification_uses_local_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -1098,7 +1073,6 @@ async fn intercepted_apply_patch_updates_absolute_target_after_turn_cwd_is_remov
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn escalated_patch_rejects_symlink_swapped_after_approval_request() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -1218,10 +1192,6 @@ async fn apply_patch_cli_does_not_write_through_symlink_escape_outside_workspace
     let link_path = harness.path(link_rel);
     match create_file_symlink(&outside_file, &link_path) {
         Ok(()) => {}
-        Err(error) if cfg!(windows) => {
-            eprintln!("Skipping Windows symlink apply_patch sandbox test: {error}");
-            return Ok(());
-        }
         Err(error) => return Err(error.into()),
     }
 
@@ -1254,7 +1224,6 @@ async fn apply_patch_cli_does_not_write_through_symlink_escape_outside_workspace
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn apply_patch_cli_does_not_widen_permissions_for_workspace_directory_target() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -1371,31 +1340,6 @@ async fn apply_patch_cli_preserves_existing_hard_link_outside_workspace() -> Res
         .await?;
 
     let out = harness.apply_patch_output(call_id).await;
-    if cfg!(windows) {
-        assert!(
-            out.contains("patch rejected: writing outside of the project"),
-            "Windows sandboxing intentionally rejects writes through existing hard links to files outside the workspace; tool output: {out}"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&outside_file)?,
-            "original outside content\n",
-            "Windows rejection must leave the outside hard-link target unchanged"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&link_path)?,
-            "original outside content\n",
-            "Windows rejection must leave the workspace hard-link path unchanged"
-        );
-
-        std::fs::write(&outside_file, "post-reject outside write\n")?;
-        assert_eq!(
-            std::fs::read_to_string(&link_path)?,
-            "post-reject outside write\n",
-            "Windows rejection must not unlink or replace an existing hard link"
-        );
-
-        return Ok(());
-    }
 
     assert!(
         out.contains("Success. Updated the following files:"),
@@ -1522,149 +1466,6 @@ async fn apply_patch_exec_command_heredoc_with_cd_updates_relative_workdir() -> 
         "expected successful apply_patch invocation via exec_command: {out}"
     );
     assert_eq!(harness.read_file_text("sub/in_sub.txt").await?, "after\n");
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn apply_patch_cli_can_use_exec_command_output_as_patch_input() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    skip_if_remote!(
-        Ok(()),
-        "exec_command output producer runs in the test runner, not in the remote apply_patch workspace",
-    );
-
-    let harness =
-        apply_patch_harness_with(|builder| builder.with_model("gpt-5.5").with_windows_cmd_shell())
-            .await?;
-
-    let source_contents = "line1\nnaïve café\nline3\n";
-    harness.write_file("source.txt", source_contents).await?;
-
-    let read_call_id = "read-source";
-    let apply_call_id = "apply-from-read";
-
-    fn stdout_from_shell_output(output: &str) -> String {
-        let normalized = output.replace("\r\n", "\n").replace('\r', "\n");
-        normalized
-            .split_once("Output:\n")
-            .map(|x| x.1)
-            .unwrap_or("")
-            .trim_end_matches('\n')
-            .to_string()
-    }
-
-    fn function_call_output_text(body: &serde_json::Value, call_id: &str) -> String {
-        body.get("input")
-            .and_then(serde_json::Value::as_array)
-            .and_then(|items| {
-                items.iter().find(|item| {
-                    item.get("type").and_then(serde_json::Value::as_str)
-                        == Some("function_call_output")
-                        && item.get("call_id").and_then(serde_json::Value::as_str) == Some(call_id)
-                })
-            })
-            .and_then(|item| item.get("output").and_then(serde_json::Value::as_str))
-            .expect("function_call_output output string")
-            .to_string()
-    }
-
-    struct DynamicApplyFromRead {
-        num_calls: AtomicI32,
-        read_call_id: String,
-        apply_call_id: String,
-    }
-
-    impl Respond for DynamicApplyFromRead {
-        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
-            let call_num = self.num_calls.fetch_add(1, Ordering::SeqCst);
-            match call_num {
-                0 => {
-                    let command = if cfg!(windows) {
-                        // Encode the nested PowerShell script so `cmd.exe /c` does not leave the
-                        // read command wrapped in quotes, and suppress progress records so the
-                        // shell tool only returns the file contents back to apply_patch.
-                        let script = "$ProgressPreference = 'SilentlyContinue'; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); [System.IO.File]::ReadAllText('source.txt', [System.Text.UTF8Encoding]::new($false))";
-                        let encoded = BASE64_STANDARD.encode(
-                            script
-                                .encode_utf16()
-                                .flat_map(u16::to_le_bytes)
-                                .collect::<Vec<u8>>(),
-                        );
-                        format!(
-                            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}"
-                        )
-                    } else {
-                        "cat source.txt".to_string()
-                    };
-                    let args = json!({
-                        "cmd": command,
-                        "login": false,
-                    });
-                    let body = sse(vec![
-                        ev_response_created("resp-1"),
-                        ev_exec_command_call_with_args(&self.read_call_id, &args),
-                        ev_completed("resp-1"),
-                    ]);
-                    ResponseTemplate::new(200)
-                        .insert_header("content-type", "text/event-stream")
-                        .set_body_string(body)
-                }
-                1 => {
-                    let body_json: serde_json::Value =
-                        request.body_json().expect("request body should be json");
-                    let read_output = function_call_output_text(&body_json, &self.read_call_id);
-                    let stdout = stdout_from_shell_output(&read_output);
-                    let patch_lines = stdout
-                        .lines()
-                        .map(|line| format!("+{line}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let patch = format!(
-                        "*** Begin Patch\n*** Add File: target.txt\n{patch_lines}\n*** End Patch"
-                    );
-
-                    let body = sse(vec![
-                        ev_response_created("resp-2"),
-                        ev_apply_patch_custom_tool_call(&self.apply_call_id, &patch),
-                        ev_completed("resp-2"),
-                    ]);
-                    ResponseTemplate::new(200)
-                        .insert_header("content-type", "text/event-stream")
-                        .set_body_string(body)
-                }
-                2 => {
-                    let body = sse(vec![
-                        ev_assistant_message("msg-1", "ok"),
-                        ev_completed("resp-3"),
-                    ]);
-                    ResponseTemplate::new(200)
-                        .insert_header("content-type", "text/event-stream")
-                        .set_body_string(body)
-                }
-                _ => panic!("no response for call {call_num}"),
-            }
-        }
-    }
-
-    let responder = DynamicApplyFromRead {
-        num_calls: AtomicI32::new(0),
-        read_call_id: read_call_id.to_string(),
-        apply_call_id: apply_call_id.to_string(),
-    };
-    Mock::given(method("POST"))
-        .and(path_regex(".*/responses$"))
-        .respond_with(responder)
-        .expect(3)
-        .mount(harness.server())
-        .await;
-
-    harness
-        .submit("read source.txt, then apply it to target.txt")
-        .await?;
-
-    let target_contents = harness.read_file_text("target.txt").await?;
-    assert_eq!(target_contents, source_contents);
-
     Ok(())
 }
 
@@ -2645,5 +2446,130 @@ async fn apply_patch_change_context_disambiguates_target() -> Result<()> {
 
     let contents = harness.read_file_text("multi_ctx.txt").await?;
     assert_eq!(contents, "fn a\nx=10\ny=2\nfn b\nx=11\ny=20\n");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn apply_patch_cli_can_use_exec_command_output_as_patch_input() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_remote!(
+        Ok(()),
+        "exec_command output producer runs in the test runner, not in the remote apply_patch workspace",
+    );
+
+    let harness = apply_patch_harness_with(|builder| builder.with_model("gpt-5.5")).await?;
+
+    let source_contents = "line1\nnaïve café\nline3\n";
+    harness.write_file("source.txt", source_contents).await?;
+
+    let read_call_id = "read-source";
+    let apply_call_id = "apply-from-read";
+
+    fn stdout_from_shell_output(output: &str) -> String {
+        let normalized = output.replace("\r\n", "\n").replace('\r', "\n");
+        normalized
+            .split_once("Output:\n")
+            .map(|x| x.1)
+            .unwrap_or("")
+            .trim_end_matches('\n')
+            .to_string()
+    }
+
+    fn function_call_output_text(body: &serde_json::Value, call_id: &str) -> String {
+        body.get("input")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|items| {
+                items.iter().find(|item| {
+                    item.get("type").and_then(serde_json::Value::as_str)
+                        == Some("function_call_output")
+                        && item.get("call_id").and_then(serde_json::Value::as_str) == Some(call_id)
+                })
+            })
+            .and_then(|item| item.get("output").and_then(serde_json::Value::as_str))
+            .expect("function_call_output output string")
+            .to_string()
+    }
+
+    struct DynamicApplyFromRead {
+        num_calls: AtomicI32,
+        read_call_id: String,
+        apply_call_id: String,
+    }
+
+    impl Respond for DynamicApplyFromRead {
+        fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+            let call_num = self.num_calls.fetch_add(1, Ordering::SeqCst);
+            match call_num {
+                0 => {
+                    let command = "cat source.txt".to_string();
+                    let args = json!({
+                        "cmd": command,
+                        "login": false,
+                    });
+                    let body = sse(vec![
+                        ev_response_created("resp-1"),
+                        ev_exec_command_call_with_args(&self.read_call_id, &args),
+                        ev_completed("resp-1"),
+                    ]);
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(body)
+                }
+                1 => {
+                    let body_json: serde_json::Value =
+                        request.body_json().expect("request body should be json");
+                    let read_output = function_call_output_text(&body_json, &self.read_call_id);
+                    let stdout = stdout_from_shell_output(&read_output);
+                    let patch_lines = stdout
+                        .lines()
+                        .map(|line| format!("+{line}"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let patch = format!(
+                        "*** Begin Patch\n*** Add File: target.txt\n{patch_lines}\n*** End Patch"
+                    );
+
+                    let body = sse(vec![
+                        ev_response_created("resp-2"),
+                        ev_apply_patch_custom_tool_call(&self.apply_call_id, &patch),
+                        ev_completed("resp-2"),
+                    ]);
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(body)
+                }
+                2 => {
+                    let body = sse(vec![
+                        ev_assistant_message("msg-1", "ok"),
+                        ev_completed("resp-3"),
+                    ]);
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(body)
+                }
+                _ => panic!("no response for call {call_num}"),
+            }
+        }
+    }
+
+    let responder = DynamicApplyFromRead {
+        num_calls: AtomicI32::new(0),
+        read_call_id: read_call_id.to_string(),
+        apply_call_id: apply_call_id.to_string(),
+    };
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(responder)
+        .expect(3)
+        .mount(harness.server())
+        .await;
+
+    harness
+        .submit("read source.txt, then apply it to target.txt")
+        .await?;
+
+    let target_contents = harness.read_file_text("target.txt").await?;
+    assert_eq!(target_contents, source_contents);
+
     Ok(())
 }

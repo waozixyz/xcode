@@ -184,7 +184,6 @@ use codex_rollout::should_persist_response_item;
 use codex_rollout::state_db;
 use codex_rollout_trace::ThreadStartedTraceMetadata;
 use codex_rollout_trace::ThreadTraceContext;
-use codex_sandboxing::SandboxType;
 use codex_sandboxing::policy_transforms::intersect_permission_profiles_with_context;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
@@ -354,9 +353,6 @@ use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_timing::TurnTimingState;
 use crate::turn_timing::record_turn_ttfm_metric;
 use crate::unified_exec::UnifiedExecProcessManager;
-use crate::windows_sandbox::WindowsSandboxLevelExt;
-use crate::windows_sandbox::local_binding_policy_for_sandbox;
-use crate::windows_sandbox::managed_proxy_routing_for_windows_sandbox;
 use codex_core_plugins::PluginCommandAttribution;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
@@ -381,7 +377,6 @@ use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::Settings;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::mcp::OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID;
 use codex_protocol::models::LocalImagePreparation;
@@ -562,8 +557,6 @@ pub(crate) struct SessionSpawnArgs {
     pub(crate) external_time_provider: Option<Arc<dyn TimeProvider>>,
     pub(crate) inherited_multi_agent_version: Option<MultiAgentVersion>,
     pub(crate) git_enrichment_policy: GitEnrichmentPolicy,
-    pub(crate) windows_sandbox_proxy_settings_mode:
-        codex_sandboxing::WindowsSandboxProxySettingsMode,
 }
 
 pub(crate) fn resolve_multi_agent_version(
@@ -678,7 +671,6 @@ impl Session {
         args.config
             .config_layer_stack
             .ensure_config_server_applied()?;
-        args.config.validate_windows_mxc_requirement()?;
         let SessionSpawnArgs {
             attached_thread,
             startup,
@@ -728,7 +720,6 @@ impl Session {
             external_time_provider,
             inherited_multi_agent_version,
             git_enrichment_policy,
-            windows_sandbox_proxy_settings_mode,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -1022,8 +1013,6 @@ impl Session {
             permission_profile_state: session_permission_profile_state_from_config(&config)?,
             allow_login_shell: config.permissions.allow_login_shell,
             shell_environment_policy: config.permissions.shell_environment_policy.clone(),
-            windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
-            windows_sandbox_type: config.effective_local_windows_sandbox_type(),
             use_legacy_landlock: config.features.use_legacy_landlock(),
             legacy_fallback_cwd: config.cwd.clone(),
             runtime_workspace_roots: config.workspace_roots.clone(),
@@ -1048,7 +1037,6 @@ impl Session {
         session_configuration
             .validate(&environment_selections)
             .map_err(|err| CodexErr::InvalidRequest(err.to_string()))?;
-        crate::windows_sandbox::log_windows_sandbox_startup(&config);
 
         // Generate a unique ID for the lifetime of this session.
         let session_source_clone = session_configuration.session_source.clone();
@@ -1095,7 +1083,6 @@ impl Session {
             external_time_provider,
             multi_agent_version,
             git_enrichment_policy,
-            windows_sandbox_proxy_settings_mode,
         ))
         .await
         .map_err(|e| {
@@ -1422,7 +1409,6 @@ impl Session {
         spec: &crate::config::NetworkProxySpec,
         exec_policy: &codex_execpolicy::Policy,
         permission_profile: &PermissionProfile,
-        windows_sandbox_type: SandboxType,
         network_policy_decider: Option<Arc<dyn codex_network_proxy::NetworkPolicyDecider>>,
         blocked_request_observer: Option<Arc<dyn codex_network_proxy::BlockedRequestObserver>>,
         managed_network_requirements_enabled: bool,
@@ -1440,8 +1426,8 @@ impl Session {
         let network_proxy = spec
             .start_proxy(
                 permission_profile,
-                managed_proxy_routing_for_windows_sandbox(windows_sandbox_type),
-                local_binding_policy_for_sandbox(windows_sandbox_type, Some(std::env::consts::OS)),
+                codex_network_proxy::ManagedProxyRouting::SharedIngress,
+                codex_network_proxy::LocalBindingPolicy::DefaultFalse,
                 network_policy_decider,
                 blocked_request_observer,
                 managed_network_requirements_enabled,
@@ -1510,8 +1496,7 @@ impl Session {
                 .set_snapshot_credential_broker(SnapshotCredentialBrokerState::Inactive);
             return;
         }
-        let managed_proxy_routing =
-            managed_proxy_routing_for_windows_sandbox(session_configuration.windows_sandbox_type);
+        let managed_proxy_routing = codex_network_proxy::ManagedProxyRouting::SharedIngress;
         let started_proxy = self.services.network_proxy.load_full();
         let network_policy_decider = started_proxy
             .as_ref()
@@ -1537,7 +1522,6 @@ impl Session {
             &spec,
             current_exec_policy.as_ref(),
             &session_configuration.permission_profile(),
-            session_configuration.windows_sandbox_type,
             network_policy_decider,
             Some(build_blocked_request_observer(Arc::clone(
                 &self.services.network_approval,
@@ -2161,7 +2145,6 @@ impl Session {
         should_commit: impl FnOnce(&SessionConfiguration, &SessionConfiguration) -> bool + Send,
     ) -> ConstraintResult<Option<SessionSettingsCommit>> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let windows_sandbox_changed;
         let (
             commit,
             previous_config,
@@ -2214,8 +2197,6 @@ impl Session {
                 self.mark_mcp_runtime_dirty(McpRefreshReason::SessionMcpInputsChanged);
             }
             // Save new environment defaults for future turns. The running turn keeps its own.
-            windows_sandbox_changed =
-                state.session_configuration.windows_sandbox_level != updated.windows_sandbox_level;
             self.services
                 .turn_environments
                 .set_configured_thread_defaults(updated.inferred_environment_config());
@@ -2270,13 +2251,6 @@ impl Session {
                 credential_masking_warning,
             )
         };
-        if windows_sandbox_changed {
-            crate::windows_sandbox::log_windows_sandbox_change(
-                commit.configuration.codex_home.as_path(),
-                commit.configuration.windows_sandbox_type,
-                commit.configuration.windows_sandbox_level,
-            );
-        }
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
@@ -2431,7 +2405,6 @@ impl Session {
     ) -> (
         Config,
         ThreadConfigSnapshot,
-        WindowsSandboxLevel,
         TurnEnvironmentSnapshot,
         ReasoningEffortPin,
     ) {
@@ -2468,7 +2441,6 @@ impl Session {
             config,
             self.effective_thread_config_snapshot(&configuration, environments.all_selections())
                 .await,
-            configuration.windows_sandbox_level,
             environments,
             reasoning_effort_pin,
         )

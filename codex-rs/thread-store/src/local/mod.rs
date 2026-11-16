@@ -2131,7 +2131,6 @@ mod tests {
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
         let rollout_path = write_archived_session_file(home.path(), "2025-01-04T10-30-00", uuid)
             .expect("archived session file");
-        #[cfg(unix)]
         let rollout_path = {
             let alias = home.path().join("active-alias.jsonl");
             std::os::unix::fs::symlink(&rollout_path, &alias).expect("symlink archived rollout");

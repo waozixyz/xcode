@@ -97,7 +97,6 @@ fn leaves_project_unscoped_without_an_existing_absolute_cwd() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn skips_symlinked_memory_directory() {
     use std::os::unix::fs::symlink;

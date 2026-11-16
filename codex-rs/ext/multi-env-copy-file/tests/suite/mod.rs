@@ -476,17 +476,6 @@ async fn copy_file_uses_each_environments_permissions(use_grants: bool) -> Resul
     let write_error = mock
         .function_call_output_text("denied-write")
         .context("write error")?;
-    if cfg!(windows) {
-        // These two executors are host-native. The unelevated Windows sandbox must reject
-        // a policy with restricted reads, including after granting access to a specific path.
-        for error in [copy, read_error, write_error] {
-            assert!(error.contains("could not open copy source"), "{error}");
-        }
-        assert_eq!(fs::read(&source)?, bytes);
-        assert_eq!(fs::read(&target)?, b"original");
-        assert!(!denied_target.try_exists()?);
-        return Ok(());
-    }
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&copy)?,
         json!({"bytes_copied": bytes.len()})

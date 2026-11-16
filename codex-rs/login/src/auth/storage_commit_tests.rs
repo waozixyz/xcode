@@ -6,7 +6,6 @@ use std::io::BufRead;
 use std::io::Read;
 use std::process::Stdio;
 
-#[cfg(unix)]
 #[test]
 fn keyring_commits_ignore_unusable_fallback_symlink_targets() -> anyhow::Result<()> {
     use codex_keyring_store::tests::MockKeyringStore;
@@ -146,7 +145,6 @@ fn commits_respect_another_process_lock() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn keyring_logout_coordinates_with_refresh_through_chained_symlinks() -> anyhow::Result<()> {
     use codex_keyring_store::tests::MockKeyringStore;

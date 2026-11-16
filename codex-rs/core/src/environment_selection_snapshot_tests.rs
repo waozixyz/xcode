@@ -5,7 +5,6 @@ use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
-use codex_protocol::sandbox::SandboxType;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -53,7 +52,7 @@ async fn capability_roots_follow_attachments_through_configuration_changes() {
     let parent = ThreadEnvironments::new(
         Arc::clone(&manager),
         crate::shell::default_user_shell(),
-        ThreadEnvironmentDefaults::new(tests::test_environment_config(), SandboxType::None),
+        ThreadEnvironmentDefaults::new(tests::test_environment_config()),
         ShellSnapshot::disabled(),
         TurnEnvironmentSnapshot::default(),
         /*non_blocking_snapshots*/ false,
@@ -74,7 +73,7 @@ async fn capability_roots_follow_attachments_through_configuration_changes() {
     let child = ThreadEnvironments::new(
         Arc::clone(&manager),
         crate::shell::default_user_shell(),
-        ThreadEnvironmentDefaults::new(tests::test_environment_config(), SandboxType::None),
+        ThreadEnvironmentDefaults::new(tests::test_environment_config()),
         ShellSnapshot::disabled(),
         snapshot,
         /*non_blocking_snapshots*/ false,
@@ -142,7 +141,7 @@ async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment(shared
     let environments = ThreadEnvironments::new(
         Arc::new(EnvironmentManager::default_for_tests()),
         crate::shell::default_user_shell(),
-        ThreadEnvironmentDefaults::new(tests::test_environment_config(), SandboxType::None),
+        ThreadEnvironmentDefaults::new(tests::test_environment_config()),
         ShellSnapshot::disabled(),
         TurnEnvironmentSnapshot::default(),
         /*non_blocking_snapshots*/ false,
@@ -218,7 +217,7 @@ async fn updating_another_environment_retries_the_executor_without_canceling_pen
     let environments = ThreadEnvironments::new(
         manager,
         crate::shell::default_user_shell(),
-        ThreadEnvironmentDefaults::new(tests::test_environment_config(), SandboxType::None),
+        ThreadEnvironmentDefaults::new(tests::test_environment_config()),
         ShellSnapshot::disabled(),
         TurnEnvironmentSnapshot::default(),
         /*non_blocking_snapshots*/ true,
@@ -290,7 +289,7 @@ async fn credential_refresh_does_not_restore_a_removed_environment() {
     let environments = Arc::new(ThreadEnvironments::new(
         Arc::new(EnvironmentManager::default_for_tests()),
         crate::shell::default_user_shell(),
-        ThreadEnvironmentDefaults::new(tests::test_environment_config(), SandboxType::None),
+        ThreadEnvironmentDefaults::new(tests::test_environment_config()),
         shell_snapshot,
         TurnEnvironmentSnapshot::default(),
         /*non_blocking_snapshots*/ false,

@@ -2194,7 +2194,6 @@ impl RuntimeKeymap {
         let maximize = &self.app.maximize_pane_width;
         let equalize = &self.app.equalize_pane_widths;
         let resize = &self.app.resize_panes;
-        #[cfg(unix)]
         for (action, bindings) in [
             ("global.change_host", &self.app.change_host),
             ("global.open_agents", &self.app.open_agents),
@@ -2715,7 +2714,6 @@ impl RuntimeKeymap {
             )],
         )?;
         for (action, bindings) in context_bindings(KeymapContext::Agents) {
-            #[cfg(unix)]
             if bindings.contains(&key_hint::ctrl(KeyCode::Char('z'))) {
                 return Err(format!(
                     "tui.keymap.agents.{action}: ctrl-z is reserved for suspend"
@@ -3296,18 +3294,6 @@ mod tests {
             assert!(RuntimeKeymap::from_config(&keymap).is_err());
             keymap.chat.skip_question = None;
             keymap.chat.prompt_stack_back = Some(one(binding));
-            assert!(RuntimeKeymap::from_config(&keymap).is_err());
-        }
-        #[cfg(windows)]
-        {
-            let mut keymap = TuiKeymap::default();
-            keymap.chat.next_permission_mode = Some(one("ctrl-alt-q"));
-            assert!(RuntimeKeymap::from_config(&keymap).is_err());
-            keymap.chat.next_permission_mode = None;
-            keymap.chat.skip_question = Some(one("ctrl-alt-q"));
-            assert!(RuntimeKeymap::from_config(&keymap).is_err());
-            keymap.chat.skip_question = None;
-            keymap.chat.prompt_stack_back = Some(one("ctrl-alt-q"));
             assert!(RuntimeKeymap::from_config(&keymap).is_err());
         }
         let mut keymap = TuiKeymap::default();
@@ -4063,7 +4049,6 @@ mod tests {
         keymap.agents.stop = Some(one("ctrl-c"));
         expect_conflict(&keymap, "stop", "fixed.interrupt_or_quit");
 
-        #[cfg(unix)]
         {
             keymap.agents.stop = Some(one("ctrl-z"));
             assert!(
@@ -4111,19 +4096,6 @@ mod tests {
                 .contains("backspace")
         );
 
-        #[cfg(windows)]
-        {
-            keymap.agents.stop = Some(one("ctrl-alt-@"));
-            assert!(RuntimeKeymap::from_config(&keymap).is_err());
-            keymap.agents.stop = Some(one("f10"));
-            keymap.global.open_agents = Some(one("ctrl-alt-@"));
-            assert!(
-                RuntimeKeymap::from_config(&keymap)
-                    .unwrap_err()
-                    .contains("AltGr")
-            );
-            keymap.global.open_agents = Some(one("f12"));
-        }
         keymap.agents.stop = Some(one("backspace f10"));
         assert!(
             RuntimeKeymap::from_config(&keymap)
@@ -4171,7 +4143,6 @@ mod tests {
                 "{error}"
             );
         }
-        #[cfg(unix)]
         for action in [
             "hide_pane",
             "focus_main_composer",

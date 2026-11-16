@@ -87,7 +87,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn clear_memory_root_contents_rejects_symlinked_root() {
         let dir = tempdir().expect("tempdir");

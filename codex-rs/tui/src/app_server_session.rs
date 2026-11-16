@@ -2939,7 +2939,6 @@ async fn thread_session_state_from_thread_start_response(
     );
     let mut session = thread_session_state_from_thread_response(
         &response.thread.id,
-        crate::windows_sandbox::host_from_environments(response.thread.environments.as_deref()),
         response.thread.forked_from_id.clone(),
         response.thread.name.clone(),
         response.thread.path.clone(),
@@ -2977,7 +2976,6 @@ async fn thread_session_state_from_thread_resume_response(
     );
     let mut session = thread_session_state_from_thread_response(
         &response.thread.id,
-        crate::windows_sandbox::host_from_environments(response.thread.environments.as_deref()),
         response.thread.forked_from_id.clone(),
         response.thread.name.clone(),
         response.thread.path.clone(),
@@ -3014,7 +3012,6 @@ async fn thread_session_state_from_thread_fork_response(
     );
     let mut session = thread_session_state_from_thread_response(
         &response.thread.id,
-        crate::windows_sandbox::host_from_environments(response.thread.environments.as_deref()),
         response.thread.forked_from_id.clone(),
         response.thread.name.clone(),
         response.thread.path.clone(),
@@ -3067,7 +3064,6 @@ fn display_permission_profile_from_thread_response(
 )]
 async fn thread_session_state_from_thread_response(
     thread_id: &str,
-    windows_sandbox_host: crate::app::WindowsSandboxHost,
     forked_from_id: Option<String>,
     thread_name: Option<String>,
     rollout_path: Option<PathBuf>,
@@ -3098,7 +3094,6 @@ async fn thread_session_state_from_thread_response(
     let (log_id, entry_count) = codex_message_history::history_metadata(&history_config).await;
     Ok(ThreadSessionState {
         daybreak_enabled: false,
-        windows_sandbox_host,
         thread_id,
         forked_from_id,
         fork_parent_title: None,
@@ -4187,11 +4182,7 @@ mod tests {
     async fn remote_resume_params_keep_cwd_without_overriding_saved_permissions() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config = build_config(&temp_dir).await;
-        let remote_cwd = if cfg!(windows) {
-            std::path::PathBuf::from("/srv/remote/project")
-        } else {
-            std::path::PathBuf::from(r"C:\remote\project")
-        };
+        let remote_cwd = std::path::PathBuf::from(r"C:\remote\project");
 
         let resume = thread_resume_params_from_config(
             config,
@@ -5259,83 +5250,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn session_configured_populates_history_metadata() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
-        let config = build_config(&temp_dir).await;
-        let thread_id = ThreadId::new();
-
-        let history_config =
-            codex_message_history::HistoryConfig::new(config.codex_home.clone(), &config.history);
-
-        codex_message_history::append_entry("older", &thread_id, &history_config)
-            .await
-            .expect("history append should succeed");
-        codex_message_history::append_entry("newer", &thread_id, &history_config)
-            .await
-            .expect("history append should succeed");
-
-        let session = thread_session_state_from_thread_response(
-            &thread_id.to_string(),
-            crate::app::WindowsSandboxHost::Local,
-            /*forked_from_id*/ None,
-            Some("restore".to_string()),
-            /*rollout_path*/ None,
-            "gpt-5.4".to_string(),
-            "openai".to_string(),
-            /*service_tier*/ None,
-            AskForApproval::Never,
-            codex_protocol::config_types::ApprovalsReviewer::User,
-            PermissionProfile::read_only(),
-            /*active_permission_profile*/ None,
-            test_path_buf("/tmp/project").abs(),
-            Vec::new(),
-            Vec::new(),
-            /*reasoning_effort*/ None,
-            &LocalSettings::from(&config),
-        )
-        .await
-        .expect("session should map");
-
-        let metadata = session
-            .message_history
-            .expect("session should include message-history metadata");
-        assert_ne!(metadata.log_id, 0);
-        assert_eq!(metadata.entry_count, 2);
-    }
-
-    #[tokio::test]
-    async fn session_configured_preserves_fork_source_thread_id() {
-        let temp_dir = tempfile::tempdir().expect("tempdir");
-        let config = build_config(&temp_dir).await;
-        let thread_id = ThreadId::new();
-        let forked_from_id = ThreadId::new();
-
-        let session = thread_session_state_from_thread_response(
-            &thread_id.to_string(),
-            crate::app::WindowsSandboxHost::Local,
-            Some(forked_from_id.to_string()),
-            Some("restore".to_string()),
-            /*rollout_path*/ None,
-            "gpt-5.4".to_string(),
-            "openai".to_string(),
-            /*service_tier*/ None,
-            AskForApproval::Never,
-            codex_protocol::config_types::ApprovalsReviewer::User,
-            PermissionProfile::read_only(),
-            /*active_permission_profile*/ None,
-            test_path_buf("/tmp/project").abs(),
-            Vec::new(),
-            Vec::new(),
-            /*reasoning_effort*/ None,
-            &LocalSettings::from(&config),
-        )
-        .await
-        .expect("session should map");
-
-        assert_eq!(session.forked_from_id, Some(forked_from_id));
-    }
-
     #[test]
     fn status_account_display_from_auth_mode_uses_remapped_plan_labels() {
         let business = status_account_display_from_auth_mode(
@@ -5376,5 +5290,80 @@ mod tests {
                 ..
             }) if plan == "Business Premium"
         ));
+    }
+
+    #[tokio::test]
+    async fn session_configured_populates_history_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&temp_dir).await;
+        let thread_id = ThreadId::new();
+
+        let history_config =
+            codex_message_history::HistoryConfig::new(config.codex_home.clone(), &config.history);
+
+        codex_message_history::append_entry("older", &thread_id, &history_config)
+            .await
+            .expect("history append should succeed");
+        codex_message_history::append_entry("newer", &thread_id, &history_config)
+            .await
+            .expect("history append should succeed");
+
+        let session = thread_session_state_from_thread_response(
+            &thread_id.to_string(),
+            /*forked_from_id*/ None,
+            Some("restore".to_string()),
+            /*rollout_path*/ None,
+            "gpt-5.4".to_string(),
+            "openai".to_string(),
+            /*service_tier*/ None,
+            AskForApproval::Never,
+            codex_protocol::config_types::ApprovalsReviewer::User,
+            PermissionProfile::read_only(),
+            /*active_permission_profile*/ None,
+            test_path_buf("/tmp/project").abs(),
+            Vec::new(),
+            Vec::new(),
+            /*reasoning_effort*/ None,
+            &LocalSettings::from(&config),
+        )
+        .await
+        .expect("session should map");
+
+        let metadata = session
+            .message_history
+            .expect("session should include message-history metadata");
+        assert_ne!(metadata.log_id, 0);
+        assert_eq!(metadata.entry_count, 2);
+    }
+
+    #[tokio::test]
+    async fn session_configured_preserves_fork_source_thread_id() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&temp_dir).await;
+        let thread_id = ThreadId::new();
+        let forked_from_id = ThreadId::new();
+
+        let session = thread_session_state_from_thread_response(
+            &thread_id.to_string(),
+            Some(forked_from_id.to_string()),
+            Some("restore".to_string()),
+            /*rollout_path*/ None,
+            "gpt-5.4".to_string(),
+            "openai".to_string(),
+            /*service_tier*/ None,
+            AskForApproval::Never,
+            codex_protocol::config_types::ApprovalsReviewer::User,
+            PermissionProfile::read_only(),
+            /*active_permission_profile*/ None,
+            test_path_buf("/tmp/project").abs(),
+            Vec::new(),
+            Vec::new(),
+            /*reasoning_effort*/ None,
+            &LocalSettings::from(&config),
+        )
+        .await
+        .expect("session should map");
+
+        assert_eq!(session.forked_from_id, Some(forked_from_id));
     }
 }

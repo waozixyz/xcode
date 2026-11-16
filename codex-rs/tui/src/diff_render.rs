@@ -32,7 +32,7 @@
 //! preserved across the split so that no color information is lost. Theme foregrounds
 //! are resolved against the painted diff fill, without dimming corrected syntax colors.
 
-use diffy::Hunk;
+use codex_utils_text_diff::Hunk;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
@@ -609,7 +609,7 @@ fn render_change_with_preview(
             }
         }
         FileChange::Update { unified_diff, .. } => {
-            if let Ok(patch) = diffy::Patch::from_str(unified_diff) {
+            if let Ok(patch) = codex_utils_text_diff::Patch::from_str(unified_diff) {
                 let mut max_line_number = 0;
                 let mut total_diff_bytes: usize = 0;
                 let mut total_diff_lines: usize = 0;
@@ -618,22 +618,22 @@ fn render_change_with_preview(
                     let mut new_ln = h.new_range().start();
                     for l in h.lines() {
                         let text = match l {
-                            diffy::Line::Insert(t)
-                            | diffy::Line::Delete(t)
-                            | diffy::Line::Context(t) => t,
+                            codex_utils_text_diff::Line::Insert(t)
+                            | codex_utils_text_diff::Line::Delete(t)
+                            | codex_utils_text_diff::Line::Context(t) => t,
                         };
                         total_diff_bytes += text.len();
                         total_diff_lines += 1;
                         match l {
-                            diffy::Line::Insert(_) => {
+                            codex_utils_text_diff::Line::Insert(_) => {
                                 max_line_number = max_line_number.max(new_ln);
                                 new_ln += 1;
                             }
-                            diffy::Line::Delete(_) => {
+                            codex_utils_text_diff::Line::Delete(_) => {
                                 max_line_number = max_line_number.max(old_ln);
                                 old_ln += 1;
                             }
-                            diffy::Line::Context(_) => {
+                            codex_utils_text_diff::Line::Context(_) => {
                                 max_line_number = max_line_number.max(new_ln);
                                 old_ln += 1;
                                 new_ln += 1;
@@ -678,9 +678,9 @@ fn render_change_with_preview(
                             .lines()
                             .iter()
                             .map(|line| match line {
-                                diffy::Line::Insert(text)
-                                | diffy::Line::Delete(text)
-                                | diffy::Line::Context(text) => *text,
+                                codex_utils_text_diff::Line::Insert(text)
+                                | codex_utils_text_diff::Line::Delete(text)
+                                | codex_utils_text_diff::Line::Context(text) => *text,
                             })
                             .collect();
                         let syntax_lines = highlight_code_to_styled_spans(&hunk_text, language)?;
@@ -697,7 +697,7 @@ fn render_change_with_preview(
                             .as_ref()
                             .and_then(|syntax_lines| syntax_lines.get(line_idx));
                         match l {
-                            diffy::Line::Insert(text) => {
+                            codex_utils_text_diff::Line::Insert(text) => {
                                 let s = text.trim_end_matches('\n');
                                 if let Some(syn) = syntax_spans {
                                     out.extend(render_wrapped_diff_line(
@@ -722,7 +722,7 @@ fn render_change_with_preview(
                                 }
                                 new_ln += 1;
                             }
-                            diffy::Line::Delete(text) => {
+                            codex_utils_text_diff::Line::Delete(text) => {
                                 let s = text.trim_end_matches('\n');
                                 if let Some(syn) = syntax_spans {
                                     out.extend(render_wrapped_diff_line(
@@ -747,7 +747,7 @@ fn render_change_with_preview(
                                 }
                                 old_ln += 1;
                             }
-                            diffy::Line::Context(text) => {
+                            codex_utils_text_diff::Line::Context(text) => {
                                 if preview_lines.is_some() {
                                     old_ln += 1;
                                     new_ln += 1;
@@ -813,15 +813,15 @@ pub(crate) fn display_path_for(path: &Path, cwd: &Path) -> String {
 }
 
 pub(crate) fn calculate_add_remove_from_diff(diff: &str) -> (usize, usize) {
-    if let Ok(patch) = diffy::Patch::from_str(diff) {
+    if let Ok(patch) = codex_utils_text_diff::Patch::from_str(diff) {
         patch
             .hunks()
             .iter()
             .flat_map(Hunk::lines)
             .fold((0, 0), |(a, d), l| match l {
-                diffy::Line::Insert(_) => (a + 1, d),
-                diffy::Line::Delete(_) => (a, d + 1),
-                diffy::Line::Context(_) => (a, d),
+                codex_utils_text_diff::Line::Insert(_) => (a + 1, d),
+                codex_utils_text_diff::Line::Delete(_) => (a, d + 1),
+                codex_utils_text_diff::Line::Context(_) => (a, d),
             })
     } else {
         // For unparsable diffs, return 0 for both counts.
@@ -1592,11 +1592,7 @@ mod tests {
 
     #[test]
     fn display_path_prefers_cwd_without_git_repo() {
-        let cwd = if cfg!(windows) {
-            PathBuf::from(r"C:\workspace\codex")
-        } else {
-            PathBuf::from("/workspace/codex")
-        };
+        let cwd = PathBuf::from("/workspace/codex");
         let path = cwd.join("tui").join("example.png");
 
         let rendered = display_path_for(&path, &cwd);

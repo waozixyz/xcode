@@ -49,7 +49,6 @@ async fn stale_saved_grant_keeps_valid_denial_on_native_proxy_and_mcp(
         &spec,
         &exec_policy,
         &permission_profile,
-        SandboxType::None,
         /*network_policy_decider*/ None,
         /*blocked_request_observer*/ None,
         /*managed_network_requirements_enabled*/ false,

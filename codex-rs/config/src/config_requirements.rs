@@ -44,7 +44,6 @@ use crate::types::AuthCredentialsStoreMode;
 use crate::types::FeedbackConfigToml;
 use crate::types::OtelConfigToml;
 use crate::types::OtelExporterKind;
-use crate::types::WindowsSandboxModeToml;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequirementSource {
@@ -183,7 +182,6 @@ pub struct ConfigRequirements {
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
     pub auto_review_required_models: Option<Sourced<BTreeSet<String>>>,
     pub permission_profile: ConstrainedWithSource<PermissionProfile>,
-    pub windows_sandbox_mode: ConstrainedWithSource<Option<WindowsSandboxModeToml>>,
     pub web_search_mode: ConstrainedWithSource<WebSearchMode>,
     pub allow_managed_hooks_only: Option<Sourced<bool>>,
     pub allow_appshots: Option<Sourced<bool>>,
@@ -238,10 +236,6 @@ impl Default for ConfigRequirements {
             auto_review_required_models: None,
             permission_profile: ConstrainedWithSource::new(
                 Constrained::allow_any(PermissionProfile::read_only()),
-                /*source*/ None,
-            ),
-            windows_sandbox_mode: ConstrainedWithSource::new(
-                Constrained::allow_any(/*initial_value*/ None),
                 /*source*/ None,
             ),
             web_search_mode: ConstrainedWithSource::new(
@@ -932,30 +926,6 @@ impl fmt::Display for WebSearchModeRequirement {
 }
 
 #[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct WindowsRequirementsToml {
-    pub allowed_sandbox_implementations: Option<Vec<WindowsSandboxImplementationToml>>,
-    /// False blocks both explicit MXC configuration and automatic selection.
-    pub allow_mxc: Option<bool>,
-    /// Require MXC as the selected local Windows backend.
-    pub require_mxc: Option<bool>,
-}
-
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum WindowsSandboxImplementationToml {
-    Elevated,
-    Unelevated,
-}
-
-impl WindowsRequirementsToml {
-    pub fn is_empty(&self) -> bool {
-        self.allowed_sandbox_implementations.is_none()
-            && self.allow_mxc.is_none()
-            && self.require_mxc.is_none()
-    }
-}
-
-#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 #[serde(from = "FeatureRequirementsInput")]
 pub struct FeatureRequirementsToml {
     pub entries: BTreeMap<String, bool>,
@@ -1163,7 +1133,6 @@ pub struct ConfigRequirementsToml {
     pub computer_use: Option<ComputerUseRequirementsToml>,
     pub browser_use: Option<BrowserUseRequirementsToml>,
     pub in_app_browser: Option<InAppBrowserRequirementsToml>,
-    pub windows: Option<WindowsRequirementsToml>,
     #[serde(rename = "features", alias = "feature_requirements")]
     pub feature_requirements: Option<FeatureRequirementsToml>,
     pub hooks: Option<ManagedHooksRequirementsToml>,
@@ -1320,7 +1289,6 @@ pub struct ConfigRequirementsWithSources {
     pub computer_use: Option<Sourced<ComputerUseRequirementsToml>>,
     pub browser_use: Option<Sourced<BrowserUseRequirementsToml>>,
     pub in_app_browser: Option<Sourced<InAppBrowserRequirementsToml>>,
-    pub windows: Option<Sourced<WindowsRequirementsToml>>,
     pub feature_requirements: Option<Sourced<FeatureRequirementsToml>>,
     pub hooks: Option<Sourced<ManagedHooksRequirementsToml>>,
     pub mcp_servers: Option<Sourced<BTreeMap<String, McpServerRequirement>>>,
@@ -1405,7 +1373,6 @@ impl ConfigRequirementsWithSources {
             computer_use: _,
             browser_use: _,
             in_app_browser: _,
-            windows: _,
             feature_requirements: _,
             hooks: _,
             mcp_servers: _,
@@ -1477,7 +1444,6 @@ impl ConfigRequirementsWithSources {
                 computer_use,
                 browser_use,
                 in_app_browser,
-                windows,
                 feature_requirements,
                 hooks,
                 mcp_servers,
@@ -1571,7 +1537,6 @@ impl ConfigRequirementsWithSources {
             computer_use,
             browser_use,
             in_app_browser,
-            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -1627,7 +1592,6 @@ impl ConfigRequirementsWithSources {
             computer_use: computer_use.map(|sourced| sourced.value),
             browser_use: browser_use.map(|sourced| sourced.value),
             in_app_browser: in_app_browser.map(|sourced| sourced.value),
-            windows: windows.map(|sourced| sourced.value),
             feature_requirements: feature_requirements.map(|sourced| sourced.value),
             hooks: hooks.map(|sourced| sourced.value),
             mcp_servers: mcp_servers.map(|sourced| sourced.value),
@@ -1753,10 +1717,6 @@ impl ConfigRequirementsToml {
                 .in_app_browser
                 .as_ref()
                 .is_none_or(|requirements| requirements == &InAppBrowserRequirementsToml::default())
-            && self
-                .windows
-                .as_ref()
-                .is_none_or(WindowsRequirementsToml::is_empty)
             && self
                 .feature_requirements
                 .as_ref()
@@ -2166,7 +2126,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             computer_use,
             browser_use: _,
             in_app_browser: _,
-            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -2330,84 +2289,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
                 /*source*/ None,
             ),
         };
-        let mxc_requirement_source = windows
-            .as_ref()
-            .filter(|windows| windows.value.allow_mxc == Some(false))
-            .map(|windows| windows.source.clone());
-        let mut windows_sandbox_mode = match windows {
-            Some(Sourced {
-                value:
-                    WindowsRequirementsToml {
-                        allowed_sandbox_implementations: Some(implementations),
-                        allow_mxc: _,
-                        require_mxc: _,
-                    },
-                source: requirement_source,
-            }) => {
-                if implementations.is_empty() {
-                    return Err(ConstraintError::empty_field(
-                        "windows.allowed_sandbox_implementations",
-                    ));
-                }
-                // Prefer elevated when both Windows sandbox implementations are allowed.
-                let initial_value =
-                    if implementations.contains(&WindowsSandboxImplementationToml::Elevated) {
-                        WindowsSandboxModeToml::Elevated
-                    } else {
-                        WindowsSandboxModeToml::Unelevated
-                    };
-
-                let requirement_source_for_error = requirement_source.clone();
-                let constrained =
-                    Constrained::new(Some(initial_value), move |candidate| match candidate {
-                        Some(WindowsSandboxModeToml::Mxc) => Ok(()),
-                        Some(WindowsSandboxModeToml::Elevated)
-                            if implementations
-                                .contains(&WindowsSandboxImplementationToml::Elevated) =>
-                        {
-                            Ok(())
-                        }
-                        Some(WindowsSandboxModeToml::Unelevated)
-                            if implementations
-                                .contains(&WindowsSandboxImplementationToml::Unelevated) =>
-                        {
-                            Ok(())
-                        }
-                        _ => Err(ConstraintError::InvalidValue {
-                            field_name: "windows.sandbox",
-                            candidate: format!("{candidate:?}"),
-                            allowed: format!("{implementations:?}"),
-                            requirement_source: requirement_source_for_error.clone(),
-                        }),
-                    })?;
-                ConstrainedWithSource::new(constrained, Some(requirement_source))
-            }
-            Some(Sourced {
-                value:
-                    WindowsRequirementsToml {
-                        allowed_sandbox_implementations: None,
-                        allow_mxc: _,
-                        require_mxc: _,
-                    },
-                ..
-            })
-            | None => ConstrainedWithSource::new(
-                Constrained::allow_any(/*initial_value*/ None),
-                /*source*/ None,
-            ),
-        };
-        if let Some(requirement_source) = mxc_requirement_source {
-            windows_sandbox_mode.add_validator(move |candidate| match candidate {
-                Some(WindowsSandboxModeToml::Mxc) => Err(ConstraintError::InvalidValue {
-                    field_name: "windows.sandbox",
-                    candidate: format!("{candidate:?}"),
-                    allowed: "windows.allow_mxc = false".to_string(),
-                    requirement_source: requirement_source.clone(),
-                }),
-                Some(WindowsSandboxModeToml::Elevated | WindowsSandboxModeToml::Unelevated)
-                | None => Ok(()),
-            })?;
-        }
         let exec_policy = match rules {
             Some(Sourced { value, source }) => {
                 let policy = value.to_requirements_policy().map_err(|err| {
@@ -2551,7 +2432,6 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
             approvals_reviewer,
             auto_review_required_models,
             permission_profile,
-            windows_sandbox_mode,
             web_search_mode,
             allow_managed_hooks_only,
             allow_appshots,
@@ -2605,8 +2485,6 @@ mod tests {
     use crate::BrowserUseAccessApprovalLifetimeToml;
     use crate::BrowserUseOriginPolicyToml;
     use crate::ComputerUseMacosRequirementsToml;
-    use crate::ComputerUseWindowsExeRequirementToml;
-    use crate::ComputerUseWindowsRequirementsToml;
     use crate::McpServerCommandMatcher;
     use crate::McpServerIdentity;
     use crate::McpServerValueMatcher;
@@ -2665,7 +2543,6 @@ mod tests {
             (&[], Some("sqlite_home")),
             (&["feedback"], Some("feedback.enabled")),
             (&["feedback", "other"], None),
-            (&["windows", "sandbox"], None),
         ];
 
         for (segments, expected) in cases {
@@ -2818,7 +2695,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
             computer_use,
             browser_use,
             in_app_browser,
-            windows,
             feature_requirements,
             hooks,
             mcp_servers,
@@ -2890,7 +2766,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
             browser_use: browser_use.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             in_app_browser: in_app_browser
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
-            windows: windows.map(|value| Sourced::new(value, RequirementSource::Unknown)),
             feature_requirements: feature_requirements
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             hooks: hooks.map(|value| Sourced::new(value, RequirementSource::Unknown)),
@@ -3070,120 +2945,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
     }
 
     #[test]
-    fn deserialize_browser_and_computer_use_requirements() -> Result<()> {
-        let requirements: ConfigRequirementsToml = from_str(
-            r#"
-                allow_browser_and_computer_use = false
-
-                [browser_use]
-                allow_history_access = false
-                disable_auto_review = true
-                allow_global_persistent_approval = false
-
-                [browser_use.default_origin_policy]
-                access = "deny"
-                downloads = "allow"
-                uploads = "deny"
-                full_cdp_access = "allow"
-                auto_review = "deny"
-                persistent_approval = false
-                access_approval_lifetime = "turn"
-
-                [browser_use.origins."https://example.com"]
-                access = "allow"
-                downloads = "deny"
-                uploads = "allow"
-                full_cdp_access = "deny"
-                auto_review = "deny"
-                persistent_approval = true
-                access_approval_lifetime = "thread"
-
-                [computer_use]
-                allow_locked_computer_use = false
-                allow_persistent_approval = false
-                default_app_access = "deny"
-
-                [computer_use.macos.bundle_ids]
-                "com.apple.Safari" = "allow"
-
-                [computer_use.windows.aumids]
-                "Microsoft.Paint_8wekyb3d8bbwe!App" = "allow"
-
-                [[computer_use.windows.exes]]
-                publisher_name = "CN=Google LLC, O=Google LLC, L=Mountain View, S=California, C=US"
-                product_name = "Google Chrome"
-                binary_name = "chrome.exe"
-                access = "deny"
-            "#,
-        )?;
-
-        assert_eq!(requirements.allow_browser_and_computer_use, Some(false));
-        assert_eq!(
-            requirements.browser_use,
-            Some(BrowserUseRequirementsToml {
-                extension: None,
-                allow_webmcp: None,
-                allow_history_access: Some(false),
-                disable_auto_review: Some(true),
-                allow_global_persistent_approval: Some(false),
-                default_origin_policy: Some(BrowserUseOriginPolicyToml {
-                    access: Some(AllowDenyRequirementToml::Deny),
-                    downloads: Some(AllowDenyRequirementToml::Allow),
-                    uploads: Some(AllowDenyRequirementToml::Deny),
-                    full_cdp_access: Some(AllowDenyRequirementToml::Allow),
-                    auto_review: Some(AllowDenyRequirementToml::Deny),
-                    persistent_approval: Some(false),
-                    access_approval_lifetime: Some(BrowserUseAccessApprovalLifetimeToml::Turn),
-                }),
-                origins: Some(BTreeMap::from([(
-                    "https://example.com".to_string(),
-                    BrowserUseOriginPolicyToml {
-                        access: Some(AllowDenyRequirementToml::Allow),
-                        downloads: Some(AllowDenyRequirementToml::Deny),
-                        uploads: Some(AllowDenyRequirementToml::Allow),
-                        full_cdp_access: Some(AllowDenyRequirementToml::Deny),
-                        auto_review: Some(AllowDenyRequirementToml::Deny),
-                        persistent_approval: Some(true),
-                        access_approval_lifetime: Some(
-                            BrowserUseAccessApprovalLifetimeToml::Thread,
-                        ),
-                    },
-                )])),
-            })
-        );
-        assert_eq!(
-            requirements.computer_use,
-            Some(ComputerUseRequirementsToml {
-                allow_locked_computer_use: Some(false),
-                allow_persistent_approval: Some(false),
-                default_app_access: Some(AllowDenyRequirementToml::Deny),
-                macos: Some(ComputerUseMacosRequirementsToml {
-                    bundle_ids: Some(BTreeMap::from([(
-                        "com.apple.Safari".to_string(),
-                        AllowDenyRequirementToml::Allow,
-                    )])),
-                }),
-                windows: Some(ComputerUseWindowsRequirementsToml {
-                    aumids: Some(BTreeMap::from([(
-                        "Microsoft.Paint_8wekyb3d8bbwe!App".to_string(),
-                        AllowDenyRequirementToml::Allow,
-                    )])),
-                    exes: Some(vec![ComputerUseWindowsExeRequirementToml {
-                        publisher_name:
-                            "CN=Google LLC, O=Google LLC, L=Mountain View, S=California, C=US"
-                                .to_string(),
-                        product_name: "Google Chrome".to_string(),
-                        binary_name: Some("chrome.exe".to_string()),
-                        access: AllowDenyRequirementToml::Deny,
-                    }]),
-                }),
-            })
-        );
-        assert!(!requirements.is_empty());
-        Ok(())
-    }
-
-    #[test]
     fn browser_and_computer_use_leaf_requirements_are_not_empty() -> Result<()> {
         for (name, requirements_toml) in [
             (
@@ -3265,14 +3026,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
             (
                 "macOS bundle identifier",
                 "[computer_use.macos.bundle_ids]\n\"com.example.App\" = \"deny\"",
-            ),
-            (
-                "Windows AUMID",
-                "[computer_use.windows.aumids]\n\"Example.App_123!Main\" = \"deny\"",
-            ),
-            (
-                "Windows executable",
-                "[[computer_use.windows.exes]]\npublisher_name = \"CN=Example Corp\"\nproduct_name = \"Example App\"\naccess = \"deny\"",
             ),
         ] {
             let requirements: ConfigRequirementsToml = from_str(requirements_toml)?;
@@ -3369,7 +3122,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
             allow_persistent_approval: Some(false),
             default_app_access: None,
             macos: None,
-            windows: None,
         };
         let auto_review = AutoReviewRequirementsToml {
             required_on_models: Some(vec!["managed-model".to_string()]),
@@ -3391,11 +3143,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
                 .expect("managed model catalog path should be absolute");
         let feedback = FeedbackConfigToml {
             enabled: Some(false),
-        };
-        let windows = WindowsRequirementsToml {
-            allowed_sandbox_implementations: Some(vec![WindowsSandboxImplementationToml::Elevated]),
-            allow_mxc: None,
-            require_mxc: Some(true),
         };
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
@@ -3434,7 +3181,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
             computer_use: Some(computer_use.clone()),
             browser_use: Some(browser_use.clone()),
             in_app_browser: None,
-            windows: Some(windows.clone()),
             feature_requirements: Some(feature_requirements.clone()),
             hooks: None,
             mcp_servers: None,
@@ -3528,7 +3274,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
                 computer_use: Some(Sourced::new(computer_use, enforce_source.clone())),
                 browser_use: Some(Sourced::new(browser_use, enforce_source.clone())),
                 in_app_browser: None,
-                windows: Some(Sourced::new(windows, enforce_source.clone())),
                 feature_requirements: Some(Sourced::new(
                     feature_requirements,
                     enforce_source.clone(),
@@ -3596,7 +3341,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
                 computer_use: None,
                 browser_use: None,
                 in_app_browser: None,
-                windows: None,
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
@@ -3664,7 +3408,6 @@ tracestate = { managed = { tenant = "enterprise", region = "us" }, other = { kee
                 computer_use: None,
                 browser_use: None,
                 in_app_browser: None,
-                windows: None,
                 feature_requirements: None,
                 hooks: None,
                 mcp_servers: None,
@@ -3781,16 +3524,8 @@ allowed_approvals_reviewers = ["user"]
 
     #[test]
     fn deserialize_filesystem_deny_read_requirements() -> Result<()> {
-        let deny_read_0 = if cfg!(windows) {
-            r"C:\Users\alice\.gitconfig"
-        } else {
-            "/home/alice/.gitconfig"
-        };
-        let deny_read_1 = if cfg!(windows) {
-            r"C:\Users\alice\.ssh"
-        } else {
-            "/home/alice/.ssh"
-        };
+        let deny_read_0 = "/home/alice/.gitconfig";
+        let deny_read_1 = "/home/alice/.ssh";
         let toml_str = format!(
             r#"
             [permissions.filesystem]
@@ -4374,96 +4109,6 @@ allowed_approvals_reviewers = ["user"]
     }
 
     #[test]
-    fn deserialize_allowed_windows_sandbox_implementations() -> Result<()> {
-        let requirements: ConfigRequirementsToml = from_str("[windows]\nrequire_mxc = true")?;
-        assert!(!requirements.is_empty());
-
-        let toml_str = r#"
-            [windows]
-            allowed_sandbox_implementations = ["elevated"]
-        "#;
-        let config: ConfigRequirementsToml = from_str(toml_str)?;
-        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
-
-        assert_eq!(
-            requirements.windows_sandbox_mode.value(),
-            Some(WindowsSandboxModeToml::Elevated)
-        );
-        assert!(
-            requirements
-                .windows_sandbox_mode
-                .can_set(&Some(WindowsSandboxModeToml::Elevated))
-                .is_ok()
-        );
-        assert!(
-            requirements
-                .windows_sandbox_mode
-                .can_set(&Some(WindowsSandboxModeToml::Unelevated))
-                .is_err()
-        );
-        assert!(
-            requirements
-                .windows_sandbox_mode
-                .can_set(&Some(WindowsSandboxModeToml::Mxc))
-                .is_ok()
-        );
-        assert!(requirements.windows_sandbox_mode.can_set(&None).is_err());
-
-        for allow_mxc in [true, false] {
-            let config = from_str(&format!("{toml_str}\nallow_mxc = {allow_mxc}"))?;
-            let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
-            let constraint = &requirements.windows_sandbox_mode;
-            assert_eq!(
-                [
-                    Some(WindowsSandboxModeToml::Elevated),
-                    Some(WindowsSandboxModeToml::Unelevated),
-                    Some(WindowsSandboxModeToml::Mxc),
-                    None,
-                ]
-                .map(|mode| constraint.can_set(&mode).is_ok()),
-                [true, false, allow_mxc, false]
-            );
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn empty_allowed_windows_sandbox_implementations_is_rejected() -> Result<()> {
-        let toml_str = r#"
-            [windows]
-            allowed_sandbox_implementations = []
-        "#;
-        let config: ConfigRequirementsToml = from_str(toml_str)?;
-
-        assert_eq!(
-            ConfigRequirements::try_from(with_unknown_source(config)),
-            Err(ConstraintError::EmptyField {
-                field_name: "windows.allowed_sandbox_implementations".to_string(),
-            })
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn allowed_windows_sandbox_implementations_prefer_elevated_fallback() -> Result<()> {
-        let toml_str = r#"
-            [windows]
-            allowed_sandbox_implementations = ["unelevated", "elevated"]
-        "#;
-        let config: ConfigRequirementsToml = from_str(toml_str)?;
-        let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
-
-        assert_eq!(
-            requirements.windows_sandbox_mode.value(),
-            Some(WindowsSandboxModeToml::Elevated)
-        );
-
-        Ok(())
-    }
-
-    #[test]
     fn deserialize_legacy_allowed_approvals_reviewer() -> Result<()> {
         let toml_str = r#"
             allowed_approvals_reviewers = ["guardian_subagent", "user"]
@@ -4506,7 +4151,7 @@ allowed_approvals_reviewers = ["user"]
         let config: ConfigRequirementsToml = from_str(toml_str)?;
         let requirements: ConfigRequirements = with_unknown_source(config).try_into()?;
 
-        let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
+        let root = "/repo";
         assert!(
             requirements
                 .permission_profile
@@ -4621,7 +4266,7 @@ allowed_approvals_reviewers = ["user"]
         );
 
         let requirements = ConfigRequirements::try_from(requirements_with_sources)?;
-        let root = if cfg!(windows) { "C:\\repo" } else { "/repo" };
+        let root = "/repo";
         let workspace_write_profile = PermissionProfile::workspace_write_with(
             &[AbsolutePathBuf::from_absolute_path(root)?],
             NetworkSandboxPolicy::Restricted,
@@ -4970,7 +4615,6 @@ command = "python3 /enterprise/hooks/pre.py"
         let err = managed_hooks
             .set(ManagedHooksRequirementsToml {
                 managed_dir: Some(std::path::PathBuf::from("/other/hooks")),
-                windows_managed_dir: None,
                 hooks: Default::default(),
             })
             .expect_err("managed hooks should reject drift");
@@ -5556,6 +5200,99 @@ command = "python3 /enterprise/hooks/pre.py"
             }
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn deserialize_browser_and_computer_use_requirements() -> Result<()> {
+        let requirements: ConfigRequirementsToml = from_str(
+            r#"
+                allow_browser_and_computer_use = false
+
+                [browser_use]
+                allow_history_access = false
+                disable_auto_review = true
+                allow_global_persistent_approval = false
+
+                [browser_use.default_origin_policy]
+                access = "deny"
+                downloads = "allow"
+                uploads = "deny"
+                full_cdp_access = "allow"
+                auto_review = "deny"
+                persistent_approval = false
+                access_approval_lifetime = "turn"
+
+                [browser_use.origins."https://example.com"]
+                access = "allow"
+                downloads = "deny"
+                uploads = "allow"
+                full_cdp_access = "deny"
+                auto_review = "deny"
+                persistent_approval = true
+                access_approval_lifetime = "thread"
+
+                [computer_use]
+                allow_locked_computer_use = false
+                allow_persistent_approval = false
+                default_app_access = "deny"
+
+                [computer_use.macos.bundle_ids]
+                "com.apple.Safari" = "allow"
+
+
+            "#,
+        )?;
+
+        assert_eq!(requirements.allow_browser_and_computer_use, Some(false));
+        assert_eq!(
+            requirements.browser_use,
+            Some(BrowserUseRequirementsToml {
+                extension: None,
+                allow_webmcp: None,
+                allow_history_access: Some(false),
+                disable_auto_review: Some(true),
+                allow_global_persistent_approval: Some(false),
+                default_origin_policy: Some(BrowserUseOriginPolicyToml {
+                    access: Some(AllowDenyRequirementToml::Deny),
+                    downloads: Some(AllowDenyRequirementToml::Allow),
+                    uploads: Some(AllowDenyRequirementToml::Deny),
+                    full_cdp_access: Some(AllowDenyRequirementToml::Allow),
+                    auto_review: Some(AllowDenyRequirementToml::Deny),
+                    persistent_approval: Some(false),
+                    access_approval_lifetime: Some(BrowserUseAccessApprovalLifetimeToml::Turn),
+                }),
+                origins: Some(BTreeMap::from([(
+                    "https://example.com".to_string(),
+                    BrowserUseOriginPolicyToml {
+                        access: Some(AllowDenyRequirementToml::Allow),
+                        downloads: Some(AllowDenyRequirementToml::Deny),
+                        uploads: Some(AllowDenyRequirementToml::Allow),
+                        full_cdp_access: Some(AllowDenyRequirementToml::Deny),
+                        auto_review: Some(AllowDenyRequirementToml::Deny),
+                        persistent_approval: Some(true),
+                        access_approval_lifetime: Some(
+                            BrowserUseAccessApprovalLifetimeToml::Thread,
+                        ),
+                    },
+                )])),
+            })
+        );
+        assert_eq!(
+            requirements.computer_use,
+            Some(ComputerUseRequirementsToml {
+                allow_locked_computer_use: Some(false),
+                allow_persistent_approval: Some(false),
+                default_app_access: Some(AllowDenyRequirementToml::Deny),
+                macos: Some(ComputerUseMacosRequirementsToml {
+                    bundle_ids: Some(BTreeMap::from([(
+                        "com.apple.Safari".to_string(),
+                        AllowDenyRequirementToml::Allow,
+                    )])),
+                }),
+            })
+        );
+        assert!(!requirements.is_empty());
         Ok(())
     }
 }

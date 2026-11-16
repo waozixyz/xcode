@@ -9,7 +9,6 @@ use std::fs::FileTimes;
 use std::io;
 #[cfg(target_os = "macos")]
 use std::os::fd::AsRawFd;
-#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 
 // libc does not expose the macOS ACL APIs.
@@ -30,7 +29,6 @@ unsafe extern "C" {
 
 pub(super) fn copy(source: &File, destination: &File) -> io::Result<()> {
     let metadata = source.metadata()?;
-    #[cfg(unix)]
     {
         let destination_metadata = destination.metadata()?;
         if (destination_metadata.uid(), destination_metadata.gid())

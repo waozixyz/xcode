@@ -94,7 +94,7 @@ impl RemoteFileSystem {
         let response = client
             .fs_canonicalize(FsCanonicalizeParams {
                 path: path.clone(),
-                sandbox: read_sandbox(&client, path, sandbox).await?.cloned(),
+                sandbox: read_sandbox(path, sandbox).cloned(),
             })
             .await
             .map_err(map_remote_error)?;
@@ -113,7 +113,7 @@ impl RemoteFileSystem {
             .fs_read_file(FsReadFileParams {
                 path: path.clone(),
                 follow_symlinks: (!options.follow_symlinks).then_some(false),
-                sandbox: read_sandbox(&client, path, sandbox).await?.cloned(),
+                sandbox: read_sandbox(path, sandbox).cloned(),
             })
             .await
             .map_err(map_remote_error)?;
@@ -132,7 +132,7 @@ impl RemoteFileSystem {
     ) -> FileSystemResult<FileSystemReadStream> {
         trace!("remote fs read_file_stream");
         let client = self.client.get().await.map_err(map_remote_error)?;
-        let sandbox = read_sandbox(&client, path, sandbox).await?;
+        let sandbox = read_sandbox(path, sandbox);
         file_stream::open(client, path.clone(), sandbox).await
     }
 
@@ -231,7 +231,7 @@ impl RemoteFileSystem {
             .fs_get_metadata(FsGetMetadataParams {
                 path: path.clone(),
                 follow_symlinks: (!options.follow_symlinks).then_some(false),
-                sandbox: read_sandbox(&client, path, sandbox).await?.cloned(),
+                sandbox: read_sandbox(path, sandbox).cloned(),
             })
             .await
             .map_err(map_remote_error)?;
@@ -255,7 +255,7 @@ impl RemoteFileSystem {
         let response = client
             .fs_read_directory(FsReadDirectoryParams {
                 path: path.clone(),
-                sandbox: read_sandbox(&client, path, sandbox).await?.cloned(),
+                sandbox: read_sandbox(path, sandbox).cloned(),
             })
             .await
             .map_err(map_remote_error)?;
@@ -282,7 +282,7 @@ impl RemoteFileSystem {
             .fs_walk(FsWalkParams {
                 path: path.clone(),
                 options,
-                sandbox: read_sandbox(&client, path, sandbox).await?.cloned(),
+                sandbox: read_sandbox(path, sandbox).cloned(),
             })
             .await
             .map_err(map_remote_error)
@@ -574,11 +574,10 @@ impl Drop for FileWriteRegistration {
 // Older executors sandbox any supplied policy. Omit unrestricted read policies only when
 // their explicit paths are valid for the read target's convention. The executor rejects foreign
 // targets itself; keep uncertain policies intact so it also validates their explicit paths.
-async fn read_sandbox<'a>(
-    client: &ExecServerClient,
+fn read_sandbox<'a>(
     path: &PathUri,
     sandbox: Option<&'a FileSystemSandboxContext>,
-) -> FileSystemResult<Option<&'a FileSystemSandboxContext>> {
+) -> Option<&'a FileSystemSandboxContext> {
     let convention = path.infer_path_convention();
     let sandbox = sandbox.filter(|sandbox| {
         if sandbox.should_read_from_sandbox() {
@@ -601,13 +600,7 @@ async fn read_sandbox<'a>(
             path.validate_config_path(convention).is_err()
         })
     });
-    if sandbox.is_some_and(|sandbox| {
-        sandbox.windows_sandbox_selection == crate::WindowsSandboxSelection::Mxc
-    }) {
-        let info = client.environment_info().await.map_err(map_remote_error)?;
-        crate::sandbox_selection::validate_remote_mxc(&info)?;
-    }
-    Ok(sandbox)
+    sandbox
 }
 
 pub(crate) fn map_remote_error(error: ExecServerError) -> io::Error {
@@ -629,7 +622,7 @@ pub(crate) fn map_remote_error(error: ExecServerError) -> io::Error {
     }
 }
 
-#[cfg(all(test, any(unix, windows)))]
+#[cfg(test)]
 #[path = "remote_file_system_path_uri_tests.rs"]
 mod path_uri_tests;
 

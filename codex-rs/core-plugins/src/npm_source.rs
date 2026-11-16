@@ -172,16 +172,10 @@ fn validate_npm_package_metadata(plugin_root: &Path, package: &str) -> Result<()
     Ok(())
 }
 
-#[cfg(windows)]
-fn npm_command() -> &'static str {
-    "npm.cmd"
-}
-
-#[cfg(not(windows))]
 fn npm_command() -> &'static str {
     "npm"
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "npm_source_tests.rs"]
 mod tests;

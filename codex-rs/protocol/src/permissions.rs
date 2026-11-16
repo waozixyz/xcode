@@ -28,7 +28,6 @@ mod deny_read_validator;
 mod enforcement;
 mod local_aliases;
 mod target;
-mod windows_glob;
 
 use local_aliases::LocalPolicyContext;
 
@@ -37,8 +36,6 @@ pub use deny_read_validator::DenyReadViolation;
 pub use enforcement::FileSystemPolicyProjection;
 pub use enforcement::ResolvedFileSystemPermissions;
 pub use local_aliases::LocalFileSystemPolicyMatcher;
-pub use windows_glob::WindowsDenyReadGlobScan;
-pub use windows_glob::windows_deny_read_glob_scan;
 
 const PROTECTED_METADATA_GIT_PATH_NAME: &str = ".git";
 const PROTECTED_METADATA_AGENTS_PATH_NAME: &str = ".agents";
@@ -1521,7 +1518,7 @@ impl FileSystemSandboxPolicy {
                         FileSystemSpecialPath::ProjectRoots { subpath: Some(_) } => {
                             AbsolutePathBuf::from_absolute_path(cwd).is_ok()
                         }
-                        FileSystemSpecialPath::SlashTmp => cfg!(unix),
+                        FileSystemSpecialPath::SlashTmp => true,
                         FileSystemSpecialPath::Minimal | FileSystemSpecialPath::Unknown { .. } => {
                             false
                         }
@@ -2312,9 +2309,6 @@ fn resolve_file_system_special_path(
             }
         }
         FileSystemSpecialPath::SlashTmp => {
-            if !cfg!(unix) {
-                return None;
-            }
             #[allow(clippy::expect_used)]
             let slash_tmp = AbsolutePathBuf::from_absolute_path("/tmp").expect("/tmp is absolute");
             if !slash_tmp.as_path().is_dir() {

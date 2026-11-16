@@ -23,18 +23,6 @@ pub(super) async fn run_main_inner(
             "--add-dir is not supported with --remote. Configure additional workspace roots on the server.",
         ));
     }
-    #[cfg(windows)]
-    let elevated_warning = if explicit_remote_endpoint.is_none()
-        && !cli.no_daemon
-        && codex_app_server_daemon::is_elevated().map_err(std::io::Error::other)?
-    {
-        cli.no_daemon = true;
-        Some(daemon_startup::ELEVATED_LAUNCH_WARNING)
-    } else {
-        None
-    };
-    #[cfg(not(windows))]
-    let elevated_warning: Option<&str> = None;
     let strict_config = cli.strict_config;
     if cli.shared.worktree {
         if explicit_remote_endpoint.is_some() {
@@ -489,8 +477,8 @@ pub(super) async fn run_main_inner(
     } else {
         None
     };
-    let auto_start_daemon = cfg!(any(unix, windows))
-        && (cli.agents_overview || config.features.enabled(Feature::DaemonAutoStart))
+    let auto_start_daemon = (cli.agents_overview
+        || config.features.enabled(Feature::DaemonAutoStart))
         && implicit_connection
         && !cli.no_daemon
         && !app_server_target.uses_remote_workspace();
@@ -547,10 +535,6 @@ pub(super) async fn run_main_inner(
                 daemon_telemetry::record_start(&config, &result).await;
                 match result.map_err(|err| err.error) {
                     Ok(output) => Ok(Some(output)),
-                    #[cfg(windows)]
-                    Err(err) if err.is::<codex_app_server_daemon::DetachedLaunchRestricted>() => {
-                        Ok(None)
-                    }
                     Err(err) => Err(std::io::Error::other(format!(
                         "{err:#}\n{}",
                         daemon_startup::FAILURE_HINT
@@ -586,18 +570,15 @@ pub(super) async fn run_main_inner(
     if app_server_target.uses_embedded_network_policy() {
         embedded_network_policy.activate(&mut config);
     }
-    let daemon_startup_warning = elevated_warning
-        .map(str::to_string)
-        .or(compatibility_warning)
-        .or_else(|| {
-            daemon_exclusion
+    let daemon_startup_warning = compatibility_warning.or_else(|| {
+        daemon_exclusion
             .filter(|_| auto_start_daemon)
             .map(|reason| {
                 format!(
                     "Running without the shared background server: {reason} requires embedded mode."
                 )
             })
-        });
+    });
     #[cfg(target_os = "macos")]
     let local_runtime_paths = local_runtime_paths.with_allowed_symlinked_codex_home(
         codex_config::allowed_symlinked_codex_home(&config.config_layer_stack, &config.codex_home),
@@ -660,7 +641,6 @@ pub(super) async fn run_main_inner(
         (AppServerTarget::Remote { .. }, _) => "explicit_remote",
         (AppServerTarget::Cloud, _) => "cloud",
         _ if cli.agents_overview => "agents",
-        _ if elevated_warning.is_some() => "elevated_windows",
         (_, Some("--no-daemon")) => "explicit_no_daemon",
         (_, Some(_)) => "incompatible_option",
         _ if auto_start_daemon => "auto_start",
@@ -724,7 +704,6 @@ pub(super) async fn run_main_inner(
         let _ = metrics.counter("codex.tui.start", /*inc*/ 1, &launch_tags);
         if app_server_mode == "in_process" {
             let reason = match daemon_exclusion {
-                _ if elevated_warning.is_some() => "windows_elevated",
                 Some("--no-daemon") => "explicit_no_daemon",
                 Some("--profile") => "profile",
                 Some("--oss") => "oss",
@@ -832,10 +811,6 @@ pub(super) async fn run_main_inner(
         let mut log_file_opts = OpenOptions::new();
         log_file_opts.create(true).append(true);
 
-        // Ensure the file is only readable and writable by the current user.
-        // Doing the equivalent to `chmod 600` on Windows is quite a bit more
-        // code and requires the Windows API crates.
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             log_file_opts.mode(0o600);
@@ -865,7 +840,6 @@ pub(super) async fn run_main_inner(
     let feedback = codex_feedback::CodexFeedback::new();
     let feedback_layer = feedback.logger_layer();
     let feedback_metadata_layer = feedback.metadata_layer();
-
 
     let otel_logger_layer = otel.as_ref().and_then(|o| o.logger_layer());
 

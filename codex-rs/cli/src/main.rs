@@ -49,12 +49,12 @@ use supports_color::Stream;
 #[global_allocator]
 static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 mod app_cmd;
 mod config_override_args;
 mod daemon_install;
 mod daemon_telemetry;
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 mod desktop_app;
 mod doctor;
 #[cfg(test)]
@@ -71,11 +71,7 @@ mod migrate_rollouts;
 mod plugin_cmd;
 mod queue_cmd;
 mod remote_control_cmd;
-#[cfg(target_os = "windows")]
-mod sandbox_setup;
-mod sandbox_uninstall;
 mod state_db_recovery;
-#[cfg(not(windows))]
 mod wsl_paths;
 
 #[path = "../../../native/allocator.rs"]
@@ -175,7 +171,7 @@ enum Subcommand {
     RemoteControl(RemoteControlCommand),
 
     /// Launch the Desktop app (opens the app installer if missing).
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
@@ -438,40 +434,12 @@ impl clap::FromArgMatches for SessionTuiCli {
 struct SandboxCommand {
     #[command(flatten)]
     host: HostSandboxArgs,
-
-    #[command(subcommand)]
-    subcommand: Option<SandboxSubcommand>,
-}
-
-#[derive(Debug, clap::Subcommand)]
-enum SandboxSubcommand {
-    Uninstall(sandbox_uninstall::SandboxUninstallCommand),
 }
 
 #[cfg(target_os = "macos")]
 type HostSandboxArgs = codex_cli::SeatbeltCommand;
 #[cfg(target_os = "linux")]
 type HostSandboxArgs = codex_cli::LandlockCommand;
-#[cfg(target_os = "windows")]
-type HostSandboxArgs = codex_cli::WindowsCommand;
-
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-type HostSandboxArgs = UnsupportedSandboxArgs;
-
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-#[derive(Debug, Parser)]
-struct UnsupportedSandboxArgs {
-    /// Layer $CODEX_HOME/<name>.config.toml on top of the base user config.
-    #[arg(long = "profile", short = 'p')]
-    pub config_profile: Option<ProfileV2Name>,
-
-    #[clap(skip)]
-    pub config_overrides: CliConfigOverrides,
-
-    /// Full command args to run under the host sandbox.
-    #[arg(trailing_var_arg = true)]
-    pub command: Vec<String>,
-}
 
 #[derive(Debug, Parser)]
 struct ExecpolicyCommand {
@@ -792,31 +760,6 @@ fn run_update_action(
     let cmd_str = action.command_str();
     println!("Updating Codex via `{cmd_str}`...");
     let status = {
-        #[cfg(windows)]
-        {
-            let (cmd, args) = action.command_args();
-            let cmd = if action == UpdateAction::StandaloneWindows {
-                // These args contain PowerShell metacharacters, so do not let
-                // PATHEXT select a batch shim for this action.
-                "powershell.exe"
-            } else {
-                cmd
-            };
-            let path_env =
-                std::env::var_os("PATH").ok_or_else(|| anyhow::anyhow!("PATH is not set"))?;
-            let command_path = resolve_windows_update_command_from_path(cmd, &path_env)?;
-            // Do not let a project-local command or package-manager config
-            // influence the updater after the user accepts the update prompt.
-            let update_cwd = tempfile::tempdir()?;
-            // Resolve through PATH without consulting the project cwd. When
-            // this returns a .cmd/.bat shim, std::process::Command routes the
-            // absolute path through the system command processor.
-            std::process::Command::new(command_path)
-                .args(args)
-                .current_dir(update_cwd.path())
-                .status()?
-        }
-        #[cfg(not(windows))]
         {
             let (cmd, args) = action.command_args();
             let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
@@ -836,23 +779,6 @@ fn run_update_action(
     }
     println!("\n🎉 Update ran successfully! Please restart Codex.");
     Ok(())
-}
-
-#[cfg(windows)]
-fn resolve_windows_update_command_from_path(
-    command: &str,
-    path_env: &std::ffi::OsStr,
-) -> anyhow::Result<PathBuf> {
-    let path_env =
-        std::env::join_paths(std::env::split_paths(path_env).filter(|path| path.is_absolute()))?;
-    if path_env.is_empty() {
-        anyhow::bail!(
-            "Could not find an absolute update command `{command}` on PATH. Please update manually: https://developers.openai.com/codex/cli/"
-        );
-    }
-    which::which_in_global(command, Some(&path_env))?
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("could not find update command `{command}` on PATH"))
 }
 
 fn run_update_command() -> anyhow::Result<()> {
@@ -1530,7 +1456,7 @@ async fn dispatch_cli(
             )
             .await?;
         }
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         Some(Subcommand::App(app_cli)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1748,7 +1674,6 @@ async fn dispatch_cli(
         }
         Some(Subcommand::Sandbox(SandboxCommand {
             host: mut sandbox_cli,
-            subcommand,
         })) => {
             let config_profile = sandbox_cli
                 .config_profile
@@ -1758,29 +1683,11 @@ async fn dispatch_cli(
                 &mut sandbox_cli.config_overrides,
                 root_config_overrides.clone(),
             );
-            #[cfg(target_os = "windows")]
-            if let Some(setup_cli) = sandbox_setup::parse_setup_command(&sandbox_cli.command)? {
-                reject_remote_mode_for_subcommand(
-                    root_remote.as_deref(),
-                    root_remote_auth_token_env.as_deref(),
-                    "sandbox setup",
-                )?;
-                let cli_overrides = sandbox_cli
-                    .config_overrides
-                    .parse_overrides()
-                    .map_err(anyhow::Error::msg)?;
-                sandbox_setup::run(setup_cli, config_profile.cloned(), cli_overrides).await?;
-                return Ok(None);
-            }
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
                 root_remote_auth_token_env.as_deref(),
                 "sandbox",
             )?;
-            if let Some(SandboxSubcommand::Uninstall(command)) = subcommand {
-                command.run()?;
-                return Ok(None);
-            }
             let loader_overrides = loader_overrides_for_profile(config_profile)?;
             #[cfg(target_os = "macos")]
             codex_cli::run_command_under_seatbelt(
@@ -1796,18 +1703,6 @@ async fn dispatch_cli(
                 loader_overrides,
             )
             .await?;
-            #[cfg(target_os = "windows")]
-            codex_cli::run_command_under_windows_sandbox(
-                sandbox_cli,
-                arg0_paths.codex_linux_sandbox_exe.clone(),
-                loader_overrides,
-            )
-            .await?;
-            #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-            {
-                let _ = loader_overrides;
-                anyhow::bail!("`codex sandbox` is not supported on this operating system");
-            }
         }
         Some(Subcommand::Debug(DebugCommand { subcommand })) => match subcommand {
             DebugSubcommand::Models(cmd) => {
@@ -2354,7 +2249,7 @@ fn unsupported_subcommand_name_for_strict_config(
         Some(Subcommand::Plugin(_)) => Some("plugin"),
         Some(Subcommand::MigrateRollouts(_)) => Some("migrate-rollouts"),
         Some(Subcommand::MigrateNfsDb(_)) => Some("migrate-nfs-db"),
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         Some(Subcommand::App(_)) => Some("app"),
         Some(Subcommand::Login(_)) => Some("login"),
         Some(Subcommand::Logout(_)) => Some("logout"),
@@ -2799,52 +2694,6 @@ mod tests {
         let size = std::mem::size_of_val(&future);
 
         assert!(size < 64 * 1024, "interactive TUI future is {size} bytes");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_update_command_resolution_ignores_relative_path_entries() {
-        let cwd = std::env::current_dir().expect("current directory");
-        let decoy_dir = tempfile::tempdir_in(&cwd).expect("relative decoy directory");
-        let trusted_dir = tempfile::tempdir().expect("trusted PATH directory");
-        let relative_decoy_dir = decoy_dir
-            .path()
-            .strip_prefix(&cwd)
-            .expect("decoy directory should be relative to cwd");
-
-        for command in ["npm.cmd", "pnpm.cmd", "bun.exe"] {
-            std::fs::write(decoy_dir.path().join(command), "decoy")
-                .expect("write cwd-relative decoy");
-            std::fs::write(trusted_dir.path().join(command), "trusted")
-                .expect("write trusted PATH command");
-            let path_env = std::env::join_paths([relative_decoy_dir, trusted_dir.path()])
-                .expect("join synthetic PATH");
-
-            let resolved = resolve_windows_update_command_from_path(command, &path_env)
-                .expect("resolve update command");
-
-            assert_eq!(resolved, trusted_dir.path().join(command));
-        }
-
-        let cwd_decoy = tempfile::Builder::new()
-            .suffix(".cmd")
-            .tempfile_in(&cwd)
-            .expect("cwd-local decoy");
-        let command = cwd_decoy
-            .path()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("decoy filename");
-        let relative_only_path_env = std::env::join_paths(["."]).expect("join relative-only PATH");
-        let err = resolve_windows_update_command_from_path(command, &relative_only_path_env)
-            .expect_err("relative-only PATH should not resolve a cwd command");
-
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "Could not find an absolute update command `{command}` on PATH. Please update manually: https://developers.openai.com/codex/cli/"
-            )
-        );
     }
 
     #[tokio::test]
@@ -3610,39 +3459,6 @@ enabled = true
     }
 
     #[test]
-    fn sandbox_uninstall_respects_command_separator() {
-        let cli = MultitoolCli::try_parse_from(["codex", "sandbox", "uninstall"]).expect("parse");
-        assert!(matches!(
-            cli.subcommand,
-            Some(Subcommand::Sandbox(SandboxCommand {
-                subcommand: Some(SandboxSubcommand::Uninstall(_)),
-                ..
-            }))
-        ));
-
-        for args in [
-            vec!["codex", "sandbox", "--", "uninstall", "--help"],
-            vec![
-                "codex",
-                "sandbox",
-                "--profile",
-                "uninstall",
-                "--",
-                "uninstall",
-                "--help",
-            ],
-        ] {
-            let cli = MultitoolCli::try_parse_from(args).expect("parse forwarded command");
-            let Some(Subcommand::Sandbox(command)) = cli.subcommand else {
-                panic!("expected sandbox command");
-            };
-            assert!(command.subcommand.is_none());
-            assert_eq!(command.host.command, vec!["uninstall", "--help"]);
-        }
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    #[test]
     fn sandbox_parses_permission_profile() {
         let cli = MultitoolCli::try_parse_from([
             "codex",
@@ -3662,7 +3478,6 @@ enabled = true
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn sandbox_parses_legacy_permissions_profile_alias() {
         let cli = MultitoolCli::try_parse_from([
@@ -3683,7 +3498,6 @@ enabled = true
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn sandbox_help_only_shows_singular_permission_profile() {
         let help = help_from_args(&["codex", "sandbox", "--help"]);
@@ -3691,7 +3505,6 @@ enabled = true
         assert!(!help.contains("--permissions-profile"), "{help}");
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn sandbox_parses_permissions_profile_short_alias() {
         let cli =
@@ -3706,7 +3519,6 @@ enabled = true
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn sandbox_parses_config_profile() {
         let cli =
@@ -3721,7 +3533,6 @@ enabled = true
         assert_eq!(command.command, vec!["echo"]);
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     #[test]
     fn sandbox_rejects_explicit_profile_controls_without_profile() {
         let err = MultitoolCli::try_parse_from(["codex", "sandbox", "-C", "/tmp"])
@@ -4912,6 +4723,6 @@ enabled = true
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "daemon_update_tests.rs"]
 mod daemon_update_tests;

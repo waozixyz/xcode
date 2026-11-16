@@ -8,13 +8,10 @@
 //! Original Unix inputs retain their NUL validation even when std replaces them.
 
 use std::ffi::OsStr;
-#[cfg(unix)]
 use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 use std::process::Stdio as TokioStdio;
-#[cfg(windows)]
-use winapi::um::winbase::CREATE_NO_WINDOW;
 
 use crate::child::Child;
 use crate::child::ChildKind;
@@ -65,31 +62,23 @@ pub(crate) enum ChildDropPolicy {
 pub enum ChildStdin {
     Piped,
     Null,
-    #[cfg(unix)]
     File(std::os::fd::OwnedFd),
-    #[cfg(windows)]
-    File(std::os::windows::io::OwnedHandle),
 }
 
 /// A local command whose complete launch contract is known to both backends.
 pub struct Command {
     pub(crate) inner: tokio::process::Command,
-    #[cfg(unix)]
     saw_nul: bool,
     pub(crate) process_mode: ProcessMode,
     pub(crate) descriptor_policy: DescriptorPolicy,
     pub(crate) fallback: SpawnFallback,
     pub(crate) stdin: ChildStdin,
     pub(crate) drop_policy: ChildDropPolicy,
-    #[cfg(unix)]
     pub(crate) inherited_fds: Vec<std::os::fd::RawFd>,
     #[cfg(target_os = "linux")]
     parent_pid: Option<libc::pid_t>,
-    #[cfg(unix)]
     pub(crate) stdout_file: Option<std::os::fd::OwnedFd>,
-    #[cfg(unix)]
     pub(crate) stderr_file: Option<std::os::fd::OwnedFd>,
-    #[cfg(unix)]
     pub(crate) arg0: Option<OsString>,
 }
 
@@ -103,33 +92,25 @@ impl Command {
             .stdin(TokioStdio::piped())
             .stdout(TokioStdio::piped())
             .stderr(TokioStdio::piped());
-        #[cfg(windows)]
-        inner.creation_flags(CREATE_NO_WINDOW);
         Self {
             inner,
-            #[cfg(unix)]
             saw_nul: program.as_encoded_bytes().contains(&0),
             process_mode: ProcessMode::Inherit,
             descriptor_policy: DescriptorPolicy::Inherit,
             fallback: SpawnFallback::Compatible,
             stdin: ChildStdin::Piped,
             drop_policy: ChildDropPolicy::KillAndReap,
-            #[cfg(unix)]
             inherited_fds: Vec::new(),
             #[cfg(target_os = "linux")]
             parent_pid: None,
-            #[cfg(unix)]
             stdout_file: None,
-            #[cfg(unix)]
             stderr_file: None,
-            #[cfg(unix)]
             arg0: None,
         }
     }
 
     pub fn arg(&mut self, arg: impl AsRef<OsStr>) -> &mut Self {
         let arg = arg.as_ref();
-        #[cfg(unix)]
         {
             self.saw_nul |= arg.as_encoded_bytes().contains(&0);
         }
@@ -160,7 +141,6 @@ impl Command {
 
     pub fn current_dir(&mut self, cwd: impl AsRef<Path>) -> &mut Self {
         let cwd = cwd.as_ref();
-        #[cfg(unix)]
         {
             self.saw_nul |= cwd.as_os_str().as_encoded_bytes().contains(&0);
         }
@@ -188,20 +168,6 @@ impl Command {
         self
     }
 
-    /// Supply the child endpoint of a Windows output pipe.
-    #[cfg(windows)]
-    pub fn stdout_handle(&mut self, handle: std::os::windows::io::OwnedHandle) -> &mut Self {
-        self.inner.stdout(TokioStdio::from(handle));
-        self
-    }
-
-    /// Supply the child endpoint of a Windows diagnostic pipe.
-    #[cfg(windows)]
-    pub fn stderr_handle(&mut self, handle: std::os::windows::io::OwnedHandle) -> &mut Self {
-        self.inner.stderr(TokioStdio::from(handle));
-        self
-    }
-
     pub fn descriptor_policy(&mut self, policy: DescriptorPolicy) -> &mut Self {
         self.descriptor_policy = policy;
         self
@@ -216,7 +182,6 @@ impl Command {
     /// The caller must keep them open until spawning returns. We do not duplicate
     /// or close them: closing even a duplicate releases the parent's POSIX record
     /// locks. Closed and CLOEXEC descriptors remain excluded.
-    #[cfg(unix)]
     pub fn preserve_fds(&mut self, fds: &[std::os::fd::RawFd]) -> &mut Self {
         self.inherited_fds = fds
             .iter()
@@ -232,7 +197,6 @@ impl Command {
 
     /// Explicit launch attachments, including CLOEXEC descriptors. The caller
     /// owns them through spawn; only the child's flags are changed.
-    #[cfg(unix)]
     pub(crate) fn inherit_fds(&mut self, fds: &[std::os::fd::RawFd]) -> &mut Self {
         self.inherited_fds = fds.to_vec();
         self
@@ -246,7 +210,6 @@ impl Command {
         self
     }
 
-    #[cfg(unix)]
     pub fn arg0(&mut self, arg0: impl AsRef<OsStr>) -> &mut Self {
         self.saw_nul |= arg0.as_ref().as_encoded_bytes().contains(&0);
         self.inner.arg0(arg0.as_ref());
@@ -254,14 +217,7 @@ impl Command {
         self
     }
 
-    /// Preserve Job Object assignment before the child begins executing on Windows.
-    #[cfg(windows)]
-    pub fn prepare_suspended_spawn(&mut self, job: &crate::JobObject) {
-        job.prepare_suspended_spawn(&mut self.inner);
-    }
-
     /// Reject original inputs that std replaced with a NUL-free placeholder.
-    #[cfg(unix)]
     pub(crate) fn validate(&self) -> io::Result<()> {
         if self.saw_nul {
             return Err(io::Error::new(
@@ -274,13 +230,10 @@ impl Command {
 
     /// Launch with native platform settings and the existing compatibility fallback.
     pub fn spawn(mut self) -> io::Result<Child> {
-        #[cfg(unix)]
         self.validate()?;
-        #[cfg(unix)]
         if let ProcessMode::NewGroup = self.process_mode {
             self.inner.process_group(/*pgroup*/ 0);
         }
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             let command = self.inner.as_std();
             let program = command.get_program();
@@ -303,12 +256,8 @@ impl Command {
         self.inner.stdin(match self.stdin {
             ChildStdin::Piped => TokioStdio::piped(),
             ChildStdin::Null => TokioStdio::null(),
-            #[cfg(unix)]
             ChildStdin::File(fd) => TokioStdio::from(fd),
-            #[cfg(windows)]
-            ChildStdin::File(handle) => TokioStdio::from(handle),
         });
-        #[cfg(unix)]
         {
             let new_session = matches!(self.process_mode, ProcessMode::NewSession);
             let explicit_fds = self.descriptor_policy == DescriptorPolicy::Explicit;
@@ -339,7 +288,6 @@ impl Command {
                 }
             }
         }
-        #[cfg(unix)]
         {
             if let Some(fd) = self.stdout_file {
                 self.inner.stdout(TokioStdio::from(fd));
@@ -348,7 +296,6 @@ impl Command {
                 self.inner.stderr(TokioStdio::from(fd));
             }
         }
-        #[cfg(unix)]
         let reaper = match self.drop_policy {
             ChildDropPolicy::KillAndReap => None,
             ChildDropPolicy::ReapOnly => Some(crate::child::reaper::sender()?),
@@ -359,7 +306,6 @@ impl Command {
             stdout: child.stdout.take(),
             stderr: child.stderr.take(),
             inner: {
-                #[cfg(unix)]
                 {
                     match reaper {
                         Some(reaper) => ChildKind::TokioReapOnly {
@@ -369,14 +315,12 @@ impl Command {
                         None => ChildKind::Tokio(child),
                     }
                 }
-                #[cfg(not(unix))]
-                ChildKind::Tokio(child)
             },
         })
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "command_validation_tests.rs"]
 mod validation_tests;
 

@@ -49,7 +49,7 @@ pub fn uses_wsl_drvfs(codex_home: &std::path::Path) -> bool {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(test)]
 pub(super) const ELEVATED_LAUNCH_WARNING: &str = "Running as administrator: shared background server disabled. To enable it, restart Codex in a terminal without administrator permissions.";
 
 #[derive(Debug, thiserror::Error)]

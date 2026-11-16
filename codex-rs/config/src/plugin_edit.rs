@@ -273,7 +273,6 @@ enabled = true
     }
 
     #[tokio::test]
-    #[cfg(unix)]
     async fn set_user_plugin_enabled_follows_config_symlink() {
         use std::os::unix::fs::symlink;
 

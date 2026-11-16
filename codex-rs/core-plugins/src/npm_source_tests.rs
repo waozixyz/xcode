@@ -5,7 +5,6 @@ use pretty_assertions::assert_eq;
 use std::io::Cursor;
 use std::io::Write;
 
-#[cfg(unix)]
 #[test]
 fn materialize_npm_plugin_source_uses_packed_package_root() {
     let codex_home = tempfile::tempdir().expect("create codex home");

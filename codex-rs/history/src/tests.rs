@@ -813,12 +813,7 @@ fn rollout_item_variants_preserve_existing_payload_shapes() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let foreign_file_system = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
         path: FileSystemPath::Path {
-            path: if cfg!(windows) {
-                "file:///workspace/foreign"
-            } else {
-                "file:///C:/workspace/foreign"
-            }
-            .parse()?,
+            path: "file:///C:/workspace/foreign".parse()?,
         },
         access: FileSystemAccessMode::Write,
         missing_path_behavior: None,

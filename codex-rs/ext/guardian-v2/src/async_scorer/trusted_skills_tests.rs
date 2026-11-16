@@ -50,7 +50,6 @@ async fn trusts_only_user_owned_skill_roots() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rejects_skills_that_escape_user_roots_through_symlinks() -> Result<()> {
     skip_if_no_network!(Ok(()));

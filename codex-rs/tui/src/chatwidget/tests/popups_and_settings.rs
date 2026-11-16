@@ -4356,50 +4356,6 @@ async fn feedback_stops_before_collecting_a_note_when_no_destination_is_availabl
 }
 
 #[tokio::test]
-async fn feedback_upload_consent_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::Bug,
-        chat.current_rollout_path.clone(),
-        Some("auto-review-rollout-thread-1.jsonl".to_string()),
-        /*include_windows_sandbox_log*/ true,
-        /*can_save*/ true,
-        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
-            headline: "Proxy environment variables are set and may affect connectivity."
-                .to_string(),
-            details: vec!["HTTPS_PROXY = hello".to_string()],
-        }]),
-    ));
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("feedback_upload_consent_popup", popup);
-}
-
-#[tokio::test]
-async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_filename() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-
-    chat.show_selection_view(crate::bottom_pane::feedback_consent_params(
-        chat.app_event_tx.clone(),
-        crate::app_event::FeedbackCategory::GoodResult,
-        chat.current_rollout_path.clone(),
-        Some("auto-review-rollout-thread-1.jsonl".to_string()),
-        /*include_windows_sandbox_log*/ false,
-        /*can_save*/ true,
-        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
-            headline: "Proxy environment variables are set and may affect connectivity."
-                .to_string(),
-            details: vec!["HTTPS_PROXY = hello".to_string()],
-        }]),
-    ));
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("feedback_good_result_consent_popup", popup);
-}
-
-#[tokio::test]
 async fn reasoning_popup_escape_returns_to_model_popup() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.5")).await;
     chat.thread_id = Some(ThreadId::new());
@@ -4444,4 +4400,46 @@ async fn account_change_dismisses_the_previous_app_directory_snapshot() {
         "connector_scope_invalidation",
         format!("Before account change:\n{before}\n\nAfter account change:\n{after}")
     );
+}
+
+#[tokio::test]
+async fn feedback_upload_consent_popup_snapshot() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.show_selection_view(crate::bottom_pane::feedback_consent_params(
+        chat.app_event_tx.clone(),
+        crate::app_event::FeedbackCategory::Bug,
+        chat.current_rollout_path.clone(),
+        Some("auto-review-rollout-thread-1.jsonl".to_string()),
+        /*can_save*/ true,
+        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
+            headline: "Proxy environment variables are set and may affect connectivity."
+                .to_string(),
+            details: vec!["HTTPS_PROXY = hello".to_string()],
+        }]),
+    ));
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert_chatwidget_snapshot!("feedback_upload_consent_popup", popup);
+}
+
+#[tokio::test]
+async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_filename() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.show_selection_view(crate::bottom_pane::feedback_consent_params(
+        chat.app_event_tx.clone(),
+        crate::app_event::FeedbackCategory::GoodResult,
+        chat.current_rollout_path.clone(),
+        Some("auto-review-rollout-thread-1.jsonl".to_string()),
+        /*can_save*/ true,
+        &codex_feedback::FeedbackDiagnostics::new(vec![codex_feedback::FeedbackDiagnostic {
+            headline: "Proxy environment variables are set and may affect connectivity."
+                .to_string(),
+            details: vec!["HTTPS_PROXY = hello".to_string()],
+        }]),
+    ));
+
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert_chatwidget_snapshot!("feedback_good_result_consent_popup", popup);
 }

@@ -20,7 +20,6 @@ use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::path::Path;
-#[cfg(unix)]
 use std::process::Command as StdCommand;
 use std::process::Stdio;
 use tempfile::TempDir;
@@ -363,7 +362,6 @@ async fn managed_shutdown_preserves_admitted_resume() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn managed_force_shutdown_exits_with_blocked_rollout_writer() -> Result<()> {
     use core_test_support::responses;
@@ -834,7 +832,6 @@ pub(super) fn spawn_server(home: &Path, socket_path: &Path) -> Result<Child> {
         .spawn()?)
 }
 
-#[cfg(unix)]
 async fn request_shutdown(server: &Child, _socket_path: &Path) -> Result<()> {
     let pid = server.id().context("server pid")?;
     let status = StdCommand::new("kill")
@@ -843,24 +840,6 @@ async fn request_shutdown(server: &Child, _socket_path: &Path) -> Result<()> {
         .status()?;
     anyhow::ensure!(status.success(), "failed to signal server {pid}: {status}");
     Ok(())
-}
-
-#[cfg(windows)]
-async fn request_shutdown(server: &Child, socket_path: &Path) -> Result<()> {
-    let pid = server.id().context("server pid")?.to_string();
-    timeout(DEFAULT_READ_TIMEOUT, async {
-        let stream = UnixStream::connect(socket_path).await?;
-        let (mut websocket, _) = client_async("ws://localhost/daemon/shutdown", stream).await?;
-        websocket.send(Message::Text(pid.clone().into())).await?;
-        let reply = websocket
-            .next()
-            .await
-            .context("missing shutdown acknowledgment")??;
-        assert_eq!(reply, Message::Text(pid.into()));
-        websocket.close(None).await?;
-        Ok(())
-    })
-    .await?
 }
 
 async fn connect_initialized(

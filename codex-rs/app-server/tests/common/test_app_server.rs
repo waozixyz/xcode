@@ -123,7 +123,6 @@ use codex_app_server_protocol::TurnInterruptParams;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
-use codex_app_server_protocol::WindowsSandboxSetupStartParams;
 use codex_exec_server::CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN_ENV_VAR;
 use codex_exec_server::CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID_ENV_VAR;
 use codex_exec_server::CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID_ENV_VAR;
@@ -169,9 +168,6 @@ pub struct TestAppServer {
 pub const DEFAULT_CLIENT_NAME: &str = "codex-app-server-tests";
 pub const DISABLE_PLUGIN_STARTUP_TASKS_ARG: &str = "--disable-plugin-startup-tasks-for-tests";
 const DISABLE_MANAGED_CONFIG_ENV_VAR: &str = "CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG";
-#[cfg(windows)]
-const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
-#[cfg(not(windows))]
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl TestAppServer {
@@ -193,7 +189,6 @@ impl TestAppServer {
         self.process.wait().await
     }
 
-    #[cfg(unix)]
     pub fn send_sigterm(&self) -> anyhow::Result<()> {
         let pid = self.process.id().context("app-server has no pid")?;
         let status = std::process::Command::new("kill")
@@ -1325,14 +1320,6 @@ impl TestAppServer {
     ) -> anyhow::Result<i64> {
         let params = Some(serde_json::to_value(params)?);
         self.send_request("review/start", params).await
-    }
-
-    pub async fn send_windows_sandbox_setup_start_request(
-        &mut self,
-        params: WindowsSandboxSetupStartParams,
-    ) -> anyhow::Result<i64> {
-        let params = Some(serde_json::to_value(params)?);
-        self.send_request("windowsSandbox/setupStart", params).await
     }
 
     pub async fn send_config_read_request(

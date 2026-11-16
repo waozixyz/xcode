@@ -195,7 +195,6 @@ impl LocalStdioTransport {
         rx
     }
 
-    #[cfg(unix)]
     pub(super) fn take_child(&mut self) -> Option<Box<Child>> {
         self.child.take()
     }

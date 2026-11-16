@@ -312,7 +312,6 @@ async fn agent_plugin_codex_mcp_overlay_supports_inline_legacy_servers_without_p
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn agent_plugin_mcp_rejects_config_symlink_outside_plugin_root() {
     let temp_dir = TempDir::new().expect("tempdir");

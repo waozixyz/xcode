@@ -1,28 +1,19 @@
 use std::sync::Mutex;
-#[cfg(unix)]
 use std::time::Duration;
 
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use tempfile::TempDir;
 
 use super::INSTALL_URL;
 use super::InstallerHttp;
 use super::InstallerResponse;
 use super::fetch_installer_script;
-#[cfg(unix)]
 use super::manual_update::run as manual_update_once;
-#[cfg(unix)]
 use crate::Daemon;
-#[cfg(unix)]
 use crate::RestartIfRunningOutcome;
-#[cfg(unix)]
 use crate::UpdateOutput;
-#[cfg(unix)]
 use crate::UpdateStatus;
-#[cfg(unix)]
 use crate::managed_install::executable_identity;
-#[cfg(unix)]
 use crate::managed_install::executable_identity_from_reader;
 
 #[tokio::test]
@@ -51,7 +42,6 @@ async fn installer_fetch_rejects_non_success_status() {
     assert_eq!(http.requested_urls(), vec![INSTALL_URL.to_string()]);
 }
 
-#[cfg(unix)]
 #[test]
 fn updater_reexec_preserves_paths_and_recovers_deleted_working_directory() {
     use std::os::unix::ffi::OsStrExt;
@@ -155,7 +145,6 @@ fn updater_reexec_preserves_paths_and_recovers_deleted_working_directory() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn updater_reexec_child() {
     use std::os::unix::process::CommandExt;
@@ -194,7 +183,6 @@ struct FakeInstallerHttp {
     requested_urls: Mutex<Vec<String>>,
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn explicit_update_migrates_running_and_stopped_installations() {
     for (running, local) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -372,7 +360,6 @@ impl InstallerHttp for FakeInstallerHttp {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cancelling_installer_stops_children_and_releases_fallback_lock() {
     let home = tempfile::TempDir::new().expect("home");
@@ -417,7 +404,6 @@ async fn cancelling_installer_stops_children_and_releases_fallback_lock() {
     assert!(!delayed.exists());
 }
 
-#[cfg(unix)]
 fn manual_update_daemon(home: &TempDir) -> (Daemon, String) {
     let target = if cfg!(target_os = "macos") {
         format!("{}-apple-darwin", std::env::consts::ARCH)
@@ -453,13 +439,11 @@ fn manual_update_daemon(home: &TempDir) -> (Daemon, String) {
     )
 }
 
-#[cfg(unix)]
 fn test_terminate() -> tokio::signal::unix::Signal {
     tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("install test signal handler")
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn manual_request_retries_after_updater_replacement() {
     use tokio::io::AsyncReadExt;
@@ -513,7 +497,6 @@ async fn manual_request_retries_after_updater_replacement() {
     server.await.expect("replacement task");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn manual_request_accepts_maximum_installer_stderr_detail() {
     use tokio::io::AsyncReadExt;
@@ -553,7 +536,6 @@ async fn manual_request_accepts_maximum_installer_stderr_detail() {
     server.await.expect("server task");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn manual_request_recovers_when_one_shot_updater_exits() {
     use tokio::io::AsyncReadExt;
@@ -591,7 +573,6 @@ async fn manual_request_recovers_when_one_shot_updater_exits() {
     server.await.expect("updater task");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn unsupported_request_preserves_updater_schedule() {
     use tokio::io::AsyncReadExt;
@@ -667,7 +648,6 @@ async fn unsupported_request_preserves_updater_schedule() {
     worker.abort();
 }
 
-#[cfg(unix)]
 async fn test_control_server(
     daemon: &Daemon,
     home: &std::path::Path,
@@ -716,7 +696,6 @@ async fn test_control_server(
     })
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
     let home = TempDir::new().expect("home");
@@ -776,7 +755,6 @@ async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
     server.abort();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn scheduled_resource_only_update_restarts_daemon() {
     let home = TempDir::new().expect("home");
@@ -823,13 +801,11 @@ async fn scheduled_resource_only_update_restarts_daemon() {
     server.abort();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn manual_update_restarts_managed_daemon_with_automatic_updates_disabled() {
     check_manual_update_restart("standalone").await;
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[tokio::test]
 async fn readiness_waits_for_a_slow_managed_daemon() {
     let home = TempDir::new().unwrap();
@@ -858,7 +834,6 @@ async fn readiness_waits_for_a_slow_managed_daemon() {
     assert_eq!(ready.unwrap().app_server_version, "1.0.0");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn daemon_start_and_restart_preserve_launch_features() {
     for features in [
@@ -934,7 +909,6 @@ async fn daemon_start_and_restart_preserve_launch_features() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn confirmed_feature_restart_preserves_ownership_and_skips_matching_settings() {
     use crate::LifecycleStatus;
@@ -1002,13 +976,11 @@ async fn confirmed_feature_restart_preserves_ownership_and_skips_matching_settin
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn manual_update_restarts_local_daemon_with_automatic_updates_disabled() {
     check_manual_update_restart("app-server-daemon").await;
 }
 
-#[cfg(unix)]
 async fn check_manual_update_restart(package_directory: &str) {
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
@@ -1176,48 +1148,6 @@ async fn check_manual_update_restart(package_directory: &str) {
     server.abort();
 }
 
-#[cfg(windows)]
-#[tokio::test]
-async fn powershell_installer_is_noninteractive_and_reports_script_failure() {
-    let valid = FakeInstallerHttp::new(InstallerResponse::Success(
-        br#"
-function Test-Installer {
-    if ($env:CODEX_NON_INTERACTIVE -ne '1') { throw 'interactive installer' }
-    if ($env:CODEX_INSTALL_DAEMON_ONLY -ne '1') { throw 'wrong package destination' }
-    if ($env:CODEX_INSTALL_IF_CURRENT -ne '1' -or $env:CODEX_INSTALL_IF_LATEST -ne '0') { throw 'wrong update guard' }
-}
-Test-Installer
-"#
-        .to_vec(),
-    ));
-    let script = super::fetch_installer_script(&valid)
-        .await
-        .expect("fetch installer");
-    super::run_installer_script(
-        &script,
-        super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
-        std::path::Path::new("packages/app-server-daemon"),
-    )
-    .await
-    .expect("installer succeeds");
-    let failing = FakeInstallerHttp::new(InstallerResponse::Success(
-        b"throw ([string][char]0x00E9 + 'chec installation')".to_vec(),
-    ));
-    let script = super::fetch_installer_script(&failing)
-        .await
-        .expect("fetch failing installer");
-    let error = super::run_installer_script(
-        &script,
-        super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
-        std::path::Path::new("packages/app-server-daemon"),
-    )
-    .await
-    .err()
-    .expect("installer should fail");
-    assert!(error.to_string().contains("échec installation"));
-}
-
-#[cfg(unix)]
 #[tokio::test]
 async fn installer_failure_includes_stderr() {
     let script = format!(
@@ -1238,7 +1168,6 @@ async fn installer_failure_includes_stderr() {
     assert!(!error.contains("discard me"));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn installer_failure_preserves_stderr_before_drain_timeout() {
     let error = tokio::time::timeout(
@@ -1257,7 +1186,6 @@ async fn installer_failure_preserves_stderr_before_drain_timeout() {
     assert!(error.to_string().contains("installer failed"));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn update_rejects_a_package_root_change_during_download() {
     struct ChangingRoot<'a>(&'a std::path::Path);
@@ -1289,7 +1217,6 @@ async fn update_rejects_a_package_root_change_during_download() {
     assert!(error.to_string().contains("package root changed"));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn daemon_owned_updates_require_and_request_an_isolated_installer() {
     let home = TempDir::new().unwrap();

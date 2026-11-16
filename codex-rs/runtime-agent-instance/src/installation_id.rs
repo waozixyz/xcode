@@ -5,9 +5,7 @@ use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
 
-#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -23,7 +21,6 @@ pub async fn resolve_installation_id(codex_home: &AbsolutePathBuf) -> Result<Str
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true);
 
-        #[cfg(unix)]
         {
             options.mode(0o644);
         }
@@ -42,7 +39,6 @@ pub async fn resolve_installation_id(codex_home: &AbsolutePathBuf) -> Result<Str
             file.read_to_string(&mut contents)?;
         }
 
-        #[cfg(unix)]
         {
             let metadata = file.metadata()?;
             let current_mode = metadata.permissions().mode() & 0o777;
@@ -81,7 +77,6 @@ mod tests {
     use tempfile::TempDir;
     use uuid::Uuid;
 
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     #[tokio::test]
@@ -101,7 +96,6 @@ mod tests {
         );
         assert!(Uuid::parse_str(&installation_id).is_ok());
 
-        #[cfg(unix)]
         {
             let mode = std::fs::metadata(&persisted_path)
                 .expect("read installation id metadata")
@@ -124,7 +118,6 @@ mod tests {
         )
         .expect("write installation id");
 
-        #[cfg(unix)]
         let reader = {
             let file = std::fs::OpenOptions::new()
                 .read(true)
@@ -150,7 +143,6 @@ mod tests {
                 .expect("parse existing installation id")
                 .to_string()
         );
-        #[cfg(unix)]
         assert_eq!(
             reader
                 .metadata()

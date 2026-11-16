@@ -7346,121 +7346,6 @@ async fn inactive_thread_approval_badge_clears_after_turn_completion_notificatio
 }
 
 #[tokio::test]
-async fn inactive_thread_started_notification_initializes_replay_session() -> Result<()> {
-    let mut app = make_test_app().await;
-    let temp_dir = tempdir()?;
-    let main_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
-    let agent_thread_id =
-        ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
-    let primary_cwd = test_path_buf("/tmp/main").abs();
-    let shared_root = test_path_buf("/tmp/shared").abs();
-    let primary_session = ThreadSessionState {
-        daybreak_enabled: false,
-        windows_sandbox_host: WindowsSandboxHost::Local,
-        approval_policy: AskForApproval::OnRequest,
-        permission_profile: PermissionProfile::workspace_write(),
-        runtime_workspace_roots: vec![primary_cwd.clone(), shared_root.clone()],
-        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
-    };
-
-    app.primary_thread_id = Some(main_thread_id);
-    app.active_thread_id = Some(main_thread_id);
-    app.primary_session_configured = Some(primary_session.clone());
-    app.thread_event_channels.insert(
-        main_thread_id,
-        ThreadEventChannel::new_with_session(
-            /*capacity*/ 4,
-            primary_session.clone(),
-            Vec::new(),
-        ),
-    );
-
-    let rollout_path = temp_dir.path().join("agent-rollout.jsonl");
-    app.enqueue_thread_notification(
-        agent_thread_id,
-        ServerNotification::ThreadStarted(ThreadStartedNotification {
-            thread: Thread {
-                originator: None,
-                environments: Some(vec![codex_app_server_protocol::ThreadEnvironment {
-                    environment_id: "remote".to_string(),
-                    cwd: test_path_buf("/tmp/agent").abs().into(),
-                    runtime_workspace_roots: Vec::new(),
-                }]),
-                id: agent_thread_id.to_string(),
-                extra: None,
-                session_id: agent_thread_id.to_string(),
-                forked_from_id: None,
-                attached_to_thread_id: None,
-                parent_thread_id: None,
-                preview: "agent thread".to_string(),
-                ephemeral: false,
-                section: None,
-                section_entered_at: None,
-                project_id: None,
-                daybreak_enabled: Some(true),
-                history_mode: Default::default(),
-                model_provider: "agent-provider".to_string(),
-                model: Some("gpt-agent".to_string()),
-                reasoning_effort: None,
-                created_at: 1,
-                updated_at: 2,
-                recency_at: Some(2),
-                status: codex_app_server_protocol::ThreadStatus::Idle,
-                path: Some(rollout_path.clone()),
-                cwd: test_path_buf("/tmp/agent").abs(),
-                cli_version: "0.0.0".to_string(),
-                source: codex_app_server_protocol::SessionSource::Unknown,
-                can_accept_direct_input: None,
-                thread_source: None,
-                agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
-                git_info: None,
-                name: Some("agent thread".to_string()),
-                turns: Vec::new(),
-            },
-        }),
-    )
-    .await?;
-
-    let store = app
-        .thread_event_channels
-        .get(&agent_thread_id)
-        .expect("agent thread channel")
-        .store
-        .lock()
-        .await;
-    let session = store.session.clone().expect("inferred session");
-    drop(store);
-
-    assert_eq!(session.thread_id, agent_thread_id);
-    assert!(session.daybreak_enabled);
-    assert_eq!(session.windows_sandbox_host, WindowsSandboxHost::Remote);
-    assert_eq!(session.thread_name, Some("agent thread".to_string()));
-    assert_eq!(session.model, "gpt-agent");
-    assert_eq!(session.model_provider_id, "agent-provider");
-    assert_eq!(session.approval_policy, primary_session.approval_policy);
-    assert_eq!(session.cwd.as_path(), test_path_buf("/tmp/agent").as_path());
-    assert_eq!(
-        session.runtime_workspace_roots,
-        vec![test_path_buf("/tmp/agent").abs(), shared_root]
-    );
-    assert_eq!(session.rollout_path, Some(rollout_path));
-    assert_eq!(
-        app.agent_navigation.get(&agent_thread_id),
-        Some(&AgentPickerThreadEntry {
-            agent_nickname: Some("Robie".to_string()),
-            agent_role: Some("explorer".to_string()),
-            agent_path: None,
-            is_running: false,
-            is_closed: false,
-        })
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn inactive_thread_started_notification_preserves_primary_model_when_path_missing()
 -> Result<()> {
     let mut app = make_test_app().await;
@@ -8043,7 +7928,6 @@ async fn side_thread_snapshot_hides_forked_parent_transcript() {
     let mut store = ThreadEventStore::new(/*capacity*/ 4);
     let session = ThreadSessionState {
         daybreak_enabled: false,
-        windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         forked_from_id: Some(parent_thread_id),
         fork_parent_title: None,
         ..test_thread_session(side_thread_id, test_path_buf("/tmp/side"))
@@ -8112,7 +7996,6 @@ async fn side_thread_snapshot_skips_session_header_preamble() {
         delegated_turns: Vec::new(),
         session: Some(ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             forked_from_id: Some(parent_thread_id),
             fork_parent_title: None,
             ..test_thread_session(side_thread_id, test_path_buf("/tmp/side"))
@@ -8708,7 +8591,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
     let make_header = |is_first| -> Arc<dyn HistoryCell> {
         let session = ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             thread_id: ThreadId::new(),
             forked_from_id: None,
             fork_parent_title: None,
@@ -8780,10 +8662,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
 }
 
 #[tokio::test]
-#[cfg_attr(
-    target_os = "windows",
-    ignore = "snapshot path rendering differs on Windows"
-)]
 async fn clear_ui_after_long_transcript_snapshots_fresh_header_only() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_app_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
@@ -8996,7 +8874,6 @@ async fn make_test_app() -> Box<App> {
         pending_update_action: None,
         daemon_restart: None,
         pending_shutdown_exit_thread_id: None,
-        windows_sandbox: WindowsSandboxState::default(),
         thread_event_channels: HashMap::new(),
         pending_realtime_speech_replay: HashMap::new(),
         pending_realtime_transcript_replay: HashMap::new(),
@@ -9136,7 +9013,6 @@ pub(super) async fn make_test_app_with_channels() -> (
             pending_update_action: None,
             daemon_restart: None,
             pending_shutdown_exit_thread_id: None,
-            windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             pending_realtime_speech_replay: HashMap::new(),
             pending_realtime_transcript_replay: HashMap::new(),
@@ -9417,7 +9293,6 @@ async fn replace_goal_confirmation_snapshot() {
 pub(super) fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState {
     ThreadSessionState {
         daybreak_enabled: false,
-        windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
         thread_id,
         forked_from_id: None,
         fork_parent_title: None,
@@ -10733,7 +10608,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
     let make_header = |is_first| {
         let session = ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             thread_id: ThreadId::new(),
             forked_from_id: None,
             fork_parent_title: None,
@@ -10806,7 +10680,6 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
     app.chat_widget
         .handle_thread_session(crate::session_state::ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             thread_id: base_id,
             forked_from_id: None,
             fork_parent_title: None,
@@ -11041,11 +10914,7 @@ async fn remote_resume_keeps_server_only_cwd_out_of_local_config() -> Result<()>
     let local_workspace_roots = Box::pin(app.rebuild_config_for_cwd(local_cwd.clone()))
         .await?
         .workspace_roots;
-    let remote_cwd = if cfg!(windows) {
-        PathBuf::from("/srv/remote/project")
-    } else {
-        PathBuf::from(r"C:\remote\project")
-    };
+    let remote_cwd = PathBuf::from(r"C:\remote\project");
     let filename_timestamp = "2025-01-05T12-00-00";
     let thread_id = app_test_support::create_fake_rollout(
         app.config.codex_home.as_path(),
@@ -12158,7 +12027,6 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
         let thread_id = ThreadId::new();
         let event = crate::session_state::ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             thread_id,
             forked_from_id: None,
             fork_parent_title: None,
@@ -12937,7 +12805,6 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
     app.chat_widget
         .handle_thread_session(crate::session_state::ThreadSessionState {
             daybreak_enabled: false,
-            windows_sandbox_host: crate::app::WindowsSandboxHost::Local,
             thread_id,
             forked_from_id: None,
             fork_parent_title: None,
@@ -13100,9 +12967,121 @@ async fn start_config_write_test_app_server(app: &App) -> Result<AppServerSessio
 #[path = "tests/active_reconnect_tests.rs"]
 mod active_reconnect;
 
-#[cfg(unix)]
 #[path = "tests/navigation_reconnect_tests.rs"]
 mod navigation_reconnect;
 
 #[path = "tests/backend_event_tests.rs"]
 mod backend_event_tests;
+
+#[tokio::test]
+async fn inactive_thread_started_notification_initializes_replay_session() -> Result<()> {
+    let mut app = make_test_app().await;
+    let temp_dir = tempdir()?;
+    let main_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000101").expect("valid thread");
+    let agent_thread_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000202").expect("valid thread");
+    let primary_cwd = test_path_buf("/tmp/main").abs();
+    let shared_root = test_path_buf("/tmp/shared").abs();
+    let primary_session = ThreadSessionState {
+        daybreak_enabled: false,
+        approval_policy: AskForApproval::OnRequest,
+        permission_profile: PermissionProfile::workspace_write(),
+        runtime_workspace_roots: vec![primary_cwd.clone(), shared_root.clone()],
+        ..test_thread_session(main_thread_id, primary_cwd.to_path_buf())
+    };
+
+    app.primary_thread_id = Some(main_thread_id);
+    app.active_thread_id = Some(main_thread_id);
+    app.primary_session_configured = Some(primary_session.clone());
+    app.thread_event_channels.insert(
+        main_thread_id,
+        ThreadEventChannel::new_with_session(
+            /*capacity*/ 4,
+            primary_session.clone(),
+            Vec::new(),
+        ),
+    );
+
+    let rollout_path = temp_dir.path().join("agent-rollout.jsonl");
+    app.enqueue_thread_notification(
+        agent_thread_id,
+        ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: Thread {
+                originator: None,
+                environments: Some(vec![codex_app_server_protocol::ThreadEnvironment {
+                    environment_id: "remote".to_string(),
+                    cwd: test_path_buf("/tmp/agent").abs().into(),
+                    runtime_workspace_roots: Vec::new(),
+                }]),
+                id: agent_thread_id.to_string(),
+                extra: None,
+                session_id: agent_thread_id.to_string(),
+                forked_from_id: None,
+                attached_to_thread_id: None,
+                parent_thread_id: None,
+                preview: "agent thread".to_string(),
+                ephemeral: false,
+                section: None,
+                section_entered_at: None,
+                project_id: None,
+                daybreak_enabled: Some(true),
+                history_mode: Default::default(),
+                model_provider: "agent-provider".to_string(),
+                model: Some("gpt-agent".to_string()),
+                reasoning_effort: None,
+                created_at: 1,
+                updated_at: 2,
+                recency_at: Some(2),
+                status: codex_app_server_protocol::ThreadStatus::Idle,
+                path: Some(rollout_path.clone()),
+                cwd: test_path_buf("/tmp/agent").abs(),
+                cli_version: "0.0.0".to_string(),
+                source: codex_app_server_protocol::SessionSource::Unknown,
+                can_accept_direct_input: None,
+                thread_source: None,
+                agent_nickname: Some("Robie".to_string()),
+                agent_role: Some("explorer".to_string()),
+                git_info: None,
+                name: Some("agent thread".to_string()),
+                turns: Vec::new(),
+            },
+        }),
+    )
+    .await?;
+
+    let store = app
+        .thread_event_channels
+        .get(&agent_thread_id)
+        .expect("agent thread channel")
+        .store
+        .lock()
+        .await;
+    let session = store.session.clone().expect("inferred session");
+    drop(store);
+
+    assert_eq!(session.thread_id, agent_thread_id);
+    assert!(session.daybreak_enabled);
+    assert_eq!(session.thread_name, Some("agent thread".to_string()));
+    assert_eq!(session.model, "gpt-agent");
+    assert_eq!(session.model_provider_id, "agent-provider");
+    assert_eq!(session.approval_policy, primary_session.approval_policy);
+    assert_eq!(session.cwd.as_path(), test_path_buf("/tmp/agent").as_path());
+    assert_eq!(
+        session.runtime_workspace_roots,
+        vec![test_path_buf("/tmp/agent").abs(), shared_root]
+    );
+    assert_eq!(session.rollout_path, Some(rollout_path));
+    assert_eq!(
+        app.agent_navigation.get(&agent_thread_id),
+        Some(&AgentPickerThreadEntry {
+            agent_nickname: Some("Robie".to_string()),
+            agent_role: Some("explorer".to_string()),
+            agent_path: None,
+            is_running: false,
+            is_closed: false,
+        })
+    );
+
+    Ok(())
+}

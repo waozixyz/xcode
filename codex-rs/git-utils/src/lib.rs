@@ -5,6 +5,7 @@ mod errors;
 mod fsmonitor;
 mod git_process;
 mod info;
+mod objects;
 mod operations;
 mod platform;
 mod status;

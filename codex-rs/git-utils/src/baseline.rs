@@ -1,21 +1,19 @@
 use anyhow::Context;
-use gix::hash::ObjectId;
-use gix::objs::Tree;
-use gix::objs::tree::Entry;
-use gix::objs::tree::EntryKind;
-use gix::objs::tree::EntryMode;
-use similar::TextDiff;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
-#[cfg(windows)]
-use std::os::windows::fs::FileTypeExt;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::task;
 
+use crate::objects::EntryMode;
+use crate::objects::Kind;
+use crate::objects::ObjectId;
+use crate::objects::Repository;
+use crate::objects::Signature;
+use crate::objects::TreeEntry;
 use crate::operations::run_git_for_status;
 
 // Match the default file limit for automatic ghost snapshots. A baseline is derived data.
@@ -102,12 +100,10 @@ fn ensure_git_baseline_repository_sync(root: &Path) -> anyhow::Result<()> {
             })
             .is_ok()
         && version == BASELINE_VERSION
-        && let Ok(repo) = gix::open::Options::isolated().open(&git_dir)
+        && let Ok(repo) = Repository::open(&git_dir)
+        && head_file_entries(&repo).is_ok()
     {
-        let repo = repo.to_thread_local();
-        if repo.common_dir() == repo.git_dir() && head_file_entries(&repo).is_ok() {
-            return Ok(());
-        }
+        return Ok(());
     }
     reset_git_repository_sync(root, BaselineContents::Empty)
 }
@@ -155,8 +151,6 @@ fn baseline_control(root: &Path) -> PathBuf {
 
 fn discard_baseline_path(path: &Path) -> anyhow::Result<()> {
     match path.symlink_metadata() {
-        #[cfg(windows)]
-        Ok(meta) if meta.file_type().is_symlink_dir() => fs::remove_dir(path)?,
         Ok(meta) if meta.is_dir() => {
             // Invalidate before deletion: interruption must not leave trusted partial metadata.
             match fs::remove_file(path.join(BASELINE_VERSION_FILE)) {
@@ -183,28 +177,17 @@ fn reset_git_repository_sync(root: &Path, contents: BaselineContents) -> anyhow:
     // Only metadata is disposable. An interrupted reset leaves no version marker, so the next
     // operation retries with an empty baseline rather than trusting a partial snapshot.
     discard_baseline_path(&git_dir)?;
-    let repo = gix::ThreadSafeRepository::init_opts(
-        root,
-        gix::create::Kind::WithWorktree,
-        gix::create::Options::default(),
-        gix::open::Options::isolated(),
-    )?
-    .to_thread_local();
+    let repo = Repository::init(root)?;
     let tree_id = match contents {
-        BaselineContents::Empty => repo.write_object(Tree::default())?.detach(),
-        BaselineContents::Current => write_tree(&repo, root)?,
+        BaselineContents::Empty => repo.write_object(Kind::Tree, &[])?,
+        BaselineContents::Current => write_tree(&repo, root)?.0,
     };
-    let signature = codex_signature();
-    let mut time = gix::date::parse::TimeBuf::default();
-    let signature = signature.to_ref(&mut time);
-    repo.commit_as(
-        signature,
-        signature,
-        "HEAD",
-        BASELINE_COMMIT_MESSAGE,
-        tree_id,
-        Vec::<ObjectId>::new(),
-    )?;
+    let signature = Signature {
+        name: "Codex",
+        email: "noreply@openai.com",
+        seconds: chrono::Utc::now().timestamp(),
+    };
+    repo.commit(&signature, BASELINE_COMMIT_MESSAGE, tree_id, &[])?;
     write_index_from_head(root)?;
     fs::write(git_dir.join(BASELINE_VERSION_FILE), BASELINE_VERSION)?;
     Ok(())
@@ -231,7 +214,7 @@ fn write_index_from_head(root: &Path) -> anyhow::Result<()> {
 pub async fn diff_since_latest_init(root: &Path) -> anyhow::Result<GitBaselineDiff> {
     with_baseline_lock(root, |root| {
         ensure_git_baseline_repository_sync(root)?;
-        let mut repo = gix::open::Options::isolated().open(root)?.to_thread_local();
+        let mut repo = Repository::open(&root.join(".git"))?;
         let mut head_entries = head_file_entries(&repo)?;
         let mut current_entries = BTreeMap::new();
         let mut excluded = BTreeSet::new();
@@ -240,7 +223,7 @@ pub async fn diff_since_latest_init(root: &Path) -> anyhow::Result<GitBaselineDi
         if excluded.iter().any(|path| head_entries.contains_key(path)) {
             drop(repo);
             reset_git_repository_sync(root, BaselineContents::Empty)?;
-            repo = gix::open::Options::isolated().open(root)?.to_thread_local();
+            repo = Repository::open(&root.join(".git"))?;
             head_entries.clear();
         }
         let changes = diff_entries(&head_entries, &current_entries);
@@ -254,18 +237,9 @@ pub async fn diff_since_latest_init(root: &Path) -> anyhow::Result<GitBaselineDi
     .await
 }
 
-fn codex_signature() -> gix::actor::Signature {
-    gix::actor::Signature {
-        name: "Codex".into(),
-        email: "noreply@openai.com".into(),
-        time: gix::date::Time {
-            seconds: chrono::Utc::now().timestamp(),
-            offset: 0,
-        },
-    }
-}
-
-fn write_tree(repo: &gix::Repository, dir: &Path) -> anyhow::Result<ObjectId> {
+/// Writes the tree of `dir` and reports whether it is empty (empty
+/// directories are left out of their parent, as Git does).
+fn write_tree(repo: &Repository, dir: &Path) -> anyhow::Result<(ObjectId, bool)> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
         let entry = entry?;
@@ -277,83 +251,73 @@ fn write_tree(repo: &gix::Repository, dir: &Path) -> anyhow::Result<ObjectId> {
 
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            let oid = write_tree(repo, &path)?;
-            let tree = repo
-                .find_tree(oid)
-                .with_context(|| format!("load tree {}", path.display()))?;
-            if tree.decode()?.entries.is_empty() {
+            let (oid, empty) = write_tree(repo, &path)?;
+            if empty {
                 continue;
             }
-            entries.push(Entry {
-                mode: EntryKind::Tree.into(),
-                filename: os_str_to_bstring(&file_name),
-                oid,
+            entries.push(TreeEntry {
+                mode: EntryMode::Tree,
+                name: os_str_to_bytes(&file_name),
+                id: oid,
             });
         } else if file_type.is_file() {
             let Some((bytes, mode)) = read_baseline_file(&path)? else {
                 continue;
             };
             let oid = repo
-                .write_blob(bytes)
-                .with_context(|| format!("write blob {}", path.display()))?
-                .detach();
-            entries.push(Entry {
+                .write_object(Kind::Blob, &bytes)
+                .with_context(|| format!("write blob {}", path.display()))?;
+            entries.push(TreeEntry {
                 mode,
-                filename: os_str_to_bstring(&file_name),
-                oid,
+                name: os_str_to_bytes(&file_name),
+                id: oid,
             });
         } else if file_type.is_symlink() {
             let target =
                 fs::read_link(&path).with_context(|| format!("read symlink {}", path.display()))?;
             let oid = repo
-                .write_blob(path_to_bytes(&target))
-                .with_context(|| format!("write symlink blob {}", path.display()))?
-                .detach();
-            entries.push(Entry {
-                mode: EntryKind::Link.into(),
-                filename: os_str_to_bstring(&file_name),
-                oid,
+                .write_object(Kind::Blob, &path_to_bytes(&target))
+                .with_context(|| format!("write symlink blob {}", path.display()))?;
+            entries.push(TreeEntry {
+                mode: EntryMode::Link,
+                name: os_str_to_bytes(&file_name),
+                id: oid,
             });
         }
     }
 
-    entries.sort();
-    repo.write_object(&Tree { entries })
-        .context("write tree object")
-        .map(gix::Id::detach)
+    let empty = entries.is_empty();
+    let oid = repo
+        .write_object(Kind::Tree, &crate::objects::encode_tree(&entries))
+        .context("write tree object")?;
+    Ok((oid, empty))
 }
 
-fn head_file_entries(
-    repo: &gix::Repository,
-) -> anyhow::Result<BTreeMap<String, GitBaselineFileEntry>> {
+fn head_file_entries(repo: &Repository) -> anyhow::Result<BTreeMap<String, GitBaselineFileEntry>> {
     let tree_id = repo.head_tree_id().context("load HEAD tree id")?;
-    let tree = repo.find_tree(tree_id.detach()).context("load HEAD tree")?;
     let mut entries = BTreeMap::new();
-    collect_tree_entries(repo, tree, PathBuf::new(), &mut entries)?;
+    collect_tree_entries(repo, &tree_id, PathBuf::new(), &mut entries, 0)?;
     Ok(entries)
 }
 
 fn collect_tree_entries(
-    repo: &gix::Repository,
-    tree: gix::Tree<'_>,
+    repo: &Repository,
+    tree: &ObjectId,
     prefix: PathBuf,
     entries: &mut BTreeMap<String, GitBaselineFileEntry>,
+    depth: usize,
 ) -> anyhow::Result<()> {
-    for entry in tree.iter() {
-        let entry = entry?;
-        let file_name = bstr_to_path(entry.inner.filename);
-        let path = prefix.join(file_name);
-        if entry.inner.mode.is_tree() {
-            let tree = repo
-                .find_tree(entry.inner.oid.to_owned())
-                .context("load child tree")?;
-            collect_tree_entries(repo, tree, path, entries)?;
+    anyhow::ensure!(depth < 4096, "baseline tree nests too deeply");
+    for entry in repo.read_tree(tree).context("load tree")? {
+        let path = prefix.join(bytes_to_path(&entry.name));
+        if entry.mode.is_tree() {
+            collect_tree_entries(repo, &entry.id, path, entries, depth + 1)?;
         } else {
             entries.insert(
                 path_to_slash_string(&path),
                 GitBaselineFileEntry {
-                    oid: entry.inner.oid.to_owned(),
-                    mode: entry.inner.mode,
+                    oid: entry.id,
+                    mode: entry.mode,
                 },
             );
         }
@@ -362,7 +326,7 @@ fn collect_tree_entries(
 }
 
 fn collect_current_entries(
-    repo: &gix::Repository,
+    repo: &Repository,
     root: &Path,
     dir: &Path,
     entries: &mut BTreeMap<String, GitBaselineFileEntry>,
@@ -386,7 +350,7 @@ fn collect_current_entries(
             entries.insert(
                 relative_slash_path(root, &path)?,
                 GitBaselineFileEntry {
-                    oid: blob_oid(repo, &bytes)?,
+                    oid: blob_oid(&bytes),
                     mode,
                 },
             );
@@ -396,8 +360,8 @@ fn collect_current_entries(
             entries.insert(
                 relative_slash_path(root, &path)?,
                 GitBaselineFileEntry {
-                    oid: blob_oid(repo, &path_to_bytes(&target))?,
-                    mode: EntryKind::Link.into(),
+                    oid: blob_oid(&path_to_bytes(&target)),
+                    mode: EntryMode::Link,
                 },
             );
         }
@@ -420,9 +384,8 @@ fn read_baseline_file(path: &Path) -> anyhow::Result<Option<(Vec<u8>, EntryMode)
     Ok((bytes.len() as u64 <= MAX_BASELINE_FILE_BYTES).then_some((bytes, file_mode(&metadata))))
 }
 
-fn blob_oid(repo: &gix::Repository, bytes: &[u8]) -> anyhow::Result<ObjectId> {
-    gix::objs::compute_hash(repo.object_hash(), gix::objs::Kind::Blob, bytes)
-        .context("compute git baseline blob oid")
+fn blob_oid(bytes: &[u8]) -> ObjectId {
+    ObjectId::hash(Kind::Blob, bytes)
 }
 
 fn diff_entries(
@@ -456,7 +419,7 @@ fn diff_entries(
 }
 
 fn render_unified_diff(
-    repo: &gix::Repository,
+    repo: &Repository,
     root: &Path,
     head_entries: &BTreeMap<String, GitBaselineFileEntry>,
     current_entries: &BTreeMap<String, GitBaselineFileEntry>,
@@ -476,7 +439,7 @@ fn render_unified_diff(
 }
 
 fn render_change_diff(
-    repo: &gix::Repository,
+    repo: &Repository,
     root: &Path,
     head_entries: &BTreeMap<String, GitBaselineFileEntry>,
     current_entries: &BTreeMap<String, GitBaselineFileEntry>,
@@ -525,11 +488,10 @@ fn render_change_diff(
         (None, None) => return Ok(String::new()),
     }
 
-    let diff = TextDiff::from_lines(&old_text, &new_text)
-        .unified_diff()
+    let diff = codex_utils_text_diff::unified(&old_text, &new_text)
         .context_radius(3)
         .header(&old_header, &new_header)
-        .to_string();
+        .render();
     section.push_str(&diff);
     if !section.ends_with('\n') {
         section.push('\n');
@@ -537,13 +499,9 @@ fn render_change_diff(
     Ok(section)
 }
 
-fn read_head_blob(repo: &gix::Repository, entry: &GitBaselineFileEntry) -> anyhow::Result<Vec<u8>> {
-    anyhow::ensure!(
-        repo.find_header(entry.oid)?.size() <= MAX_BASELINE_FILE_BYTES,
-        "baseline blob exceeds the snapshot file limit"
-    );
-    let mut blob = repo.find_blob(entry.oid)?;
-    Ok(blob.take_data())
+fn read_head_blob(repo: &Repository, entry: &GitBaselineFileEntry) -> anyhow::Result<Vec<u8>> {
+    repo.read_kind(&entry.oid, Kind::Blob, MAX_BASELINE_FILE_BYTES)
+        .context("baseline blob is unreadable or exceeds the snapshot file limit")
 }
 
 fn read_current_file_bytes(root: &Path, relative_path: &str) -> anyhow::Result<Vec<u8>> {
@@ -562,66 +520,35 @@ fn read_current_file_bytes(root: &Path, relative_path: &str) -> anyhow::Result<V
 }
 
 fn mode_label(mode: EntryMode) -> &'static str {
-    match mode.kind() {
-        EntryKind::Blob => "100644",
-        EntryKind::BlobExecutable => "100755",
-        EntryKind::Link => "120000",
-        EntryKind::Tree => "040000",
-        EntryKind::Commit => "160000",
-    }
+    mode.label()
 }
 
-#[cfg(unix)]
 fn file_mode(metadata: &fs::Metadata) -> EntryMode {
     use std::os::unix::fs::PermissionsExt;
 
     if metadata.permissions().mode() & 0o111 == 0 {
-        EntryKind::Blob.into()
+        EntryMode::Blob
     } else {
-        EntryKind::BlobExecutable.into()
+        EntryMode::BlobExecutable
     }
 }
 
-#[cfg(not(unix))]
-fn file_mode(_metadata: &fs::Metadata) -> EntryMode {
-    EntryKind::Blob.into()
-}
-
-#[cfg(unix)]
-fn os_str_to_bstring(value: &OsStr) -> gix::bstr::BString {
+fn os_str_to_bytes(value: &OsStr) -> Vec<u8> {
     use std::os::unix::ffi::OsStrExt;
 
-    value.as_bytes().into()
+    value.as_bytes().to_vec()
 }
 
-#[cfg(not(unix))]
-fn os_str_to_bstring(value: &OsStr) -> gix::bstr::BString {
-    value.to_string_lossy().as_bytes().into()
-}
-
-#[cfg(unix)]
 fn path_to_bytes(path: &Path) -> Vec<u8> {
     use std::os::unix::ffi::OsStrExt;
 
     path.as_os_str().as_bytes().to_vec()
 }
 
-#[cfg(not(unix))]
-fn path_to_bytes(path: &Path) -> Vec<u8> {
-    path.to_string_lossy().as_bytes().to_vec()
-}
+fn bytes_to_path(value: &[u8]) -> PathBuf {
+    use std::os::unix::ffi::OsStrExt;
 
-fn bstr_to_path(value: &gix::bstr::BStr) -> PathBuf {
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-
-        PathBuf::from(OsStr::from_bytes(value))
-    }
-    #[cfg(not(unix))]
-    {
-        PathBuf::from(value.to_string())
-    }
+    PathBuf::from(OsStr::from_bytes(value))
 }
 
 fn relative_slash_path(root: &Path, path: &Path) -> anyhow::Result<String> {
@@ -784,7 +711,6 @@ mod tests {
         assert_eq!(git_stdout(&root, &["ls-files"]), "");
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn write_index_ignores_configured_hooks_path() {
         let home = TempDir::new().expect("tempdir");
@@ -913,14 +839,14 @@ mod tests {
         assert!(diff.has_changes());
 
         let repo = gix::open(&root).expect("open repo");
-        let added_oid = blob_oid(&repo, added_content).expect("compute added oid");
+        let added_oid = gix::ObjectId::from_hex(blob_oid(added_content).to_string().as_bytes())
+            .expect("compute added oid");
         assert!(
             repo.find_blob(added_oid).is_err(),
             "status scans should hash current files without writing loose git objects"
         );
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn reports_executable_bit_changes_as_modified() {
         use std::os::unix::fs::PermissionsExt;

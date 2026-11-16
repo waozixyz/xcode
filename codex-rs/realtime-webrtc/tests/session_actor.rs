@@ -116,12 +116,10 @@ fn external_cancellation_interrupts_startup() -> Result<()> {
             .is_err()
     );
     startup.join().expect("startup thread");
-    #[cfg(unix)]
     common::wait_for_helper_reaped(&root)?;
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn last_owner_drop_reaps_helper() -> Result<()> {
     let Some(root) = common::package("last_owner_drop_reaps_helper")? else {
@@ -151,7 +149,6 @@ fn device_failure_reaches_startup_completion_without_duplicate_error() -> Result
     started.handle.set_microphone_muted(/*muted*/ true)?;
     assert_eq!(started.handle.take_error(), None);
     started.handle.close();
-    #[cfg(unix)]
     common::wait_for_helper_reaped(&root)?;
     Ok(())
 }
@@ -175,7 +172,6 @@ fn runtime_failure_reaches_offer_caller_without_native_error_text() -> Result<()
         format!("{error:#}"),
         "voice audio runtime could not initialize"
     );
-    #[cfg(unix)]
     common::wait_for_helper_reaped(&root)?;
     Ok(())
 }

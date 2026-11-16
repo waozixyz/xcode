@@ -1,5 +1,4 @@
 use super::editor_directory;
-#[cfg(unix)]
 use super::run_editor;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -112,7 +111,6 @@ fn editor_directory_rejects_read_only_carveout_with_writable_parent() {
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_rejects_preexisting_symlink() {
     use std::os::unix::fs::symlink;
 
@@ -126,7 +124,6 @@ fn editor_directory_rejects_preexisting_symlink() {
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_rejects_writable_codex_home_alias() {
     use std::os::unix::fs::symlink;
 
@@ -141,7 +138,6 @@ fn editor_directory_rejects_writable_codex_home_alias() {
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_rejects_writable_codex_home_alias_target() {
     use std::os::unix::fs::symlink;
 
@@ -162,7 +158,6 @@ fn editor_directory_rejects_writable_codex_home_alias_target() {
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_uses_protected_workspace_fallback_with_default_temporary_grants() {
     let root = tempfile::tempdir().expect("create editor test root");
     let codex_home = root.path().join("codex-home");
@@ -194,7 +189,6 @@ fn editor_directory_uses_protected_workspace_fallback_with_default_temporary_gra
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_rejects_explicitly_writable_workspace_fallback() {
     let root = tempfile::tempdir().expect("create editor test root");
     let codex_home = root.path().join("codex-home");
@@ -220,7 +214,6 @@ fn editor_directory_rejects_explicitly_writable_workspace_fallback() {
 }
 
 #[test]
-#[cfg(unix)]
 fn editor_directory_rejects_workspace_fallback_symlink_to_writable_target() {
     use std::os::unix::fs::symlink;
 
@@ -259,23 +252,6 @@ fn editor_directory_uses_next_protected_candidate_after_creation_error() {
 }
 
 #[test]
-#[cfg(windows)]
-fn editor_directory_rejects_windows_temporary_directory_outside_tmpdir_policy_root() {
-    let paths = EditorPaths::new();
-    let policy = FileSystemSandboxPolicy::workspace_write(
-        &[],
-        /*exclude_tmpdir_env_var*/ false,
-        /*exclude_slash_tmp*/ true,
-    );
-
-    assert!(
-        editor_directory(&[&paths.codex_home], &policy, &paths.cwd).is_err(),
-        "effective Windows temporary directories must not contain editor buffers"
-    );
-    assert!(!paths.codex_home.join("editor").exists());
-}
-
-#[test]
 fn editor_directory_allows_full_disk_write_policies() {
     let paths = EditorPaths::new();
 
@@ -291,7 +267,6 @@ fn editor_directory_allows_full_disk_write_policies() {
 }
 
 #[tokio::test]
-#[cfg(unix)]
 async fn editor_process_receives_buffer_in_isolated_codex_home() {
     let paths = EditorPaths::new();
     let policy = workspace_write_policy(&[]);
@@ -318,7 +293,6 @@ async fn editor_process_receives_buffer_in_isolated_codex_home() {
 }
 
 #[tokio::test]
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 async fn editor_process_uses_protected_workspace_fallback_with_default_temporary_grants() {
     let root = tempfile::tempdir().expect("create editor test root");
     let codex_home = root.path().join("codex-home");

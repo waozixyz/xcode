@@ -8,15 +8,10 @@ use app_test_support::TestAppServer;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::start_analytics_events_server;
 use app_test_support::write_chatgpt_auth;
-#[cfg(unix)]
 use codex_app_server_protocol::ConfigReadParams;
-#[cfg(unix)]
 use codex_app_server_protocol::ConfigReadResponse;
-#[cfg(unix)]
 use codex_app_server_protocol::ConfigRequirementsReadResponse;
-#[cfg(unix)]
 use codex_app_server_protocol::ConfigValueWriteParams;
-#[cfg(unix)]
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification;
@@ -24,12 +19,10 @@ use codex_app_server_protocol::ExternalAgentConfigImportHistoriesReadResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportHistoryRecordResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportProgressNotification;
 use codex_app_server_protocol::ExternalAgentConfigImportResponse;
-#[cfg(unix)]
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::ExternalAgentImportedConnectorCandidate;
 use codex_app_server_protocol::ExternalAgentImportedConnectorSource;
-#[cfg(unix)]
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
@@ -44,7 +37,6 @@ use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput;
-#[cfg(unix)]
 use codex_app_server_protocol::WriteStatus;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_protocol::MemoryVersion;
@@ -53,7 +45,6 @@ use pretty_assertions::assert_eq;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::TempDir;
-#[cfg(unix)]
 use tokio::io::AsyncWriteExt;
 use tokio::time::timeout;
 
@@ -71,11 +62,7 @@ fn connector_metadata_root(home: &Path) -> PathBuf {
     {
         home.join("Library/Application Support/Claude")
     }
-    #[cfg(target_os = "windows")]
-    {
-        home.join("AppData/Roaming/Claude")
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(target_os = "macos"))]
     {
         home.join(".config/Claude")
     }
@@ -144,7 +131,6 @@ async fn external_agent_config_detect_accepts_migration_source_and_defaults_unkn
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn external_agent_config_import_skips_repository_redirect_after_detection() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -225,7 +211,6 @@ async fn external_agent_config_import_skips_repository_redirect_after_detection(
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn external_agent_config_detect_does_not_block_configuration_reads() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -2469,7 +2454,6 @@ async fn external_agent_config_import_skips_already_imported_session_versions() 
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn external_agent_config_import_returns_before_background_session_import_finishes()
 -> Result<()> {

@@ -1,8 +1,6 @@
 //! The local stderr reader must close when its MCP transport ends, even when
 //! a descendant outside the server process group still has stderr open.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::io::Write;
 use std::path::Path;

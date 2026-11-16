@@ -30,7 +30,6 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
-#[cfg(unix)]
 const CONTROL_SOCKET_MODE: u32 = 0o600;
 // Advertise the effective incoming cap for single-frame messages so clients can
 // reject oversized requests before the socket closes.
@@ -72,7 +71,6 @@ pub async fn bind_private_daemon_socket(
     socket_path: &Path,
 ) -> IoResult<(UnixListener, DaemonSocketFileGuard)> {
     let socket_path = AbsolutePathBuf::from_absolute_path(socket_path)?;
-    #[cfg(unix)]
     let (socket_path, rendezvous_path, mut startup_lock) = {
         use std::os::unix::fs::MetadataExt;
 
@@ -111,36 +109,21 @@ pub async fn bind_private_daemon_socket(
             lock,
         )
     };
-    #[cfg(windows)]
-    let (socket_path, directory_guard) = {
-        if let Some(parent) = socket_path.as_path().parent() {
-            codex_uds::prepare_private_socket_directory(parent).await?;
-        }
-        let (path, guard) = codex_uds::validate_private_socket_path(socket_path.as_path())?;
-        (AbsolutePathBuf::from_absolute_path_checked(path)?, guard)
-    };
     prepare_control_socket_path(socket_path.as_path()).await?;
     let listener = UnixListener::bind(socket_path.as_path()).await?;
-    #[cfg(unix)]
     {
         startup_lock.remove_on_drop = true;
     }
     let socket_guard = DaemonSocketFileGuard {
         socket_path,
-        #[cfg(unix)]
         rendezvous_path,
-        #[cfg(unix)]
         _startup_lock: startup_lock,
-        #[cfg(windows)]
-        _directory_guard: directory_guard,
     };
     set_control_socket_permissions(socket_guard.socket_path.as_path()).await?;
-    #[cfg(unix)]
     std::os::unix::fs::symlink(
         socket_guard.socket_path.as_path(),
         socket_guard.rendezvous_path.as_path(),
     )?;
-    #[cfg(unix)]
     socket_guard._startup_lock._file.unlock()?;
     Ok((listener, socket_guard))
 }
@@ -268,13 +251,6 @@ async fn run_daemon_shutdown(
 
 // Unix callers hold the physical socket's startup lock through bind and publication.
 async fn prepare_control_socket_path(socket_path: &Path) -> IoResult<()> {
-    #[cfg(windows)]
-    let (socket_path, _directory_guard) = codex_uds::validate_private_socket_path(socket_path)?;
-    #[cfg(windows)]
-    let socket_path = AbsolutePathBuf::from_absolute_path_checked(socket_path)?;
-    #[cfg(windows)]
-    let socket_path = socket_path.as_path();
-
     match UnixStream::connect(socket_path).await {
         Ok(_stream) => {
             return Err(std::io::Error::new(
@@ -295,9 +271,6 @@ async fn prepare_control_socket_path(socket_path: &Path) -> IoResult<()> {
         }
     }
 
-    // A crashed daemon can leave a dangling rendezvous symlink. Only recognize
-    // our own deterministic alias; never remove an arbitrary symlink target.
-    #[cfg(unix)]
     if std::fs::read_link(socket_path).ok().as_deref()
         == Some(protected_socket_path(socket_path)?.as_path())
     {
@@ -323,7 +296,6 @@ async fn prepare_control_socket_path(socket_path: &Path) -> IoResult<()> {
 /// Return a verified local socket endpoint, independent of the advertised Unix alias.
 /// A socket bound directly at the advertised path (e.g. SSH forwarding) is not ours on Unix.
 pub fn verified_local_daemon_socket(socket_path: &Path) -> IoResult<Option<AbsolutePathBuf>> {
-    #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
 
@@ -341,16 +313,8 @@ pub fn verified_local_daemon_socket(socket_path: &Path) -> IoResult<Option<Absol
         }
         Ok(None)
     }
-    #[cfg(windows)]
-    {
-        // The TUI revalidates this directory and verifies the peer at connection time,
-        // using the same connect_local_daemon path as implicit startup.
-        let (path, _directory) = codex_uds::validate_private_socket_path(socket_path)?;
-        AbsolutePathBuf::from_absolute_path_checked(path).map(Some)
-    }
 }
 
-#[cfg(unix)]
 fn protected_socket_path(rendezvous_path: &Path) -> IoResult<std::path::PathBuf> {
     use sha2::Digest;
     use sha2::Sha256;
@@ -369,9 +333,7 @@ fn protected_socket_path(rendezvous_path: &Path) -> IoResult<std::path::PathBuf>
 
 pub struct AppServerStartupLock {
     _file: std::fs::File,
-    #[cfg(unix)]
     removable_path: Option<AbsolutePathBuf>,
-    #[cfg(unix)]
     remove_on_drop: bool,
 }
 
@@ -391,9 +353,7 @@ pub async fn acquire_app_server_startup_lock(
         file.lock()?;
         Ok(AppServerStartupLock {
             _file: file,
-            #[cfg(unix)]
             removable_path: None,
-            #[cfg(unix)]
             remove_on_drop: false,
         })
     })
@@ -401,7 +361,6 @@ pub async fn acquire_app_server_startup_lock(
     .map_err(|err| std::io::Error::other(format!("startup lock task failed: {err}")))?
 }
 
-#[cfg(unix)]
 pub(super) async fn acquire_removable_app_server_startup_lock(
     startup_lock_path: AbsolutePathBuf,
 ) -> IoResult<AppServerStartupLock> {
@@ -426,7 +385,6 @@ pub(super) async fn acquire_removable_app_server_startup_lock(
     }
 }
 
-#[cfg(unix)]
 impl AppServerStartupLock {
     fn remove_file(&self) -> IoResult<()> {
         let Some(path) = self.removable_path.as_ref() else {
@@ -444,7 +402,6 @@ impl AppServerStartupLock {
     }
 }
 
-#[cfg(unix)]
 pub(super) fn try_acquire_removable_app_server_startup_lock(
     startup_lock_path: AbsolutePathBuf,
 ) -> IoResult<AppServerStartupLock> {
@@ -465,7 +422,6 @@ pub(super) fn try_acquire_removable_app_server_startup_lock(
     })
 }
 
-#[cfg(unix)]
 impl Drop for AppServerStartupLock {
     fn drop(&mut self) {
         if self.remove_on_drop
@@ -480,7 +436,6 @@ impl Drop for AppServerStartupLock {
     }
 }
 
-#[cfg(unix)]
 fn startup_lock_file_matches_path(file: &std::fs::File, path: &Path) -> IoResult<bool> {
     use std::os::unix::fs::MetadataExt;
 
@@ -493,7 +448,6 @@ fn startup_lock_file_matches_path(file: &std::fs::File, path: &Path) -> IoResult
     }
 }
 
-#[cfg(unix)]
 async fn set_control_socket_permissions(socket_path: &Path) -> IoResult<()> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -504,26 +458,15 @@ async fn set_control_socket_permissions(socket_path: &Path) -> IoResult<()> {
     .await
 }
 
-#[cfg(not(unix))]
-async fn set_control_socket_permissions(_socket_path: &Path) -> IoResult<()> {
-    Ok(())
-}
-
 /// Owns the socket files and startup lock until the listener is shut down.
 pub struct DaemonSocketFileGuard {
     socket_path: AbsolutePathBuf,
-    #[cfg(unix)]
     rendezvous_path: AbsolutePathBuf,
-    #[cfg(unix)]
     _startup_lock: AppServerStartupLock,
-    // Keep the directory pinned until after the socket file is removed in Drop.
-    #[cfg(windows)]
-    _directory_guard: std::os::windows::io::OwnedHandle,
 }
 
 impl Drop for DaemonSocketFileGuard {
     fn drop(&mut self) {
-        #[cfg(unix)]
         if std::fs::read_link(self.rendezvous_path.as_path())
             .ok()
             .as_deref()

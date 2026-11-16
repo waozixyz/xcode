@@ -66,7 +66,6 @@ async fn restricted_executor_skill_can_read_permitted_reference() -> Result<()> 
     exercise_executor_skill(ExecutorSkillScenario::RestrictedPermittedReference).await
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn restricted_executor_skill_rejects_reference_until_permission_approved() -> Result<()> {
     exercise_executor_skill(ExecutorSkillScenario::RestrictedDeniedReference).await
@@ -221,7 +220,6 @@ stream_max_retries = 0
             Default::default(), /*sandbox*/ None,
         ),
     )?;
-    #[cfg(unix)]
     if scenario == ExecutorSkillScenario::RestrictedDeniedReference {
         let external_reference_dir = codex_home.path().join("external-reference");
         std::fs::create_dir_all(&external_reference_dir)?;
@@ -237,7 +235,6 @@ stream_max_retries = 0
         std::fs::remove_file(reference_native_path.as_path())?;
         std::os::unix::fs::symlink(external_reference, reference_native_path.as_path())?;
     }
-    #[cfg(unix)]
     if scenario == ExecutorSkillScenario::RestrictedVisible && !auto_env.environment().is_remote() {
         let denied_skill_dir = codex_home.path().join("denied-skill");
         std::fs::create_dir_all(&denied_skill_dir)?;

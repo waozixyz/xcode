@@ -3706,7 +3706,6 @@ trusted_hash = "sha256:unrelated"
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn plugin_installed_hook_trust_write_failure_stays_untrusted() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -5604,10 +5603,8 @@ fn write_plugin_share_local_path_mapping(
     )
 }
 
-#[cfg(unix)]
 struct RestorePermissions(std::path::PathBuf, std::fs::Permissions);
 
-#[cfg(unix)]
 impl Drop for RestorePermissions {
     fn drop(&mut self) {
         let _ = std::fs::set_permissions(&self.0, self.1.clone());

@@ -8,12 +8,7 @@ use std::num::NonZeroU64;
 /// Supplies GCP command auth when no explicit auth override is configured.
 pub fn apply_default_gcp_auth(provider: &mut ModelProviderInfo, cwd: &AbsolutePathBuf) {
     provider.auth.get_or_insert_with(|| ModelProviderAuthInfo {
-        command: if cfg!(windows) {
-            "gcloud.cmd"
-        } else {
-            "gcloud"
-        }
-        .to_string(),
+        command: "gcloud".to_string(),
         args: vec![
             "auth".into(),
             "application-default".into(),

@@ -271,18 +271,6 @@ impl Command for SetTerminalProgramStatus<'_> {
         }
         write!(f, "\x1b\\")
     }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> io::Result<()> {
-        Err(io::Error::other(
-            "tried to set terminal program status using WinAPI; use ANSI instead",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        true
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -296,18 +284,6 @@ impl Command for ClearTerminalProgramStatus {
             write!(f, "\x1b]21337;status=;indicator=;status-color=;detail=\x07")?;
         }
         write!(f, "\x1b]7501;state=clear\x1b\\")
-    }
-
-    #[cfg(windows)]
-    fn execute_winapi(&self) -> io::Result<()> {
-        Err(io::Error::other(
-            "tried to clear terminal program status using WinAPI; use ANSI instead",
-        ))
-    }
-
-    #[cfg(windows)]
-    fn is_ansi_code_supported(&self) -> bool {
-        true
     }
 }
 

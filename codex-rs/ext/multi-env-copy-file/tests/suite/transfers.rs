@@ -355,17 +355,8 @@ async fn copy_hooks_follow_source_and_target(swap_endpoints: bool) -> Result<()>
                 /*exclude_slash_tmp*/ true,
             ));
         let hook = |marker, output: &serde_json::Value| {
-            let output = output
-                .to_string()
-                .replace('\'', if cfg!(windows) { "''" } else { "'\\''" });
-            let command = if cfg!(windows) {
-                // The hook receives its event on the PowerShell pipeline.
-                format!(
-                    "Out-Null; Add-Content -Path {marker} -Value run -ErrorAction Stop; Write-Output '{output}'"
-                )
-            } else {
-                format!("echo run >> {marker}; printf '%s' '{output}'")
-            };
+            let output = output.to_string().replace('\'', "'\\''");
+            let command = format!("echo run >> {marker}; printf '%s' '{output}'");
             json!([{"matcher":"multi_env_copy_file","hooks":[{"type":"command","command": command}]}])
         };
         let pass = json!({});

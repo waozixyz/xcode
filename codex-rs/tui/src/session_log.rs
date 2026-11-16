@@ -34,7 +34,6 @@ impl SessionLogger {
             std::fs::create_dir_all(parent)?;
         }
 
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(0o600);

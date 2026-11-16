@@ -1,5 +1,3 @@
-#![cfg(not(target_os = "windows"))]
-
 use anyhow::Result;
 use codex_protocol::models::PermissionProfile;
 use core_test_support::assert_regex_match;

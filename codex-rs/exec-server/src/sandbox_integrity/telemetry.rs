@@ -111,15 +111,9 @@ impl<'a> IntegrityMetrics<'a> {
     }
 }
 
-#[cfg(unix)]
 fn multiple_hard_links(metadata: &fs::Metadata) -> Option<bool> {
     use std::os::unix::fs::MetadataExt;
     Some(metadata.nlink() > 1)
-}
-
-#[cfg(not(unix))]
-fn multiple_hard_links(_: &fs::Metadata) -> Option<bool> {
-    None
 }
 
 fn bool_tag(value: Option<bool>) -> &'static str {

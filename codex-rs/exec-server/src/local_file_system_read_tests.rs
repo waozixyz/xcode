@@ -1,6 +1,5 @@
 //! Regression coverage for bounded, cancellable reads and regular-file validation.
 
-#[cfg(unix)]
 use super::CancellableReader;
 use super::MAX_READ_FILE_BYTES;
 use crate::ReadFileOptions;
@@ -50,7 +49,6 @@ async fn rejects_oversized_file(follow_symlinks: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn cancellation_stops_a_reader_after_its_first_chunk() -> anyhow::Result<()> {
     use std::io::Read;

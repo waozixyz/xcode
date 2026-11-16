@@ -2,20 +2,16 @@
 
 use super::*;
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
-#[cfg(unix)]
 const SYMLINKED_TMPDIR_TEST_ENV: &str = "CODEX_PROTOCOL_TEST_SYMLINKED_TMPDIR";
 
-#[cfg(unix)]
 fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(original, link)
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn writable_roots_protect_gitdir_target_outside_alias_root() {
     let temp = TempDir::new().expect("tempdir");
@@ -129,21 +125,6 @@ fn writable_root_presence_matches_materialized_roots() {
     }
 }
 
-#[cfg(windows)]
-#[test]
-fn permission_paths_preserve_native_slash_unc_strings() {
-    for path in ["//server/share/src", r"/\server/share/src"] {
-        let expected = serde_json::json!({ "type": "path", "path": path });
-        let actual = serde_json::from_value::<RawFileSystemPath>(expected.clone())
-            .expect("valid raw slash UNC permission path");
-        assert_eq!(
-            serde_json::to_value(actual).expect("lossless raw slash UNC permission path"),
-            expected
-        );
-    }
-}
-
-#[cfg(unix)]
 #[test]
 fn native_ambiguous_permission_paths_keep_deny_semantics() {
     let cwd = TempDir::new().expect("tempdir");
@@ -498,87 +479,6 @@ fn unknown_special_paths_are_ignored_by_legacy_bridge() -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-#[test]
-fn workspace_write_ignores_slash_tmp_special_path_but_preserves_literal_path() {
-    let cwd = TempDir::new().expect("tempdir");
-    let slash_tmp = AbsolutePathBuf::from_absolute_path("/tmp").expect("absolute tmp path");
-    let slash_tmp_only_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry::new(
-            FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
-            },
-            FileSystemAccessMode::Read,
-        ),
-        FileSystemSandboxEntry::new(
-            FileSystemPath::Special {
-                value: FileSystemSpecialPath::SlashTmp,
-            },
-            FileSystemAccessMode::Write,
-        ),
-    ]);
-    assert_eq!(
-        slash_tmp_only_policy
-            .to_legacy_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd.path())
-            .expect("legacy sandbox policy"),
-        SandboxPolicy::ReadOnly {
-            network_access: false,
-        }
-    );
-    assert!(
-        !slash_tmp_only_policy
-            .needs_direct_runtime_enforcement(NetworkSandboxPolicy::Restricted, cwd.path())
-    );
-
-    for access in [FileSystemAccessMode::Read, FileSystemAccessMode::Deny] {
-        let policy = FileSystemSandboxPolicy::restricted(vec![
-            FileSystemSandboxEntry::new(
-                FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Root,
-                },
-                FileSystemAccessMode::Write,
-            ),
-            FileSystemSandboxEntry::new(
-                FileSystemPath::Special {
-                    value: FileSystemSpecialPath::SlashTmp,
-                },
-                access,
-            ),
-        ]);
-        assert!(policy.has_full_disk_write_access());
-        assert!(policy.has_full_disk_read_access());
-    }
-
-    let legacy_policy = SandboxPolicy::new_workspace_write_policy();
-    assert_eq!(
-        FileSystemSandboxPolicy::from(&legacy_policy)
-            .to_legacy_sandbox_policy(NetworkSandboxPolicy::Restricted, cwd.path())
-            .expect("legacy workspace-write policy"),
-        legacy_policy
-    );
-    assert_eq!(
-        FileSystemSandboxPolicy::from(&legacy_policy)
-            .get_writable_roots_with_cwd(cwd.path())
-            .into_iter()
-            .map(|root| root.root)
-            .collect::<Vec<_>>(),
-        legacy_policy
-            .get_writable_roots_with_cwd(cwd.path())
-            .into_iter()
-            .map(|root| normalize_effective_absolute_path(root.root))
-            .collect::<Vec<_>>()
-    );
-    assert!(
-        FileSystemSandboxPolicy::workspace_write(
-            std::slice::from_ref(&slash_tmp),
-            /*exclude_tmpdir_env_var*/ true,
-            /*exclude_slash_tmp*/ false,
-        )
-        .can_write_local_path_with_cwd(slash_tmp.as_path(), cwd.path())
-    );
-}
-
-#[cfg(unix)]
 #[test]
 fn writable_roots_proactively_protect_missing_dot_codex() {
     let cwd = TempDir::new().expect("tempdir");
@@ -628,7 +528,6 @@ fn preserving_mutable_paths_normalizes_top_level_aliases_consistently() {
     assert!(roots[0].read_only_subpaths.contains(&protected));
 }
 
-#[cfg(unix)]
 #[test]
 fn preserving_writable_roots_cannot_be_rebound_during_projection() {
     use std::sync::Arc;
@@ -771,7 +670,6 @@ fn legacy_current_working_directory_special_path_deserializes_as_project_roots()
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_skip_default_metadata_when_explicit_user_rule_exists() {
     for name in [".codex", ".aws"] {
@@ -937,7 +835,6 @@ fn legacy_workspace_write_projection_accepts_relative_cwd() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn effective_runtime_roots_preserve_symlinked_paths() {
     let cwd = TempDir::new().expect("tempdir");
@@ -990,7 +887,6 @@ fn effective_runtime_roots_preserve_symlinked_paths() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn project_roots_special_path_preserves_symlinked_root() {
     let cwd = TempDir::new().expect("tempdir");
@@ -1064,7 +960,6 @@ fn project_roots_special_path_preserves_symlinked_root() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_preserve_symlinked_protected_subpaths() {
     let cwd = TempDir::new().expect("tempdir");
@@ -1105,7 +1000,6 @@ fn writable_roots_preserve_symlinked_protected_subpaths() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_preserve_explicit_symlinked_carveouts_under_symlinked_roots() {
     let cwd = TempDir::new().expect("tempdir");
@@ -1153,7 +1047,6 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_under_symlinked_roots() 
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_preserve_explicit_symlinked_carveouts_that_escape_root() {
     let cwd = TempDir::new().expect("tempdir");
@@ -1202,7 +1095,6 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_escape_root() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn writable_roots_preserve_explicit_symlinked_carveouts_that_alias_root() {
     let cwd = TempDir::new().expect("tempdir");
@@ -1238,7 +1130,6 @@ fn writable_roots_preserve_explicit_symlinked_carveouts_that_alias_root() {
     assert_eq!(writable_roots[0].read_only_subpaths, vec![expected_alias]);
 }
 
-#[cfg(unix)]
 #[test]
 fn tmpdir_special_path_preserves_symlinked_tmpdir() {
     if std::env::var_os(SYMLINKED_TMPDIR_TEST_ENV).is_none() {
@@ -1903,7 +1794,6 @@ fn exact_path_and_descendants_are_denied() {
     ));
 }
 
-#[cfg(unix)]
 #[test]
 fn native_read_deny_matching_uses_uri_matcher_semantics() {
     let temp = TempDir::new().expect("tempdir");
@@ -1960,7 +1850,6 @@ fn glob_patterns_deny_matching_paths() {
 
     assert!(is_read_denied(&denied, &policy, temp.path()));
 
-    #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
 

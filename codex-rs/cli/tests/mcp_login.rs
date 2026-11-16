@@ -563,7 +563,6 @@ async fn no_browser_retries_rejected_discovered_scopes_with_pasteback() -> Resul
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn no_browser_sigint_cancels_token_exchange_after_pasted_or_http_callback() -> Result<()> {
     for callback_delivery in ["paste", "http"] {

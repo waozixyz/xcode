@@ -13,7 +13,6 @@ fn text_preserves_whitespace_and_rejects_late_or_oversized_reads() {
     assert!(validate("x".repeat(MAX_USER_INPUT_TEXT_CHARS + 1), deadline).is_err());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn command_drains_large_output_and_bounds_waiting() {
     use std::process::Stdio;

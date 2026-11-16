@@ -153,7 +153,6 @@ async fn experimental_feature_list_resolves_thread_project_config() -> Result<()
              [projects.\"{workspace_key}\"]\ntrust_level = \"trusted\""
         ))
         .write(codex_home.path())?;
-    #[cfg(unix)]
     let config_toml = std::fs::read(codex_home.path().join("config.toml"))?;
     let project_config_dir = workspace.path().join(".codex");
     std::fs::create_dir_all(&project_config_dir)?;
@@ -176,7 +175,6 @@ memories = true
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
 
-    #[cfg(unix)]
     {
         let deleted_launch_dir = workspace.path().join("deleted-launch");
         std::fs::rename(codex_home.path(), &deleted_launch_dir)?;

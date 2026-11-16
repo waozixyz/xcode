@@ -2,7 +2,6 @@ use super::*;
 use crate::config::PermissionProfileSnapshot;
 use crate::environment_selection::EnvironmentConfigOrigin;
 use crate::tools::sandboxing::SandboxAttempt;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
@@ -31,8 +30,6 @@ fn test_turn_environment(environment_id: &str) -> crate::session::turn_context::
                 environment_hooks: Default::default(),
                 allow_login_shell: true,
                 workspace_roots: Vec::new(),
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                windows_sandbox_type: SandboxType::None,
                 use_legacy_landlock: false,
                 permission_profile: PermissionProfileSnapshot::legacy(
                     PermissionProfile::read_only(),
@@ -206,6 +203,77 @@ async fn sandbox_cwd_uses_patch_action_cwd() {
 }
 
 #[tokio::test]
+async fn file_system_sandbox_context_respects_sandbox_request() {
+    let path = std::env::temp_dir()
+        .join("apply-patch-runtime-none.txt")
+        .abs();
+    let mut req = ApplyPatchRequest {
+        turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
+        action: ApplyPatchAction::new_add_for_test(
+            &PathUri::from_abs_path(&path),
+            "hello".to_string(),
+        ),
+        file_paths: vec![PathUri::from_abs_path(&path)],
+        changes: Arc::new(HashMap::new()),
+        exec_approval_requirement: ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: None,
+        },
+        additional_permissions: None,
+        permissions_preapproved: false,
+    };
+    let permissions = PermissionProfile::Disabled;
+    let manager = SandboxManager::new();
+    let sandbox_policy_cwd = PathUri::from_abs_path(&path);
+    let attempt = SandboxAttempt {
+        sandbox_override: SandboxOverride::NoOverride,
+        sandbox: SandboxType::None,
+        sandbox_requested: false,
+        permissions: &permissions,
+        exec_server_permissions: &permissions,
+        enforce_managed_network: false,
+        manager: &manager,
+        sandbox_cwd: &sandbox_policy_cwd,
+        workspace_roots: std::slice::from_ref(&sandbox_policy_cwd),
+        sandbox_exe: None,
+        use_legacy_landlock: false,
+        network_denial_cancellation_token: None,
+        network_proxy: None,
+    };
+
+    assert_eq!(
+        ApplyPatchRuntime::file_system_sandbox_context_for_attempt(&req, &attempt),
+        None
+    );
+
+    let cwd = PathUri::parse("file:///C:/workspace").expect("Windows workspace URI");
+    let user_home_dir = PathUri::parse("file:///C:/Users/remote").expect("Windows home URI");
+    req.turn_environment.user_home_dir = Some(user_home_dir.clone());
+    let permissions = PermissionProfile::workspace_write();
+    let attempt = SandboxAttempt {
+        sandbox_requested: true,
+        permissions: &permissions,
+        exec_server_permissions: &permissions,
+        sandbox_cwd: &cwd,
+        workspace_roots: std::slice::from_ref(&cwd),
+        ..attempt
+    };
+
+    assert_eq!(
+        ApplyPatchRuntime::file_system_sandbox_context_for_attempt(&req, &attempt),
+        Some(FileSystemSandboxContext {
+            sandbox_override: SandboxOverride::NoOverride,
+            permissions,
+            cwd: cwd.clone(),
+            workspace_roots: vec![cwd],
+            user_home_dir: Some(user_home_dir),
+            temporary_directories: None,
+            use_legacy_landlock: false,
+        })
+    );
+}
+
+#[tokio::test]
 async fn file_system_sandbox_context_preserves_executor_workspace_permissions() {
     let path = std::env::temp_dir()
         .join("apply-patch-runtime-attempt.txt")
@@ -251,8 +319,6 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
         workspace_roots: std::slice::from_ref(&sandbox_policy_cwd),
         sandbox_exe: None,
         use_legacy_landlock: true,
-        windows_sandbox_type: SandboxType::WindowsRestrictedToken,
-        windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
         network_denial_cancellation_token: None,
         network_proxy: None,
     };
@@ -273,88 +339,5 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
         sandbox.cwd,
         codex_utils_path_uri::PathUri::from_abs_path(&path)
     );
-    assert_eq!(
-        sandbox.windows_sandbox_selection,
-        if cfg!(windows) {
-            codex_file_system::WindowsSandboxSelection::RestrictedToken
-        } else {
-            codex_file_system::WindowsSandboxSelection::Disabled
-        }
-    );
     assert_eq!(sandbox.use_legacy_landlock, true);
-}
-
-#[tokio::test]
-async fn file_system_sandbox_context_respects_sandbox_request() {
-    let path = std::env::temp_dir()
-        .join("apply-patch-runtime-none.txt")
-        .abs();
-    let mut req = ApplyPatchRequest {
-        turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
-        action: ApplyPatchAction::new_add_for_test(
-            &PathUri::from_abs_path(&path),
-            "hello".to_string(),
-        ),
-        file_paths: vec![PathUri::from_abs_path(&path)],
-        changes: Arc::new(HashMap::new()),
-        exec_approval_requirement: ExecApprovalRequirement::Skip {
-            bypass_sandbox: false,
-            proposed_execpolicy_amendment: None,
-        },
-        additional_permissions: None,
-        permissions_preapproved: false,
-    };
-    let permissions = PermissionProfile::Disabled;
-    let manager = SandboxManager::new();
-    let sandbox_policy_cwd = PathUri::from_abs_path(&path);
-    let attempt = SandboxAttempt {
-        sandbox_override: SandboxOverride::NoOverride,
-        sandbox: SandboxType::None,
-        sandbox_requested: false,
-        permissions: &permissions,
-        exec_server_permissions: &permissions,
-        enforce_managed_network: false,
-        manager: &manager,
-        sandbox_cwd: &sandbox_policy_cwd,
-        workspace_roots: std::slice::from_ref(&sandbox_policy_cwd),
-        sandbox_exe: None,
-        use_legacy_landlock: false,
-        windows_sandbox_type: SandboxType::None,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        network_denial_cancellation_token: None,
-        network_proxy: None,
-    };
-
-    assert_eq!(
-        ApplyPatchRuntime::file_system_sandbox_context_for_attempt(&req, &attempt),
-        None
-    );
-
-    let cwd = PathUri::parse("file:///C:/workspace").expect("Windows workspace URI");
-    let user_home_dir = PathUri::parse("file:///C:/Users/remote").expect("Windows home URI");
-    req.turn_environment.user_home_dir = Some(user_home_dir.clone());
-    let permissions = PermissionProfile::workspace_write();
-    let attempt = SandboxAttempt {
-        sandbox_requested: true,
-        permissions: &permissions,
-        exec_server_permissions: &permissions,
-        sandbox_cwd: &cwd,
-        workspace_roots: std::slice::from_ref(&cwd),
-        ..attempt
-    };
-
-    assert_eq!(
-        ApplyPatchRuntime::file_system_sandbox_context_for_attempt(&req, &attempt),
-        Some(FileSystemSandboxContext {
-            sandbox_override: SandboxOverride::NoOverride,
-            permissions,
-            cwd: cwd.clone(),
-            workspace_roots: vec![cwd],
-            user_home_dir: Some(user_home_dir),
-            temporary_directories: None,
-            windows_sandbox_selection: codex_file_system::WindowsSandboxSelection::RestrictedToken,
-            windows_sandbox_proxy_settings_mode: None,
-            use_legacy_landlock: false,
-        })
-    );
 }

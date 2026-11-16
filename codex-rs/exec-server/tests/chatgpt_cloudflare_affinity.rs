@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 mod common;
 #[path = "common/tls_proxy.rs"]
 mod tls_proxy;

@@ -1,8 +1,6 @@
 //! Unix local MCP servers and their descendants must not inherit unrelated
 //! parent descriptors, while their explicit stdio transport remains usable.
 
-#![cfg(unix)]
-
 use std::ffi::OsString;
 use std::fs;
 use std::os::fd::AsRawFd;

@@ -1,6 +1,5 @@
 //! Real package installation and replacement through the daemon CLI.
 //! Keep these I/O-heavy cases separate from ordinary lifecycle coverage.
-#![cfg(unix)]
 
 mod support;
 

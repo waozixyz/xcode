@@ -2,6 +2,39 @@
   "format": 1,
   "packages": [
     {
+      "commit": "6a1f6a06a4d338fe412493423f81ba5664fe49be",
+      "dependencies": {"compression": "p9294dacd04b1882d", "crypto": "pc23fbf455e97614d"},
+      "dependency_refs": {"compression": "master", "crypto": "master"},
+      "id": "p12f96d1e4f853fa9",
+      "name": "git",
+      "ref": "master",
+      "url": "https://github.com/ziranlang/git.git"
+    },
+    {
+      "commit": "c316e445a93b4a4159a3432881c5773a22223c1f",
+      "dependencies": {},
+      "id": "p71bb90bc4bfbef3a",
+      "name": "diff",
+      "ref": "master",
+      "url": "https://github.com/ziranlang/diff.git"
+    },
+    {
+      "commit": "723ed36b35d0d41614111390b4fd614c92a2284a",
+      "dependencies": {},
+      "id": "p9294dacd04b1882d",
+      "name": "compression",
+      "ref": "master",
+      "url": "https://github.com/ziranlang/compression.git"
+    },
+    {
+      "commit": "944826f70779a6b6cd53f6b06a75b36f4d8a2558",
+      "dependencies": {},
+      "id": "pc23fbf455e97614d",
+      "name": "crypto",
+      "ref": "master",
+      "url": "https://github.com/ziranlang/crypto.git"
+    },
+    {
       "commit": "bfc193de8f7468b6b8ec5ad72d37a15b484b0319",
       "dependencies": {},
       "id": "peb7256f63ad47763",
@@ -11,8 +44,8 @@
     }
   ],
   "root": {
-    "dependencies": {"mermaid": "peb7256f63ad47763"},
-    "dependency_refs": {"mermaid": "master"},
+    "dependencies": {"diff": "p71bb90bc4bfbef3a", "git": "p12f96d1e4f853fa9", "mermaid": "peb7256f63ad47763"},
+    "dependency_refs": {"diff": "master", "git": "master", "mermaid": "master"},
     "name": "xcoder"
   },
   "toolchain": {

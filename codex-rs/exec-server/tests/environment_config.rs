@@ -44,7 +44,6 @@ async fn remote_environment_reads_projected_executor_config() -> anyhow::Result<
 relative_path = "./executor-relative"
 unselected = "do not return"
 [features]
-prefer_mxc = false
 private_startup_value = "unselected-private-value"
 "#,
     )
@@ -121,28 +120,6 @@ private_startup_value = "unselected-private-value"
         .await?;
     assert_eq!(projects, expected_projects);
 
-    let preference = environment
-        .read_environment_config(EnvironmentConfigReadParams {
-            cwd: PathUri::from_abs_path(&project),
-            config_paths: vec![vec!["features".to_string(), "prefer_mxc".to_string()]],
-            requirements_paths: Vec::new(),
-        })
-        .await?;
-    assert_eq!(preference.config.cloud_insertion_index, 0);
-    assert_eq!(preference.config.layers.len(), 2);
-    let configured = &preference.config.layers[0];
-    let startup = &preference.config.layers[1];
-    assert_eq!(configured.base_dir, PathUri::from_abs_path(&dot_codex));
-    assert_eq!(startup.source, "session-flags");
-    assert_eq!(startup.base_dir, PathUri::from_abs_path(&project));
-    assert_eq!(
-        toml::from_str::<toml::Value>(&configured.toml)?,
-        toml::Value::Table(toml::toml! { [features] prefer_mxc = false }),
-    );
-    assert_eq!(
-        toml::from_str::<toml::Value>(&startup.toml)?,
-        toml::Value::Table(toml::toml! { [features] prefer_mxc = true }),
-    );
     server.shutdown().await?;
     Ok(())
 }

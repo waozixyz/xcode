@@ -1,5 +1,3 @@
-#![cfg(not(target_os = "windows"))]
-
 use core_test_support::responses;
 use core_test_support::test_codex_exec::test_codex_exec;
 use serde_json::json;

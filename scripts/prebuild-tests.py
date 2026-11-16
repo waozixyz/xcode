@@ -20,7 +20,7 @@ path.unlink(missing_ok=True)
 before = validation['test_source_hashes']()
 packages = [argument for package in validation['RUST_SUITES'] for argument in ('-p', package)]
 result = subprocess.run([args.cargo, 'test', '--manifest-path', 'codex-rs/Cargo.toml',
-                         '--release', '--offline', '--no-run', '--lib', '--message-format=json',
+                         '--profile', validation['PROFILE'], '--offline', '--no-run', '--lib', '--message-format=json',
                          *packages],
                         cwd=ROOT, stdout=subprocess.PIPE, text=True, check=True)
 tests = {'abi': 'build/native-dispatch/native-abi-test',

@@ -246,7 +246,10 @@ fn replay_buffer_keeps_only_the_ends_of_large_command_output() {
     assert!(shortened.len() <= MAX_BUFFERED_COMMAND_OUTPUT_BYTES + 64);
     assert!(shortened.starts_with("line 00000\n"));
     assert!(shortened.ends_with("line 03999\n"));
-    let kept = shortened.lines().filter(|line| line.starts_with("line ")).count();
+    let kept = shortened
+        .lines()
+        .filter(|line| line.starts_with("line "))
+        .count();
     assert!(shortened.contains(&format!("… +{} lines\n", 4000 - kept)));
 
     // One long line without a newline is cut on character boundaries.

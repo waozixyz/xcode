@@ -112,7 +112,6 @@ fn install_accepts_manifest_mcp_server_objects() {
     assert!(installed_path.join(".codex-plugin/plugin.json").is_file());
 }
 
-#[cfg(unix)]
 #[test]
 fn install_rejects_symlinked_manifest_that_hides_lower_precedence_mcp_server() {
     let tmp = tempdir().unwrap();
@@ -146,7 +145,6 @@ fn install_rejects_symlinked_manifest_that_hides_lower_precedence_mcp_server() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn install_rejects_symlinked_manifest_directory() {
     let tmp = tempdir().unwrap();
@@ -502,7 +500,6 @@ fn agent_plugin_install_does_not_migrate_commands() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn agent_plugin_install_skips_symlinked_skill_file() {
     let tmp = tempdir().unwrap();
@@ -527,7 +524,6 @@ fn agent_plugin_install_skips_symlinked_skill_file() {
     assert!(!result.installed_path.join("skills/greet/SKILL.md").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn agent_plugin_install_skips_symlinked_executable() {
     let tmp = tempdir().unwrap();

@@ -81,7 +81,6 @@ fn approval_resolution_uses_acting_model_timeout_instructions() {
     }
 }
 
-#[cfg(unix)]
 #[test_case::test_case(ApprovalsReviewer::User, codex_extension_api::ApprovalDecision::AskUser; "manual prompt")]
 #[test_case::test_case(ApprovalsReviewer::AutoReview, codex_extension_api::ApprovalDecision::Allow; "cached allow")]
 #[tokio::test]

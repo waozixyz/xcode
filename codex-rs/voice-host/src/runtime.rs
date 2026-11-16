@@ -57,8 +57,6 @@ impl Runtime {
                 "libgst",
                 ".so",
             )
-        } else if cfg!(all(windows, target_env = "msvc")) {
-            ("bin/gstreamer-1.0-0.dll", "bin", "gst", ".dll")
         } else {
             return Err(io::Error::other("unsupported native runtime platform"));
         };
@@ -101,13 +99,10 @@ impl Runtime {
             // Preload with the restricted OS search policy before GStreamer
             // opens the same module, including its private dependencies on Windows.
             libraries.push(load(&plugin)?);
-            #[cfg(unix)]
             let filename = {
                 use std::os::unix::ffi::OsStrExt;
                 CString::new(plugin.as_os_str().as_bytes())
             };
-            #[cfg(windows)]
-            let filename = CString::new(plugin.to_str().ok_or_else(runtime_error)?);
             let filename = filename.map_err(|_| runtime_error())?;
             // SAFETY: The NUL-terminated filename lives through the call. A
             // non-null result owns a plugin reference, released exactly once.
@@ -134,22 +129,10 @@ fn private_file(root: &Path, relative: &str) -> io::Result<PathBuf> {
 }
 
 fn load(path: &Path) -> io::Result<ManuallyDrop<Library>> {
-    // SAFETY: Callers supply only absolute, physical paths inside the installed
-    // trusted package. Native code runs only in this expendable helper process.
-    #[cfg(unix)]
     let library = unsafe {
         libloading::os::unix::Library::open(
             Some(path),
             libloading::os::unix::RTLD_NOW | libloading::os::unix::RTLD_LOCAL,
-        )
-        .map(Library::from)
-    };
-    #[cfg(windows)]
-    let library = unsafe {
-        libloading::os::windows::Library::load_with_flags(
-            path,
-            libloading::os::windows::LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
-                | libloading::os::windows::LOAD_LIBRARY_SEARCH_SYSTEM32,
         )
         .map(Library::from)
     };

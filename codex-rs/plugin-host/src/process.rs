@@ -95,8 +95,6 @@ pub struct PluginProcess {
     child: Child,
     stderr: Option<tokio::task::JoinHandle<(Vec<u8>, Option<io::ErrorKind>)>>,
     exit: Option<Arc<PluginExit>>,
-    #[cfg(windows)]
-    job: codex_utils_pty::JobObject,
     input: FramedWrite<ChildStdin, LengthDelimitedCodec>,
     output: FramedRead<ChildStdout, LengthDelimitedCodec>,
 }
@@ -128,7 +126,6 @@ impl PluginProcess {
         }
         let program = std::fs::canonicalize(program)?;
         let mut command = codex_utils_process::background_command(&program);
-        #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
             command.process_group(/*pgroup*/ 0);
@@ -150,13 +147,6 @@ impl PluginProcess {
         if stop.is_cancelled() {
             return Err(canceled().into());
         }
-        #[cfg(windows)]
-        let (mut child, job) = {
-            let job = codex_utils_pty::JobObject::create_without_breakaway()?;
-            let child = job.spawn_contained(&mut command)?;
-            (child, job)
-        };
-        #[cfg(not(windows))]
         let mut child = command.spawn()?;
         let input = child
             .stdin
@@ -193,8 +183,6 @@ impl PluginProcess {
             child,
             stderr: Some(stderr),
             exit: None,
-            #[cfg(windows)]
-            job,
             input,
             output: FramedRead::new(output, framing::codec()),
         };
@@ -261,12 +249,9 @@ impl PluginProcess {
     }
 
     fn terminate_group(&self) -> io::Result<()> {
-        #[cfg(unix)]
         if let Some(pid) = self.child.id() {
             codex_utils_pty::process_group::kill_process_group(pid)?;
         }
-        #[cfg(windows)]
-        self.job.terminate()?;
         Ok(())
     }
 }

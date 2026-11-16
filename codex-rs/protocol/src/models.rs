@@ -2983,7 +2983,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn permission_profile_round_trip_preserves_ambiguous_native_denies() -> Result<()> {
         let denied_path = AbsolutePathBuf::try_from(PathBuf::from("/C:/secret"))?;
@@ -3175,12 +3174,7 @@ mod tests {
 
     #[test]
     fn file_system_permissions_with_glob_scan_depth_uses_canonical_json() -> Result<()> {
-        let path = AbsolutePathBuf::try_from(PathBuf::from(if cfg!(windows) {
-            r"C:\tmp\allowed"
-        } else {
-            "/tmp/allowed"
-        }))
-        .expect("absolute path");
+        let path = AbsolutePathBuf::try_from(PathBuf::from("/tmp/allowed")).expect("absolute path");
         let file_system_permissions = FileSystemPermissions {
             entries: vec![FileSystemSandboxEntry {
                 path: path.into(),

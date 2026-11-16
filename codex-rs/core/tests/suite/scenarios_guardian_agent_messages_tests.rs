@@ -117,7 +117,7 @@ async fn native_agent_review_requires_openai_on_start_and_resume(
     Ok(())
 }
 
-#[cfg_attr(not(target_os = "windows"), test_case(None; "agent_reply"))]
+#[test_case (None ; "agent_reply")]
 #[test_case(Some("functions"); "native_default_namespace")]
 #[test_case(Some("team"); "native_custom_namespace")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -226,7 +226,6 @@ async fn encrypted_parent_reply_survives_incremental_guardian_reviews(
                 trust_discovered_hooks(config);
             }
         });
-    #[cfg(not(target_os = "windows"))]
     let test = if native_call_namespace.is_none() {
         test.with_pre_build_hook(|home| {
             super::super::hooks::write_updating_pre_tool_use_hook(

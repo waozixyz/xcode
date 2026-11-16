@@ -1043,11 +1043,9 @@ impl Environment {
     ) -> Result<EnvironmentConfigReadResponse, ExecServerError> {
         match &self.remote_client {
             Some(client) => client.get().await?.read_environment_config(params).await,
-            None => {
-                read_environment_config(self.filesystem.as_ref(), params, /*prefer_mxc*/ None)
-                    .await
-                    .map_err(|error| ExecServerError::Protocol(error.to_string()))
-            }
+            None => read_environment_config(self.filesystem.as_ref(), params)
+                .await
+                .map_err(|error| ExecServerError::Protocol(error.to_string())),
         }
     }
 
@@ -1081,15 +1079,6 @@ impl Environment {
                 let connection_state = client.subscribe_connection_state();
                 let client = client.get().await?;
                 let discover = || async {
-                    if params.roots.iter().any(|root| {
-                        root.sandbox.as_ref().is_some_and(|sandbox| {
-                            sandbox.windows_sandbox_selection == crate::WindowsSandboxSelection::Mxc
-                        })
-                    }) {
-                        let info = client.environment_info().await?;
-                        crate::sandbox_selection::validate_remote_mxc(&info)
-                            .map_err(|error| ExecServerError::Protocol(error.to_string()))?;
-                    }
                     if params.roots.iter().any(|root| {
                         root.sandbox
                             .as_ref()
@@ -1982,10 +1971,7 @@ mod tests {
     #[tokio::test]
     async fn local_environment_passes_runtime_paths_to_exec_backend() {
         let environment = Environment::local(test_runtime_paths(), legacy_http_client_factory());
-        #[cfg(unix)]
         let uri = "file://server/share/checkout";
-        #[cfg(windows)]
-        let uri = "file:///usr/local/checkout";
         let sandbox_cwd = PathUri::parse(uri).expect("non-native sandbox cwd URI");
         let source = sandbox_cwd
             .to_abs_path()

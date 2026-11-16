@@ -117,7 +117,6 @@ async fn prewarming_resolves_global_locations_without_cwd_or_config() -> anyhow:
             .is_some_and(|plugin| plugin.id == "demo@team" && plugin.remote_plugin_id.is_none())
     }));
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 

@@ -29,11 +29,6 @@ use crate::tls_backend_fallback::should_retry_with_rustls;
 
 const PROTOCOL_VERSION_TLS_ALERT: &[u8] = &[21, 3, 3, 0, 2, 2, 70];
 
-// Schannel ARM needs TLS 1.1 to expose the protocol-version alert; the x64 CI image
-// disables TLS 1.1, so x64 and other platforms retain TLS 1.2.
-#[cfg(all(windows, target_arch = "aarch64"))]
-const NATIVE_TLS_TEST_VERSION: reqwest::tls::Version = reqwest::tls::Version::TLS_1_1;
-#[cfg(not(all(windows, target_arch = "aarch64")))]
 const NATIVE_TLS_TEST_VERSION: reqwest::tls::Version = reqwest::tls::Version::TLS_1_2;
 
 type SuccessfulTlsFallbackServer = (
@@ -154,9 +149,6 @@ async fn retries_a_native_tls_failure_after_another_request_caches_rustls() {
             &route,
             selected_tls_backend,
             Some(&replay),
-            #[cfg(windows)]
-            /*proxy_pipe*/
-            None,
             error,
             /*timeout_deadline*/ None,
         )

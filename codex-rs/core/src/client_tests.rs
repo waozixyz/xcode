@@ -360,15 +360,8 @@ async fn client_setup_accepts_command_credential_refresh() {
         std::fs::write(&token_path, "initial-token").unwrap();
         let mut info = test_model_provider().info().clone();
         info.auth = Some(codex_protocol::config_types::ModelProviderAuthInfo {
-            command: if cfg!(windows) { "cmd.exe" } else { "cat" }.into(),
-            args: if cfg!(windows) {
-                vec!["/D", "/C", "type", "token.txt"]
-            } else {
-                vec!["token.txt"]
-            }
-            .into_iter()
-            .map(Into::into)
-            .collect(),
+            command: "cat".into(),
+            args: vec!["token.txt"].into_iter().map(Into::into).collect(),
             timeout_ms: std::num::NonZeroU64::new(/*n*/ 5_000).unwrap(),
             refresh_interval_ms: 60_000,
             cwd: tempdir.path().try_into().unwrap(),

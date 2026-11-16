@@ -1,5 +1,4 @@
 //! Managed daemon lifecycle through the public CLI, using isolated standalone fixtures.
-#![cfg(unix)]
 
 #[path = "app_server_daemon/support.rs"]
 mod support;
@@ -245,7 +244,6 @@ fn explicit_restart_applies_feature_overrides_and_preserves_saved_settings() -> 
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn managed_identity_survives_locale_and_timezone_changes() -> Result<()> {
     let daemon = TestDaemon::new()?;
@@ -435,7 +433,6 @@ fn managed_start_succeeds_when_updater_record_is_invalid() -> Result<()> {
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn wall_clock_shift_keeps_server_and_updater_managed() -> Result<()> {
     let daemon = TestDaemon::new()?;

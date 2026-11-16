@@ -327,7 +327,6 @@ fn analytics_destination_uses_explicit_capture_file() {
         fs::read_to_string(&capture_path).expect("read capture file"),
         ""
     );
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
@@ -924,7 +923,6 @@ fn track_response_only_enqueues_analytics_relevant_responses() {
     assert!(matches!(receiver.try_recv(), Err(TryRecvError::Empty)));
 }
 
-#[cfg(unix)]
 #[test]
 fn track_response_ignores_unserializable_thread_responses() {
     use std::ffi::OsString;

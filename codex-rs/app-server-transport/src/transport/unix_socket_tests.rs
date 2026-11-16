@@ -5,9 +5,7 @@ use super::TransportEvent;
 use super::acquire_app_server_startup_lock;
 use super::app_server_control_socket_path;
 use super::start_control_socket_acceptor;
-#[cfg(unix)]
 use super::unix_socket::acquire_removable_app_server_startup_lock;
-#[cfg(unix)]
 use super::unix_socket::try_acquire_removable_app_server_startup_lock;
 use crate::websocket_compression::WebSocketCompression;
 use codex_app_server_protocol::JSONRPCMessage;
@@ -60,7 +58,6 @@ fn listen_unix_socket_accepts_relative_custom_path() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn long_control_socket_paths_connect_to_distinct_daemons() {
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
@@ -318,7 +315,6 @@ async fn app_server_startup_lock_serializes_waiters() {
         .expect("second startup lock should succeed");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn removable_startup_lock_attempt_is_nonblocking() {
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
@@ -340,7 +336,6 @@ async fn removable_startup_lock_attempt_is_nonblocking() {
     assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn removable_startup_lock_rejects_a_dangling_symlink_collision() {
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
@@ -356,7 +351,6 @@ async fn removable_startup_lock_rejects_a_dangling_symlink_collision() {
     assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn control_socket_rejects_writable_parent_without_changing_permissions() {
     use std::os::unix::fs::PermissionsExt;
@@ -386,7 +380,6 @@ async fn control_socket_rejects_writable_parent_without_changing_permissions() {
     assert!(std::fs::symlink_metadata(path).is_err());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn control_socket_file_is_private_after_bind() {
     use std::os::unix::fs::PermissionsExt;
@@ -486,30 +479,6 @@ async fn control_socket_file_is_private_after_bind() {
     assert!(!physical_path.exists());
 }
 
-#[cfg(windows)]
-#[tokio::test]
-async fn control_socket_pins_directory_until_shutdown() {
-    let temp_dir = tempfile::TempDir::new().expect("temp dir");
-    let socket_path = test_socket_path(temp_dir.path());
-    let directory = socket_path.as_path().parent().unwrap();
-    let moved = temp_dir.path().join("moved");
-    let (tx, _rx) = mpsc::channel::<TransportEvent>(CHANNEL_CAPACITY);
-    let shutdown = CancellationToken::new();
-    let acceptor = start_control_socket_acceptor(
-        socket_path.clone(),
-        tx,
-        shutdown.clone(),
-        DaemonShutdownAccess::Disabled,
-        WebSocketCompression::Plain,
-    )
-    .await
-    .expect("acceptor");
-    assert!(std::fs::rename(directory, &moved).is_err());
-    shutdown.cancel();
-    acceptor.await.expect("shutdown");
-    std::fs::rename(directory, moved).expect("directory unpinned after cleanup");
-}
-
 fn absolute_path(path: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::from_absolute_path(path).expect("absolute path")
 }
@@ -541,13 +510,6 @@ async fn connect_to_socket(socket_path: &Path) -> IoResult<UnixStream> {
     UnixStream::connect(socket_path).await
 }
 
-#[cfg(unix)]
 fn assert_socket_path_removed(socket_path: &Path) {
     assert!(!socket_path.exists());
-}
-
-#[cfg(windows)]
-fn assert_socket_path_removed(_socket_path: &Path) {
-    // uds_windows uses a regular filesystem path as its rendezvous point,
-    // but there is no Unix socket filesystem node to assert on.
 }

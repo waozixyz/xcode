@@ -33,7 +33,6 @@ fn forwards_only_explicit_device_network_and_os_inputs() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn cancelling_initialization_terminates_the_owned_helper() -> anyhow::Result<()> {
     let spawned = codex_utils_pty::spawn_pipe_process(
@@ -64,7 +63,6 @@ async fn cancelling_initialization_terminates_the_owned_helper() -> anyhow::Resu
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn negotiation_timeout_waits_for_helper_exit_before_allowing_retry() -> anyhow::Result<()> {
     let spawned = codex_utils_pty::spawn_pipe_process(
@@ -114,7 +112,6 @@ async fn negotiation_timeout_waits_for_helper_exit_before_allowing_retry() -> an
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn close_after_output_eof_reuses_observed_exit() -> anyhow::Result<()> {
     let spawned = codex_utils_pty::spawn_pipe_process(

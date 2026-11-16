@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 mod common;
 
 #[cfg(target_os = "linux")]

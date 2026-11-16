@@ -1,7 +1,5 @@
 //! Exercise migration consent, permissions, and accurate partial/no-op reporting.
 
-#![cfg(unix)]
-
 use anyhow::Result;
 use codex_state::SqliteConfig;
 use predicates::prelude::PredicateBooleanExt;

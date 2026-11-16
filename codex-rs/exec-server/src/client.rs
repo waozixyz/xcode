@@ -2015,9 +2015,7 @@ mod tests {
     use opentelemetry_sdk::trace::SdkTracerProvider;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
-    #[cfg(unix)]
     use std::path::Path;
-    #[cfg(unix)]
     use std::process::Command;
     use std::sync::Arc;
     use tokio::io::AsyncBufReadExt;
@@ -2031,7 +2029,6 @@ mod tests {
     use tokio::sync::oneshot;
     use tokio::sync::watch;
     use tokio::time::Duration;
-    #[cfg(unix)]
     use tokio::time::sleep;
     use tokio::time::timeout;
     use tokio_tungstenite::WebSocketStream;
@@ -2327,7 +2324,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(windows))]
     #[tokio::test]
     async fn connect_stdio_command_initializes_json_rpc_client() {
         let client = ExecServerClient::connect_stdio_command(StdioExecServerConnectArgs {
@@ -2350,7 +2346,6 @@ mod tests {
         assert_eq!(client.session_id().as_deref(), Some("stdio-test"));
     }
 
-    #[cfg(not(windows))]
     #[tokio::test]
     async fn connect_for_transport_initializes_stdio_command() {
         let client = ExecServerClient::connect_for_transport(
@@ -2377,31 +2372,6 @@ mod tests {
         assert_eq!(client.session_id().as_deref(), Some("stdio-test"));
     }
 
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn connect_stdio_command_initializes_json_rpc_client_on_windows() {
-        let client = ExecServerClient::connect_stdio_command(StdioExecServerConnectArgs {
-            command: StdioExecServerCommand {
-                program: "powershell".to_string(),
-                args: vec![
-                    "-NoProfile".to_string(),
-                    "-Command".to_string(),
-                    "$null = [Console]::In.ReadLine(); [Console]::Out.WriteLine('{\"id\":1,\"result\":{\"sessionId\":\"stdio-test\"}}'); $null = [Console]::In.ReadLine(); Start-Sleep -Seconds 60".to_string(),
-                ],
-                env: HashMap::new(),
-                cwd: None,
-            },
-            client_name: "stdio-test-client".to_string(),
-            initialize_timeout: DEFAULT_REMOTE_EXEC_SERVER_INITIALIZE_TIMEOUT,
-            resume_session_id: None,
-        })
-        .await
-        .expect("stdio client should connect");
-
-        assert_eq!(client.session_id().as_deref(), Some("stdio-test"));
-    }
-
-    #[cfg(unix)]
     #[tokio::test]
     async fn dropping_stdio_client_terminates_spawned_process() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
@@ -2448,7 +2418,6 @@ mod tests {
         wait_for_process_exit(child_pid).await;
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn malformed_stdio_message_terminates_spawned_process() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
@@ -2479,7 +2448,6 @@ mod tests {
         wait_for_process_exit(server_pid).await;
     }
 
-    #[cfg(unix)]
     async fn read_pid_file(path: &Path) -> u32 {
         for _ in 0..20 {
             if let Ok(contents) = std::fs::read_to_string(path) {
@@ -2493,7 +2461,6 @@ mod tests {
         panic!("pid file {} should be written", path.display());
     }
 
-    #[cfg(unix)]
     async fn wait_for_process_exit(pid: u32) {
         for _ in 0..20 {
             if !process_exists(pid) {
@@ -2504,7 +2471,6 @@ mod tests {
         panic!("process {pid} should exit");
     }
 
-    #[cfg(unix)]
     fn process_exists(pid: u32) -> bool {
         Command::new("kill")
             .arg("-0")
@@ -2513,7 +2479,6 @@ mod tests {
             .is_ok_and(|status| status.success())
     }
 
-    #[cfg(unix)]
     fn shell_quote(path: &Path) -> String {
         let value = path.to_string_lossy();
         format!("'{}'", value.replace('\'', "'\\''"))

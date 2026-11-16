@@ -72,7 +72,6 @@ const REPLAY_OUTPUT_EVENT_COUNT: u64 = 1024;
 const REPLAY_RETAINED_OUTPUT_SEQ: u64 = 800;
 
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(windows, allow(dead_code))]
 enum PushedExecScenario {
     Complete,
     CredentialMasking,
@@ -93,12 +92,9 @@ enum PushedExecScenario {
     CodexPathWithExplicitOverride,
     UnusableCodexPath,
     DirectDenied,
-    DenyWin,
-    DenyWinUnchanged,
     DenyOldLinux,
     DenyOldLinuxWithRoot(FileSystemAccessMode),
     DenyLinux,
-    ElevatedPowerShell,
     RejectedLongWindowsDangerousCommand,
     SandboxedInterceptedPatch,
     SandboxedDirectPatch,
@@ -189,10 +185,7 @@ async fn respond_environment_info(
 ) {
     let shell = if matches!(
         scenario,
-        PushedExecScenario::DenyWin
-            | PushedExecScenario::DenyWinUnchanged
-            | PushedExecScenario::ElevatedPowerShell
-            | PushedExecScenario::RejectedLongWindowsDangerousCommand
+        PushedExecScenario::RejectedLongWindowsDangerousCommand
     ) {
         json!({ "name": "powershell", "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" })
     } else if matches!(
@@ -211,9 +204,7 @@ async fn respond_environment_info(
         json!({ "name": "zsh", "path": "/bin/zsh" })
     };
     let platform_os = match scenario {
-        PushedExecScenario::DenyWin
-        | PushedExecScenario::DenyWinUnchanged
-        | PushedExecScenario::RejectedLongWindowsDangerousCommand => Some("windows"),
+        PushedExecScenario::RejectedLongWindowsDangerousCommand => Some("windows"),
         PushedExecScenario::DenyOldLinux
         | PushedExecScenario::DenyOldLinuxWithRoot(_)
         | PushedExecScenario::DenyLinux
@@ -316,10 +307,6 @@ async fn serve_exec_with_pushed_events(
                     assert_eq!(
                         request["params"]["sandbox"]["workspaceRoots"],
                         json!(["file:///C:/workspace", "file:///D:/other-workspace"])
-                    );
-                    assert_eq!(
-                        request["params"]["sandbox"]["windowsSandboxLevel"],
-                        "restricted-token"
                     );
                 }
                 send_exec_server_json(
@@ -575,8 +562,6 @@ async fn serve_exec_with_pushed_events(
         | PushedExecScenario::CredentialMaskingCustomProvidersUnsupported
         | PushedExecScenario::CredentialMaskingUnsupportedShell
         | PushedExecScenario::CredentialMaskingUnsupported
-        | PushedExecScenario::DenyWin
-        | PushedExecScenario::DenyWinUnchanged
         | PushedExecScenario::DenyOldLinux
         | PushedExecScenario::DenyOldLinuxWithRoot(_)
         | PushedExecScenario::DenyLinux
@@ -584,8 +569,7 @@ async fn serve_exec_with_pushed_events(
         | PushedExecScenario::CodexPathDefaultFeature
         | PushedExecScenario::CodexPathDisabledFeature
         | PushedExecScenario::CodexPathWithExplicitOverride
-        | PushedExecScenario::UnusableCodexPath
-        | PushedExecScenario::ElevatedPowerShell => {
+        | PushedExecScenario::UnusableCodexPath => {
             let encoded_output = BASE64_STANDARD.encode(COMPLETE_OUTPUT);
             for message in [
                 json!({
@@ -758,12 +742,9 @@ async fn serve_exec_with_pushed_events(
                         "failure": null,
                         "sandboxDenied": true,
                     }),
-                    PushedExecScenario::DenyWin
-                    | PushedExecScenario::DenyWinUnchanged
-                    | PushedExecScenario::DenyOldLinux
+                    PushedExecScenario::DenyOldLinux
                     | PushedExecScenario::DenyOldLinuxWithRoot(_)
-                    | PushedExecScenario::DenyLinux
-                    | PushedExecScenario::ElevatedPowerShell => {
+                    | PushedExecScenario::DenyLinux => {
                         panic!("completed remote PowerShell must not read a remote process")
                     }
                     PushedExecScenario::RejectedLongWindowsDangerousCommand => {
@@ -848,6 +829,9 @@ async fn serve_exec_with_pushed_events(
     }
 }
 
+#[path = "guardian_sandbox_retry.rs"]
+mod guardian_sandbox_retry;
+
 #[test_case(PushedExecScenario::Complete, ManagedNetworkScenario::None, false ; "complete_event_stream")]
 #[test_case(PushedExecScenario::OutputAfterExit, ManagedNetworkScenario::None, false ; "output_after_exit")]
 #[test_case(PushedExecScenario::OutputAfterRecoveredExit, ManagedNetworkScenario::None, false ; "output_after_recovered_exit")]
@@ -872,22 +856,19 @@ async fn serve_exec_with_pushed_events(
 #[test_case(PushedExecScenario::CredentialMaskingUnsupportedShell, ManagedNetworkScenario::Enabled { policy_callbacks: true }, false ; "credential_masking_warns_and_runs_unsupported_shell")]
 #[test_case(PushedExecScenario::Complete, ManagedNetworkScenario::Enabled { policy_callbacks: false }, false ; "strict_managed_allowlist_omits_policy_callbacks")]
 #[test_case(PushedExecScenario::Complete, ManagedNetworkScenario::Disabled, false ; "disabled_managed_network_omits_executor_proxy_launch")]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::Complete, ManagedNetworkScenario::Enabled { policy_callbacks: true }, true ; "foreign_windows_managed_network_preserves_approval_registration"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::Complete, ManagedNetworkScenario::None, true ; "foreign_windows_workspace_sandbox"))]
-#[test_case(PushedExecScenario::DenyWin, ManagedNetworkScenario::None, true ; "old_windows_deny_read_allows_approved_escalation")]
-#[test_case(PushedExecScenario::DenyWinUnchanged, ManagedNetworkScenario::None, true ; "old_windows_deny_read_keeps_unmaterializable_policy_unchanged")]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinux, ManagedNetworkScenario::None, false ; "old_linux_deny_read_rejects_approved_escalation"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Deny), ManagedNetworkScenario::None, false ; "old_linux_deny_read_keeps_root_deny_unchanged"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Write), ManagedNetworkScenario::None, false ; "device_only_linux_deny_read_rejects_unchanged_writable_root_metadata"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::DenyLinux, ManagedNetworkScenario::None, false ; "linux_deny_read_allows_approved_escalation"))]
-#[test_case(PushedExecScenario::ElevatedPowerShell, ManagedNetworkScenario::None, true ; "windows_elevated_powershell_disables_profile")]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::RejectedLongWindowsDangerousCommand, ManagedNetworkScenario::None, true ; "remote_windows_dangerous_command_rejection_is_bounded"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::SandboxedInterceptedPatch, ManagedNetworkScenario::None, true ; "foreign_windows_intercepted_patch_is_sandboxed"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::SandboxedDirectPatch, ManagedNetworkScenario::None, true ; "foreign_windows_direct_patch_is_sandboxed"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::SandboxedDirectPatchDenied, ManagedNetworkScenario::None, true ; "foreign_windows_direct_patch_denial_requests_approval"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::SandboxedDirectPatchRetry, ManagedNetworkScenario::None, true ; "foreign_windows_direct_patch_denial_approval_retries_unsandboxed"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::UnsandboxedInterceptedPatch, ManagedNetworkScenario::None, true ; "foreign_windows_unsandboxed_intercepted_patch_succeeds"))]
-#[cfg_attr(not(windows), test_case(PushedExecScenario::FullDiskInterceptedPatch, ManagedNetworkScenario::None, true ; "foreign_windows_full_disk_intercepted_patch_succeeds"))]
+#[test_case (PushedExecScenario :: Complete , ManagedNetworkScenario :: Enabled { policy_callbacks : true } , true ; "foreign_windows_managed_network_preserves_approval_registration")]
+#[test_case (PushedExecScenario :: Complete , ManagedNetworkScenario :: None , true ; "foreign_windows_workspace_sandbox")]
+#[test_case (PushedExecScenario :: DenyOldLinux , ManagedNetworkScenario :: None , false ; "old_linux_deny_read_rejects_approved_escalation")]
+#[test_case (PushedExecScenario :: DenyOldLinuxWithRoot (FileSystemAccessMode :: Deny) , ManagedNetworkScenario :: None , false ; "old_linux_deny_read_keeps_root_deny_unchanged")]
+#[test_case (PushedExecScenario :: DenyOldLinuxWithRoot (FileSystemAccessMode :: Write) , ManagedNetworkScenario :: None , false ; "device_only_linux_deny_read_rejects_unchanged_writable_root_metadata")]
+#[test_case (PushedExecScenario :: DenyLinux , ManagedNetworkScenario :: None , false ; "linux_deny_read_allows_approved_escalation")]
+#[test_case (PushedExecScenario :: RejectedLongWindowsDangerousCommand , ManagedNetworkScenario :: None , true ; "remote_windows_dangerous_command_rejection_is_bounded")]
+#[test_case (PushedExecScenario :: SandboxedInterceptedPatch , ManagedNetworkScenario :: None , true ; "foreign_windows_intercepted_patch_is_sandboxed")]
+#[test_case (PushedExecScenario :: SandboxedDirectPatch , ManagedNetworkScenario :: None , true ; "foreign_windows_direct_patch_is_sandboxed")]
+#[test_case (PushedExecScenario :: SandboxedDirectPatchDenied , ManagedNetworkScenario :: None , true ; "foreign_windows_direct_patch_denial_requests_approval")]
+#[test_case (PushedExecScenario :: SandboxedDirectPatchRetry , ManagedNetworkScenario :: None , true ; "foreign_windows_direct_patch_denial_approval_retries_unsandboxed")]
+#[test_case (PushedExecScenario :: UnsandboxedInterceptedPatch , ManagedNetworkScenario :: None , true ; "foreign_windows_unsandboxed_intercepted_patch_succeeds")]
+#[test_case (PushedExecScenario :: FullDiskInterceptedPatch , ManagedNetworkScenario :: None , true ; "foreign_windows_full_disk_intercepted_patch_succeeds")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_command_consumes_pushed_remote_process_events(
     scenario: PushedExecScenario,
@@ -927,9 +908,7 @@ async fn exec_command_consumes_pushed_remote_process_events(
     );
     let deny_read = matches!(
         scenario,
-        PushedExecScenario::DenyWin
-            | PushedExecScenario::DenyWinUnchanged
-            | PushedExecScenario::DenyOldLinux
+        PushedExecScenario::DenyOldLinux
             | PushedExecScenario::DenyOldLinuxWithRoot(_)
             | PushedExecScenario::DenyLinux
     );
@@ -1167,13 +1146,8 @@ timeout = 900
                 .r#set
                 .insert("PATH".to_string(), explicit_path.to_string());
         }
-        if matches!(scenario, PushedExecScenario::ElevatedPowerShell) || (foreign_cwd && deny_read)
-        {
-            config.set_windows_elevated_sandbox_enabled(/*value*/ true);
-        }
+        if foreign_cwd && deny_read {}
         if managed_network_configured {
-            #[cfg(windows)]
-            config.set_windows_sandbox_enabled(/*value*/ true);
             config.approvals_reviewer = ApprovalsReviewer::AutoReview;
             config.bypass_hook_trust = true;
         }
@@ -1198,14 +1172,6 @@ timeout = 900
             ]
             .map(|path| FileSystemSandboxEntry::new(path, FileSystemAccessMode::Deny)),
         );
-        if matches!(scenario, PushedExecScenario::DenyWinUnchanged) {
-            filesystem.entries.push(FileSystemSandboxEntry::new(
-                FileSystemPath::Special {
-                    value: FileSystemSpecialPath::Tmpdir,
-                },
-                FileSystemAccessMode::Deny,
-            ));
-        }
         if matches!(
             scenario,
             PushedExecScenario::DenyOldLinuxWithRoot(FileSystemAccessMode::Write)
@@ -1231,12 +1197,7 @@ timeout = 900
             )]),
             NetworkSandboxPolicy::Enabled,
         )
-    } else if foreign_cwd
-        && matches!(
-            scenario,
-            PushedExecScenario::Complete | PushedExecScenario::ElevatedPowerShell
-        )
-    {
+    } else if foreign_cwd && matches!(scenario, PushedExecScenario::Complete) {
         let mut file_system = PermissionProfile::workspace_write().file_system_sandbox_policy();
         file_system.entries.extend([
             FileSystemSandboxEntry::new(
@@ -1557,10 +1518,6 @@ timeout = 900
             "file:///C:/workspace/secret.txt"
         );
         assert_eq!(
-            write_request["params"]["sandbox"]["windowsSandboxLevel"],
-            "restricted-token"
-        );
-        assert_eq!(
             write_request["params"]["sandbox"]["workspaceRoots"],
             json!(["file:///C:/workspace", "file:///D:/other-workspace"])
         );
@@ -1720,19 +1677,6 @@ timeout = 900
             params["sandbox"]["workspaceRoots"],
             json!(["file:///C:/workspace", "file:///D:/other-workspace"])
         );
-        if matches!(scenario, PushedExecScenario::ElevatedPowerShell) {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "elevated");
-            assert!(
-                params["argv"]
-                    .as_array()
-                    .is_some_and(|argv| argv.iter().any(|arg| arg == "-NoProfile")),
-                "elevated remote PowerShell must not load a user profile"
-            );
-        } else if deny_read {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "elevated");
-        } else {
-            assert_eq!(params["sandbox"]["windowsSandboxLevel"], "restricted-token");
-        }
     }
     if deny_read {
         let params = &exec_server_result.process_start["params"];
@@ -1741,10 +1685,7 @@ timeout = 900
         let context = sandbox.policy_context();
         let policy = sandbox.permissions.file_system_sandbox_policy();
         let policy = policy.materialize_project_roots_with_path_uris(context.workspace_roots);
-        if matches!(
-            scenario,
-            PushedExecScenario::DenyWinUnchanged | PushedExecScenario::DenyOldLinuxWithRoot(_)
-        ) {
+        if matches!(scenario, PushedExecScenario::DenyOldLinuxWithRoot(_)) {
             let baseline = turn_permission_profile.file_system_sandbox_policy();
             assert_eq!(
                 policy,
@@ -1921,8 +1862,6 @@ timeout = 900
         | PushedExecScenario::CredentialMaskingCustomProvidersUnsupported
         | PushedExecScenario::CredentialMaskingUnsupportedShell
         | PushedExecScenario::CredentialMaskingUnsupported
-        | PushedExecScenario::DenyWin
-        | PushedExecScenario::DenyWinUnchanged
         | PushedExecScenario::DenyOldLinux
         | PushedExecScenario::DenyOldLinuxWithRoot(_)
         | PushedExecScenario::DenyLinux
@@ -1930,8 +1869,7 @@ timeout = 900
         | PushedExecScenario::CodexPathDefaultFeature
         | PushedExecScenario::CodexPathDisabledFeature
         | PushedExecScenario::CodexPathWithExplicitOverride
-        | PushedExecScenario::UnusableCodexPath
-        | PushedExecScenario::ElevatedPowerShell => {
+        | PushedExecScenario::UnusableCodexPath => {
             assert_ne!(success, Some(false));
             assert!(saw_exec_command_begin);
             assert!(output.contains("Process exited with code 0"));
@@ -1972,9 +1910,3 @@ timeout = 900
 
     Ok(())
 }
-
-#[path = "network_approval_completion.rs"]
-mod network_approval_completion;
-
-#[path = "guardian_sandbox_retry.rs"]
-mod guardian_sandbox_retry;

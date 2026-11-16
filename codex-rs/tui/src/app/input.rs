@@ -40,8 +40,7 @@ impl App {
         };
         // Legacy terminals encode Alt+character and Escape+character identically. Active
         // bindings and either stroke of a chord win; inactive bindings do not consume input.
-        cfg!(unix)
-            && !self.enhanced_keys_supported
+        !self.enhanced_keys_supported
             && self.overlay.is_none()
             && !self.transcript_view.is_search_editing()
             && insert_escape
@@ -49,15 +48,16 @@ impl App {
             && matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
             && (key_event.modifiers == KeyModifiers::ALT
                 || key_event.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT))
-            // ChatWidget's fixed image-paste shortcut is not in the configurable keymap.
             && !(!rename_active
                 && key_event.kind == KeyEventKind::Press
                 && matches!(key_event.code, KeyCode::Char('v' | 'V')))
-            // Empty-draft agent navigation also has fixed legacy-terminal fallbacks.
             && !(!rename_active
                 && self.chat_widget.composer_text_with_pending().is_empty()
-                && (previous_agent_shortcut_matches(key_event, /*allow_word_motion_fallback*/ true)
-                    || next_agent_shortcut_matches(key_event, /*allow_word_motion_fallback*/ true)))
+                && (previous_agent_shortcut_matches(
+                    key_event, /*allow_word_motion_fallback*/ true,
+                ) || next_agent_shortcut_matches(
+                    key_event, /*allow_word_motion_fallback*/ true,
+                )))
             && !keymap_action_ids()
                 .filter(|action| active_contexts.contains_action(*action))
                 .any(|action| {
@@ -68,7 +68,8 @@ impl App {
                 self.key_chord_matcher.clone().advance(
                     key_event,
                     &self.keymap.chords,
-                    active_contexts),
+                    active_contexts
+                ),
                 crate::keymap::KeyChordMatch::Pending(_)
                     | crate::keymap::KeyChordMatch::Completed(_)
             )

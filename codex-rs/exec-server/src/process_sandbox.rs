@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use crate::process_telemetry::ProcessTelemetry;
 use codex_exec_server_protocol::JSONRPCErrorError;
-use codex_file_system::WindowsSandboxSelection;
 use codex_network_proxy::CUSTOM_CA_ENV_KEYS;
 use codex_network_proxy::CredentialMaskingFailureMode;
 use codex_network_proxy::ManagedNetworkSandboxContext;
@@ -16,28 +15,20 @@ use codex_network_proxy::NetworkProxyHandle;
 use codex_network_proxy::NetworkProxyState;
 use codex_network_proxy::RemoteCredentialBrokerCache;
 use codex_network_proxy::is_managed_mitm_ca_trust_bundle_path;
-use codex_protocol::config_types::WindowsSandboxLevel;
-use codex_protocol::models::PermissionProfile;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxTransformRequest;
 use codex_sandboxing::SandboxType;
-use codex_sandboxing::WindowsSandboxFilesystemOverrides;
-use codex_sandboxing::WindowsSandboxProxySettingsMode;
-use codex_sandboxing::WindowsSandboxSpawnRequest;
-#[cfg(windows)]
-use codex_shell_command::shell_detect::fallback_powershell_shell_for_windows_sandbox;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 
-#[cfg(unix)]
 use crate::CODEX_ARG0_EXEC_HELPER_ARG1;
 use crate::ExecServerRuntimeOptions;
 use crate::process_telemetry::trace_process_id;
 use crate::protocol::ExecParams;
 use crate::rpc::internal_error;
 use crate::rpc::invalid_params;
-use crate::sandbox_selection::sandbox_selection;
+use codex_sandboxing::SandboxSelection;
 
 const CREDENTIAL_MASKING_FAILURE_MODE: CredentialMaskingFailureMode =
     CredentialMaskingFailureMode::Warn;
@@ -49,21 +40,9 @@ pub(crate) struct PreparedExecRequest {
     pub(crate) arg0: Option<String>,
     pub(crate) sandbox: SandboxType,
     pub(crate) network_proxy_handle: Option<NetworkProxyHandle>,
-    windows_sandbox: Option<PreparedWindowsSandboxRequest>,
-}
-
-struct PreparedWindowsSandboxRequest {
-    permission_profile: PermissionProfile,
-    workspace_roots: Vec<AbsolutePathBuf>,
-    windows_sandbox_level: WindowsSandboxLevel,
-    proxy_enforced: bool,
-    network_proxy_restricting_sid: Option<String>,
-    proxy_settings_mode: WindowsSandboxProxySettingsMode,
-    filesystem_overrides: Option<WindowsSandboxFilesystemOverrides>,
 }
 
 impl PreparedExecRequest {
-    #[cfg(unix)]
     pub(crate) fn credential_snapshot_proxy(&self, params: &ExecParams) -> Option<&NetworkProxy> {
         let launch = params.network_proxy.as_ref()?;
         if !launch.proxy.credential_masking_enabled() || !supports_credential_snapshot(params) {
@@ -71,25 +50,10 @@ impl PreparedExecRequest {
         }
         self.network_proxy_handle.as_ref()?.proxy()
     }
-
-    pub(crate) fn windows_sandbox_spawn_request(&self) -> Option<WindowsSandboxSpawnRequest<'_>> {
-        self.windows_sandbox
-            .as_ref()
-            .map(|request| WindowsSandboxSpawnRequest {
-                permission_profile: &request.permission_profile,
-                workspace_roots: &request.workspace_roots,
-                windows_sandbox_level: request.windows_sandbox_level,
-                proxy_enforced: request.proxy_enforced,
-                network_proxy_restricting_sid: request.network_proxy_restricting_sid.as_deref(),
-                proxy_settings_mode: request.proxy_settings_mode,
-                filesystem_overrides: request.filesystem_overrides.as_ref(),
-            })
-    }
 }
 
 fn supports_credential_snapshot(params: &ExecParams) -> bool {
-    cfg!(any(target_os = "linux", target_os = "macos"))
-        && params.arg0.is_none()
+    params.arg0.is_none()
         && params.shell_snapshot.as_ref().is_some_and(|snapshot| {
             snapshot.shell.name == "zsh"
                 && matches!(params.argv.as_slice(), [program, flag, _]
@@ -113,31 +77,16 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
     credential_brokers: &RemoteCredentialBrokerCache,
     telemetry: &ProcessTelemetry,
 ) -> Result<PreparedExecRequest, JSONRPCErrorError> {
-    if let Some(sandbox) = params.sandbox.as_ref()
-        && sandbox.windows_sandbox_selection == WindowsSandboxSelection::Mxc
-    {
-        if params.arg0.is_some() {
-            return Err(invalid_params(
-                "MXC custom argv0 is not supported".to_owned(),
-            ));
-        }
-        if !codex_sandboxing::windows_mxc_available() {
-            return Err(invalid_params(
-                "native MXC is unavailable on this executor".to_owned(),
-            ));
-        }
-    }
-    let (env, managed_network, network_proxy_handle, network_proxy_restricting_sid) =
-        prepare_managed_network(
-            params,
-            credential_brokers,
-            runtime_paths.is_some_and(|paths| paths.proxy_private_ips_via_upstream),
-            env,
-            network_policy_decider,
-            network_policy_audit_observer,
-            telemetry,
-        )
-        .await?;
+    let (env, managed_network, network_proxy_handle) = prepare_managed_network(
+        params,
+        credential_brokers,
+        runtime_paths.is_some_and(|paths| paths.proxy_private_ips_via_upstream),
+        env,
+        network_policy_decider,
+        network_policy_audit_observer,
+        telemetry,
+    )
+    .await?;
     let Some(sandbox_context) = params.sandbox.as_ref() else {
         return Ok(PreparedExecRequest {
             command: params.argv.clone(),
@@ -146,16 +95,12 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
             arg0: params.arg0.clone(),
             sandbox: SandboxType::None,
             network_proxy_handle,
-            windows_sandbox: None,
         });
     };
     let runtime_paths = runtime_paths
         .ok_or_else(|| invalid_params("sandbox runtime paths are not configured".to_string()))?;
-    let windows_sandbox_proxy_settings_mode = sandbox_context
-        .windows_sandbox_proxy_settings_mode
-        .unwrap_or_default();
     let mut runtime_readable_paths = Vec::new();
-    if cfg!(target_os = "linux") || (cfg!(unix) && params.arg0.is_some()) {
+    if cfg!(target_os = "linux") || (params.arg0.is_some()) {
         runtime_readable_paths.push(runtime_paths.codex_self_exe.clone());
     }
     if cfg!(target_os = "linux") {
@@ -176,12 +121,11 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
     #[cfg(target_os = "macos")]
     let sandbox_manager = sandbox_manager
         .with_allowed_symlinked_codex_home(runtime_paths.allowed_symlinked_codex_home.clone());
-    let (selection, windows_sandbox_level) = sandbox_selection(sandbox_context);
+    let selection = SandboxSelection::RequirePlatform;
     let (program, args) = params
         .argv
         .split_first()
         .ok_or_else(|| invalid_params("argv must not be empty".to_string()))?;
-    #[cfg(unix)]
     let (program, args) = params.arg0.as_ref().map_or_else(
         || (program.into(), args.to_vec()),
         |arg0| {
@@ -199,22 +143,6 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
             )
         },
     );
-    #[cfg(not(unix))]
-    let (program, args) = (program.into(), args.to_vec());
-    #[cfg(windows)]
-    let program = if matches!(
-        sandbox_context.windows_sandbox_selection,
-        WindowsSandboxSelection::Elevated | WindowsSandboxSelection::Mxc
-    ) && Path::new(&program).file_stem().is_some_and(|name| {
-        name.eq_ignore_ascii_case("pwsh") || name.eq_ignore_ascii_case("powershell")
-    }) && let Some(fallback) =
-        fallback_powershell_shell_for_windows_sandbox(Path::new(&program))
-    {
-        // Remote controllers cannot resolve a sandbox-compatible shell on this host.
-        fallback.shell_path.into_os_string()
-    } else {
-        program
-    };
     let mut request = sandbox_manager
         .transform(SandboxTransformRequest {
             command: SandboxCommand {
@@ -233,13 +161,8 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
             environment_id: None,
             network: None,
             sandbox_policy_cwd: &sandbox_context.cwd,
-            sandbox_exe: if cfg!(windows) {
-                Some(runtime_paths.codex_self_exe.as_path())
-            } else {
-                runtime_paths.codex_linux_sandbox_exe.as_deref()
-            },
+            sandbox_exe: runtime_paths.codex_linux_sandbox_exe.as_deref(),
             use_legacy_landlock: sandbox_context.use_legacy_landlock,
-            windows_sandbox_level,
         })
         .map_err(|err| match err {
             codex_sandboxing::SandboxTransformError::SandboxUnavailable => {
@@ -250,36 +173,6 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
         .into_command_request();
     request.sandbox_override = sandbox_context.sandbox_override;
     crate::run_integrity_checks(&request).await;
-    let windows_sandbox = if request.sandbox == SandboxType::WindowsRestrictedToken {
-        let permissions = request.permission_profile;
-        let native_sandbox_policy_cwd = native_path(&request.sandbox_policy_cwd, "sandbox cwd")?;
-        let native_workspace_roots = sandbox_context
-            .workspace_roots
-            .iter()
-            .map(|root| native_path(root, "sandbox workspace root"))
-            .collect::<Result<_, _>>()?;
-        request.arg0 = params.arg0.clone();
-        let proxy_enforced = params.enforce_managed_network;
-        let filesystem_overrides = WindowsSandboxFilesystemOverrides::resolve(
-            request.sandbox,
-            &permissions,
-            &native_sandbox_policy_cwd,
-            windows_sandbox_level,
-            &request.env,
-        )
-        .map_err(|err| invalid_params(format!("failed to prepare process sandbox: {err}")))?;
-        Some(PreparedWindowsSandboxRequest {
-            permission_profile: permissions,
-            workspace_roots: native_workspace_roots,
-            windows_sandbox_level,
-            proxy_enforced,
-            network_proxy_restricting_sid,
-            proxy_settings_mode: windows_sandbox_proxy_settings_mode,
-            filesystem_overrides,
-        })
-    } else {
-        None
-    };
     Ok(PreparedExecRequest {
         command: request.command,
         cwd: native_path(&request.cwd, "cwd")?,
@@ -287,7 +180,6 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
         arg0: request.arg0,
         sandbox: request.sandbox,
         network_proxy_handle,
-        windows_sandbox,
     })
 }
 
@@ -304,33 +196,12 @@ async fn prepare_managed_network(
         HashMap<String, String>,
         Option<ManagedNetworkSandboxContext>,
         Option<NetworkProxyHandle>,
-        Option<String>,
     ),
     JSONRPCErrorError,
 > {
     let Some(launch) = &params.network_proxy else {
-        return Ok((env, params.managed_network.clone(), None, None));
+        return Ok((env, params.managed_network.clone(), None));
     };
-    #[cfg(windows)]
-    let routing = match params
-        .sandbox
-        .as_ref()
-        .map(|sandbox| sandbox.windows_sandbox_selection)
-    {
-        None => {
-            // Native Windows commands have no sandbox token SID for shared ingress.
-            let mut native_env = env;
-            codex_network_proxy::strip_managed_proxy_env(&mut native_env);
-            return Ok((native_env, params.managed_network.clone(), None, None));
-        }
-        Some(WindowsSandboxSelection::Mxc) => ManagedProxyRouting::DedicatedListeners,
-        Some(
-            WindowsSandboxSelection::Disabled
-            | WindowsSandboxSelection::RestrictedToken
-            | WindowsSandboxSelection::Elevated,
-        ) => ManagedProxyRouting::SharedIngress,
-    };
-    #[cfg(not(windows))]
     let routing = ManagedProxyRouting::SharedIngress;
     let mut state = NetworkProxyState::from_remote_launch_config(
         launch.clone(),
@@ -380,22 +251,6 @@ async fn prepare_managed_network(
         .run()
         .await
         .map_err(|err| internal_error(format!("failed to start executor network proxy: {err}")))?;
-    #[cfg(target_os = "windows")]
-    let network_proxy_restricting_sid = if routing == ManagedProxyRouting::SharedIngress {
-        Some(
-            proxy
-                .network_proxy_restricting_sid(/*environment_id*/ None)
-                .ok_or_else(|| {
-                    internal_error(
-                        "managed Windows proxy route is missing its restricting SID".to_string(),
-                    )
-                })?,
-        )
-    } else {
-        None
-    };
-    #[cfg(not(target_os = "windows"))]
-    let network_proxy_restricting_sid = None;
     let supported_shell = matches!(params.argv.as_slice(), [program, flag, _]
         if Path::new(program).file_name().is_some_and(|name| name == "bash") && flag == "-c")
         && !["BASH_ENV", "ENV", "SSH_CLIENT", "SSH2_CLIENT"]
@@ -410,11 +265,7 @@ async fn prepare_managed_network(
         if supports_credential_snapshot(params) {
             // Requested snapshots trust startup profiles before masking their captured state.
             proxy.restore_and_disable_brokered_credentials(&mut prepared.env, &mut []);
-        } else if cfg!(any(target_os = "linux", target_os = "macos"))
-            && supported_shell
-            && params.arg0.is_none()
-            && params.shell_snapshot.is_none()
-        {
+        } else if supported_shell && params.arg0.is_none() && params.shell_snapshot.is_none() {
             proxy
                 .handle_unmasked_credentials(&mut prepared.env, CREDENTIAL_MASKING_FAILURE_MODE)
                 .map_err(|err| invalid_params(err.to_string()))?;
@@ -427,12 +278,7 @@ async fn prepare_managed_network(
             proxy.restore_and_disable_brokered_credentials(&mut prepared.env, &mut []);
         }
     }
-    Ok((
-        prepared.env,
-        Some(prepared.sandbox_context),
-        Some(handle),
-        network_proxy_restricting_sid,
-    ))
+    Ok((prepared.env, Some(prepared.sandbox_context), Some(handle)))
 }
 
 fn native_path(path: &PathUri, label: &str) -> Result<AbsolutePathBuf, JSONRPCErrorError> {

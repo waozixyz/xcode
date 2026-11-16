@@ -1,14 +1,9 @@
 mod common;
-#[cfg(unix)]
 #[path = "exec_process/shell_snapshot.rs"]
 mod shell_snapshot;
-#[cfg(unix)]
 #[path = "common/tls_proxy.rs"]
 mod tls_proxy;
-#[path = "exec_process/windows_sandbox.rs"]
-mod windows_sandbox;
 
-#[cfg(unix)]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,47 +12,30 @@ use anyhow::Context;
 use anyhow::Result;
 use codex_exec_server::Environment;
 use codex_exec_server::ExecBackend;
-#[cfg(unix)]
 use codex_exec_server::ExecEnvPolicy;
 use codex_exec_server::ExecMetadata;
 use codex_exec_server::ExecOutputStream;
 use codex_exec_server::ExecParams;
 use codex_exec_server::ExecProcess;
 use codex_exec_server::ExecProcessEvent;
-#[cfg(any(unix, windows))]
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::ProcessId;
 use codex_exec_server::ProcessSignal;
 use codex_exec_server::ReadResponse;
-#[cfg(unix)]
 use codex_exec_server::ShellInfo;
-#[cfg(unix)]
 use codex_exec_server::ShellSnapshotRequest;
 use codex_exec_server::StartedExecProcess;
-#[cfg(any(unix, windows))]
-use codex_exec_server::WindowsSandboxSelection;
 use codex_exec_server::WriteStatus;
-#[cfg(unix)]
 use codex_network_proxy::NetworkProxyConfig;
-#[cfg(unix)]
 use codex_network_proxy::RemoteNetworkProxyConfig;
-#[cfg(unix)]
 use codex_network_proxy::RemoteNetworkProxyLaunchConfig;
-#[cfg(unix)]
 use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
-#[cfg(unix)]
 use codex_protocol::models::PermissionProfile;
-#[cfg(unix)]
 use codex_protocol::permissions::FileSystemAccessMode;
-#[cfg(unix)]
 use codex_protocol::permissions::FileSystemPath;
-#[cfg(unix)]
 use codex_protocol::permissions::FileSystemSandboxEntry;
-#[cfg(unix)]
 use codex_protocol::permissions::FileSystemSandboxPolicy;
-#[cfg(unix)]
 use codex_protocol::permissions::FileSystemSpecialPath;
-#[cfg(unix)]
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
@@ -183,7 +161,6 @@ async fn codex_home_symlink_opt_out_respects_host_config_and_scope() -> Result<(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(false, false, false, false, "bash"; "local_pipe")]
 #[test_case(false, true, false, false, "bash"; "local_tty")]
 #[test_case(true, false, false, false, "bash"; "remote_pipe")]
@@ -378,7 +355,6 @@ async fn shell_snapshot_v2_filters_profile_exports_and_stays_in_memory(
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case(false, false, false; "local_pipe")]
 #[test_case(false, true, false; "local_tty")]
 #[test_case(true, false, false; "remote_pipe")]
@@ -495,7 +471,6 @@ async fn exec_metadata_overrides_policy_and_cached_snapshot(
     Ok(())
 }
 
-#[cfg(unix)]
 #[derive(Clone, Copy)]
 enum CredentialStartup {
     Inherited,
@@ -504,14 +479,13 @@ enum CredentialStartup {
     OrdinaryLogin,
 }
 
-#[cfg(unix)]
 #[test_case(false, "bash", &["-lc", "-lc"], CredentialStartup::Inherited; "unmasked")]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "bash", &["-c", "-c", "-lc"], CredentialStartup::Inherited; "masked_bash"))]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "bash", &["-lc", "-lc"], CredentialStartup::Inherited; "bash_profile_fallback"))]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "zsh", &["-lc", "-lc"], CredentialStartup::OrdinaryLogin; "zsh_profile_gateway_fallback"))]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "zsh", &["-lc", "-lc"], CredentialStartup::Inherited; "masked_zsh_inherited_credentials"))]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "zsh", &["-lc", "-lc"], CredentialStartup::Profile; "masked_zsh_profile_credentials"))]
-#[cfg_attr(any(target_os = "linux", target_os = "macos"), test_case(true, "zsh", &["-lc", "-lc"], CredentialStartup::UnsupportedProfile; "zsh_unsupported_profile_fallback"))]
+#[test_case (true , "bash" , & ["-c" , "-c" , "-lc"] , CredentialStartup :: Inherited ; "masked_bash")]
+#[test_case (true , "bash" , & ["-lc" , "-lc"] , CredentialStartup :: Inherited ; "bash_profile_fallback")]
+#[test_case (true , "zsh" , & ["-lc" , "-lc"] , CredentialStartup :: OrdinaryLogin ; "zsh_profile_gateway_fallback")]
+#[test_case (true , "zsh" , & ["-lc" , "-lc"] , CredentialStartup :: Inherited ; "masked_zsh_inherited_credentials")]
+#[test_case (true , "zsh" , & ["-lc" , "-lc"] , CredentialStartup :: Profile ; "masked_zsh_profile_credentials")]
+#[test_case (true , "zsh" , & ["-lc" , "-lc"] , CredentialStartup :: UnsupportedProfile ; "zsh_unsupported_profile_fallback")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial_test::serial(remote_exec_server)]
 async fn shell_snapshot_v2_remote_managed_proxy_uses_prepared_execution_context(
@@ -946,7 +920,6 @@ async fn shell_snapshot_v2_remote_managed_proxy_uses_prepared_execution_context(
     Ok(())
 }
 
-#[cfg(unix)]
 #[derive(Clone, Copy)]
 enum CaptureFailure {
     Exit(i32),
@@ -954,7 +927,6 @@ enum CaptureFailure {
     Timeout,
 }
 
-#[cfg(unix)]
 #[test_case(false, false, "bash", 1, CaptureFailure::Exit(7); "local_pipe_recovery")]
 #[test_case(false, true, "bash", 1, CaptureFailure::Exit(7); "local_tty_recovery")]
 #[test_case(true, false, "bash", 1, CaptureFailure::Exit(7); "remote_pipe_recovery")]
@@ -1127,7 +1099,6 @@ async fn shell_snapshot_v2_capture_failure_falls_back_and_retries(
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_sandboxed_process_preserves_custom_arg0() -> Result<()> {
     if let Some(warning) = codex_sandboxing::system_bwrap_warning(
@@ -1207,19 +1178,11 @@ async fn assert_exec_process_starts_and_exits(use_remote: bool) -> Result<()> {
     let context = create_process_context(use_remote).await?;
     let thread_id = codex_protocol::ThreadId::from_string("019d25f0-6728-7ce2-908f-c3c187323e5b")?;
     let call_id = "call-λ-'\";$()";
-    #[cfg(unix)]
     let argv = vec![
         "/bin/sh".into(),
         "-c".into(),
         "printf '%s|%s|%s' \"$CODEX_THREAD_ID\" \"$CODEX_TOOL_CALL_ID\" \"$CUSTOM_ENV_VAR\""
             .to_string(),
-    ];
-    #[cfg(windows)]
-    let argv = vec![
-        "powershell.exe".into(),
-        "-NoProfile".into(),
-        "-Command".into(),
-        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::Write($env:CODEX_THREAD_ID + '|' + $env:CODEX_TOOL_CALL_ID + '|' + $env:CUSTOM_ENV_VAR)".into(),
     ];
     let mut env = std::env::vars().collect::<HashMap<_, _>>();
     env.extend([
@@ -1272,7 +1235,6 @@ async fn assert_exec_process_starts_and_exits(use_remote: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_process_can_read_its_helper_and_generated_ca_with_restricted_reads() -> Result<()> {
     if let Some(warning) = codex_sandboxing::system_bwrap_warning(
@@ -1428,7 +1390,6 @@ async fn remote_tty_process_uses_configured_sandbox_helper_with_hostile_path() -
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_process_preserves_empty_workspace_roots() -> Result<()> {
     if let Some(warning) = codex_sandboxing::system_bwrap_warning(
@@ -1909,87 +1870,6 @@ async fn assert_exec_process_write_then_read_without_tty(use_remote: bool) -> Re
     Ok(())
 }
 
-async fn assert_remote_windows_sandbox_process_write(
-    expected_sandbox_type: codex_sandboxing::SandboxType,
-    tty: bool,
-) -> Result<()> {
-    if expected_sandbox_type == codex_sandboxing::SandboxType::WindowsMxc {
-        crate::skip_if_mxc_unavailable!(Ok(()));
-    }
-    let context = create_process_context(/*use_remote*/ true).await?;
-    let workspace = TempDir::new()?;
-    let blocked_file = workspace.path().join("blocked.txt");
-    let cwd = PathUri::from_host_native_path(workspace.path())?;
-    let mut sandbox = FileSystemSandboxContext::from_permission_profile(
-        codex_protocol::models::PermissionProfile::read_only(),
-        cwd.clone(),
-    );
-    match expected_sandbox_type {
-        codex_sandboxing::SandboxType::WindowsRestrictedToken => {
-            sandbox.windows_sandbox_selection = WindowsSandboxSelection::RestrictedToken;
-        }
-        codex_sandboxing::SandboxType::WindowsMxc => {
-            sandbox.windows_sandbox_selection = WindowsSandboxSelection::Mxc;
-        }
-        codex_sandboxing::SandboxType::None
-        | codex_sandboxing::SandboxType::MacosSeatbelt
-        | codex_sandboxing::SandboxType::LinuxSeccomp => {
-            anyhow::bail!("expected a Windows sandbox type")
-        }
-    }
-
-    let session = match context
-        .backend
-        .start(ExecParams {
-            metadata: Default::default(),
-            process_id: ProcessId::from("proc-windows-sandbox-stdin"),
-            argv: vec![
-                r"C:\Windows\System32\cmd.exe".to_string(),
-                "/D".to_string(),
-                "/V:ON".to_string(),
-                "/S".to_string(),
-                "/C".to_string(),
-                format!(
-                    "set /P line= & echo blocked > \"{}\" & echo from-stdin:!line!",
-                    blocked_file.display()
-                ),
-            ],
-            cwd,
-            shell_snapshot: None,
-            env_policy: /*env_policy*/ None,
-            env: Default::default(),
-            tty,
-            pipe_stdin: !tty,
-            arg0: None,
-            sandbox: Some(sandbox),
-            enforce_managed_network: false,
-            managed_network: None,
-            network_proxy: None,
-        })
-        .await
-    {
-        Ok(session) => session,
-        Err(err) => return Err(err.into()),
-    };
-    assert_eq!(session.sandbox_type, Some(expected_sandbox_type));
-
-    let input = if tty { b"hello\r" } else { b"hello\n" };
-    let write_response = session.process.write(input.to_vec()).await?;
-    assert_eq!(write_response.status, WriteStatus::Accepted);
-    let StartedExecProcess { process, .. } = session;
-    let wake_rx = process.subscribe_wake();
-    let (output, exit_code, closed) = collect_process_output_from_reads(process, wake_rx).await?;
-
-    assert!(
-        output.contains("from-stdin:hello"),
-        "unexpected output: {output:?}"
-    );
-    assert_eq!(exit_code, Some(0));
-    assert!(closed);
-    assert!(!blocked_file.exists());
-    Ok(())
-}
-
 async fn assert_exec_process_rejects_write_without_pipe_stdin(use_remote: bool) -> Result<()> {
     let context = create_process_context(use_remote).await?;
     let process_id = "proc-stdin-closed".to_string();
@@ -2090,42 +1970,6 @@ async fn assert_exec_process_signal_interrupts_process(use_remote: bool) -> Resu
     Ok(())
 }
 
-async fn assert_exec_process_signal_terminates_on_windows(use_remote: bool) -> Result<()> {
-    let context = create_process_context(use_remote).await?;
-    let session = context
-        .backend
-        .start(ExecParams {
-            metadata: Default::default(),
-            process_id: ProcessId::from("proc-windows-signal"),
-            argv: vec![
-                "cmd".to_string(),
-                "/C".to_string(),
-                "echo ready && ping -n 30 127.0.0.1 >NUL".to_string(),
-            ],
-            cwd: PathUri::from_host_native_path(std::env::current_dir()?)?,
-            shell_snapshot: None,
-            env_policy: /*env_policy*/ None,
-            env: Default::default(),
-            tty: false,
-            pipe_stdin: false,
-            arg0: None,
-            sandbox: None,
-            enforce_managed_network: false,
-            managed_network: None,
-            network_proxy: None,
-        })
-        .await?;
-
-    let StartedExecProcess { process, .. } = session;
-    let wake_rx = process.subscribe_wake();
-    process.signal(ProcessSignal::Interrupt).await?;
-    let (_output, exit_code, closed) = collect_process_output_from_reads(process, wake_rx).await?;
-
-    assert_eq!(exit_code, Some(1));
-    assert!(closed);
-    Ok(())
-}
-
 async fn assert_exec_process_preserves_queued_events_before_subscribe(
     use_remote: bool,
 ) -> Result<()> {
@@ -2166,7 +2010,6 @@ async fn assert_exec_process_preserves_queued_events_before_subscribe(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
 async fn remote_exec_process_recovers_after_transport_disconnect() -> Result<()> {
@@ -2330,7 +2173,6 @@ async fn exec_process_starts_and_exits(use_remote: bool) -> Result<()> {
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2340,7 +2182,6 @@ async fn exec_process_streams_output(use_remote: bool) -> Result<()> {
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2350,7 +2191,6 @@ async fn exec_process_pushes_events(use_remote: bool) -> Result<()> {
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2360,7 +2200,6 @@ async fn exec_process_replays_events_after_close(use_remote: bool) -> Result<()>
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2372,7 +2211,6 @@ async fn exec_process_retains_output_after_exit_until_streams_close(
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2382,7 +2220,6 @@ async fn exec_process_write_then_read(use_remote: bool) -> Result<()> {
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2390,34 +2227,8 @@ async fn exec_process_write_then_read_without_tty(use_remote: bool) -> Result<()
     assert_exec_process_write_then_read_without_tty(use_remote).await
 }
 
-#[test_case(
-    codex_sandboxing::SandboxType::WindowsRestrictedToken,
-    false;
-    "restricted_token"
-)]
-#[test_case(
-    codex_sandboxing::SandboxType::WindowsMxc,
-    false;
-    "mxc_pipe"
-)]
-#[test_case(
-    codex_sandboxing::SandboxType::WindowsMxc,
-    true;
-    "mxc_conpty"
-)]
-#[cfg_attr(not(windows), ignore = "Windows-only exec-server sandbox process test")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[serial_test::serial(remote_exec_server)]
-async fn remote_windows_sandbox_process_accepts_process_write(
-    expected_sandbox_type: codex_sandboxing::SandboxType,
-    tty: bool,
-) -> Result<()> {
-    assert_remote_windows_sandbox_process_write(expected_sandbox_type, tty).await
-}
-
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2427,7 +2238,6 @@ async fn exec_process_rejects_write_without_pipe_stdin(use_remote: bool) -> Resu
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]
@@ -2437,17 +2247,6 @@ async fn exec_process_signal_interrupts_process(use_remote: bool) -> Result<()> 
 
 #[test_case(false ; "local")]
 #[test_case(true ; "remote")]
-#[cfg_attr(not(windows), ignore = "Windows-only exec-server process test")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// Serialize tests that launch a real exec-server process through the full CLI.
-#[serial_test::serial(remote_exec_server)]
-async fn exec_process_signal_terminates_on_windows(use_remote: bool) -> Result<()> {
-    assert_exec_process_signal_terminates_on_windows(use_remote).await
-}
-
-#[test_case(false ; "local")]
-#[test_case(true ; "remote")]
-#[cfg_attr(not(unix), ignore = "Unix-only exec-server process test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 // Serialize tests that launch a real exec-server process through the full CLI.
 #[serial_test::serial(remote_exec_server)]

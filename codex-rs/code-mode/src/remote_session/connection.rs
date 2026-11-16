@@ -163,10 +163,8 @@ impl Drop for CallerCancellation {
 impl Connection {
     pub(super) async fn spawn(host_program: &Path) -> Result<Self, ConnectionError> {
         let mut command = Command::new(host_program);
-        #[cfg(unix)]
         command.process_group(0);
-        #[cfg(windows)]
-        command.creation_flags(/*flags*/ 0x0800_0000); // CREATE_NO_WINDOW
+        // CREATE_NO_WINDOW
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

@@ -54,7 +54,6 @@ fn discovers_package_and_legacy_installs() {
         home.path().join("packages/app-server-daemon")
     );
 
-    #[cfg(unix)]
     {
         let dedicated = home.path().join("packages/app-server-daemon");
         std::fs::write(&dedicated, b"not a directory").expect("unreadable selection");
@@ -62,7 +61,6 @@ fn discovers_package_and_legacy_installs() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn updater_only_runs_for_stable_installer_owned_releases() {
     let home = tempfile::TempDir::new().expect("home");
@@ -111,7 +109,6 @@ fn updater_only_runs_for_stable_installer_owned_releases() {
     ));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn older_managed_binary_does_not_claim_updater_support() {
     let temp = tempfile::TempDir::new().expect("home");

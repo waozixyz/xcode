@@ -146,11 +146,7 @@ async fn working_gateway_exporter_allows_model_list_without_an_oauth_session() -
     let token_file = home.path().join("exported-token");
     std::fs::write(&token_file, "")?;
     let file_arg = serde_json::to_string(&token_file)?;
-    let command = if cfg!(windows) {
-        format!("command = 'cmd.exe', args = ['/D', '/C', 'type', {file_arg}]")
-    } else {
-        format!("command = 'cat', args = [{file_arg}]")
-    };
+    let command = format!("command = 'cat', args = [{file_arg}]");
     std::fs::write(
         home.path().join("config.toml"),
         format!(
@@ -339,7 +335,6 @@ async fn file_credentials_reuse_gateway_login_after_restart() -> Result<()> {
 
     let path = home.path().join("secrets/gateway_oauth.json");
     assert!(path.is_file());
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(path)?.permissions().mode() & 0o777, 0o600);

@@ -1,9 +1,7 @@
 //! Native process identities and zombie state, independent of locale and timezone.
 //! Boot IDs prevent records surviving reboot from matching reused process identifiers.
 
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
 use anyhow::Context;
-#[cfg(any(target_os = "linux", target_os = "macos", test))]
 use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
@@ -28,7 +26,6 @@ pub(super) enum ProcessIdentity {
     },
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl ProcessIdentity {
     pub(super) async fn matches_process(&self, pid: u32) -> Result<(bool, bool)> {
         // A different boot proves staleness even when the reused PID is inaccessible.
@@ -65,7 +62,6 @@ impl ProcessIdentity {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 impl super::PidBackend {
     pub(crate) async fn promote_legacy_identity(&self) -> Result<()> {
         let _reservation = self.acquire_reservation_lock().await?;

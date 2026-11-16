@@ -197,7 +197,6 @@ fn effort_ignition_clock_waits_for_its_first_visible_frame() {
     assert_eq!(ignition.charge_alpha(), 0.0);
 }
 
-#[cfg(unix)]
 #[test]
 fn effort_ignition_finishes_when_palette_is_unavailable() {
     let ignition = EffortIgnition::new(EffortTier::Ultra, IgnitionStyle::Wave);

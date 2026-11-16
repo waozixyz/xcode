@@ -22,8 +22,6 @@ pub enum UpdateAction {
     BrewUpgrade,
     /// Update via the standalone Unix installer.
     StandaloneUnix,
-    /// Update via `$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex`.
-    StandaloneWindows,
 }
 
 impl UpdateAction {
@@ -37,7 +35,6 @@ impl UpdateAction {
             InstallMethod::Brew => Some(UpdateAction::BrewUpgrade),
             InstallMethod::Standalone { platform, .. } => Some(match platform {
                 StandalonePlatform::Unix => UpdateAction::StandaloneUnix,
-                StandalonePlatform::Windows => UpdateAction::StandaloneWindows,
             }),
             InstallMethod::Other => None,
         }
@@ -57,15 +54,6 @@ impl UpdateAction {
                 &[
                     "-c",
                     r#"s=$(curl -fsSL https://chatgpt.com/codex/install.sh) && CODEX_NON_INTERACTIVE=1 eval "$s""#,
-                ],
-            ),
-            UpdateAction::StandaloneWindows => (
-                "powershell",
-                &[
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-c",
-                    "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex",
                 ],
             ),
         }
@@ -142,36 +130,8 @@ mod tests {
             }),
             Some(UpdateAction::StandaloneUnix)
         );
-        assert_eq!(
-            UpdateAction::from_install_context(&InstallContext {
-                method: InstallMethod::Standalone {
-                    platform: StandalonePlatform::Windows,
-                    release_dir: native_release_dir.clone(),
-                    resources_dir: Some(native_release_dir.join("codex-resources")),
-                },
-                package_layout: None,
-            }),
-            Some(UpdateAction::StandaloneWindows)
-        );
     }
 
-    #[test]
-    fn standalone_windows_update_command_reruns_latest_installer() {
-        assert_eq!(
-            UpdateAction::StandaloneWindows.command_args(),
-            (
-                "powershell",
-                &[
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-c",
-                    "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex"
-                ][..],
-            )
-        );
-    }
-
-    #[cfg(unix)]
     #[test]
     fn standalone_unix_update_fails_when_installer_download_fails() {
         let (command, args) = UpdateAction::StandaloneUnix.command_args();

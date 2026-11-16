@@ -7,7 +7,6 @@ use super::SpanData;
 use super::SpanProcessor;
 use pretty_assertions::assert_eq;
 use std::io::ErrorKind;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::Condvar;
@@ -18,7 +17,6 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::Duration;
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 const GUARD_PAGE_FAILURE_CHILD_TEST: &str =
     "provider::shutdown_tests::bounded_shutdown_survives_worker_guard_page_failure_child";
 
@@ -202,7 +200,6 @@ async fn bounded_shutdown_does_not_flush_when_worker_creation_fails() {
     assert_eq!(completed.try_recv(), Err(mpsc::TryRecvError::Empty));
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn bounded_shutdown_survives_worker_guard_page_failure() {
     let unique_suffix = std::time::SystemTime::now()
@@ -248,7 +245,6 @@ fn bounded_shutdown_survives_worker_guard_page_failure() {
     );
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 // The parent regression invokes this ignored test in a fresh subprocess with
 // `--exact --ignored`, isolating fatal native-thread initialization failures.

@@ -16,14 +16,8 @@ use codex_config::Sourced;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_protocol::config_types::TrustLevel;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErrKind;
 use codex_protocol::models::PermissionProfile;
-use codex_protocol::permissions::FileSystemAccessMode;
-use codex_protocol::permissions::FileSystemPath;
-use codex_protocol::permissions::FileSystemSandboxEntry;
-use codex_protocol::permissions::FileSystemSandboxPolicy;
-use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GranularApprovalConfig;
@@ -36,10 +30,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
-
-#[cfg(windows)]
-#[path = "exec_policy_windows_tests.rs"]
-mod windows_tests;
 
 fn config_stack_for_dot_codex_folder(dot_codex_folder: &Path) -> ConfigLayerStack {
     let dot_codex_folder =
@@ -57,11 +47,7 @@ fn config_stack_for_dot_codex_folder(dot_codex_folder: &Path) -> ConfigLayerStac
 }
 
 fn host_absolute_path(segments: &[&str]) -> String {
-    let mut path = if cfg!(windows) {
-        PathBuf::from(r"C:\")
-    } else {
-        PathBuf::from("/")
-    };
+    let mut path = PathBuf::from("/");
     for segment in segments {
         path.push(segment);
     }
@@ -69,11 +55,7 @@ fn host_absolute_path(segments: &[&str]) -> String {
 }
 
 fn host_program_path(name: &str) -> String {
-    let executable_name = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
+    let executable_name = name.to_string();
     host_absolute_path(&["usr", "bin", &executable_name])
 }
 
@@ -706,7 +688,6 @@ fn commands_for_exec_policy_falls_back_for_empty_shell_script() {
         commands_for_exec_policy(&command),
         ExecPolicyCommands {
             commands: vec![command],
-            command_origin: ExecPolicyCommandOrigin::Generic,
         }
     );
 }
@@ -723,7 +704,6 @@ fn commands_for_exec_policy_falls_back_for_whitespace_shell_script() {
         commands_for_exec_policy(&command),
         ExecPolicyCommands {
             commands: vec![command],
-            command_origin: ExecPolicyCommandOrigin::Generic,
         }
     );
 }
@@ -882,7 +862,6 @@ async fn heredoc_prompt_replaces_inner_requested_prefix_with_full_command() {
 }
 
 #[tokio::test]
-#[cfg(not(windows))]
 async fn heredoc_with_variable_assignment_is_not_reduced_to_allowed_prefix() {
     assert_exec_approval_requirement_for_command(
         ExecApprovalRequirementScenario {
@@ -1101,12 +1080,7 @@ prefix_rule(pattern=["git"], decision="allow")
 #[tokio::test]
 async fn absolute_path_exec_approval_requirement_ignores_disallowed_host_executable_paths() {
     let allowed_git_path = host_program_path("git");
-    let disallowed_git_path = host_absolute_path(&[
-        "opt",
-        "homebrew",
-        "bin",
-        if cfg!(windows) { "git.exe" } else { "git" },
-    ]);
+    let disallowed_git_path = host_absolute_path(&["opt", "homebrew", "bin", "git"]);
     let allowed_git_path_literal = starlark_string(&allowed_git_path);
     let policy_src = format!(
         r#"
@@ -1195,9 +1169,7 @@ fn unmatched_granular_policy_still_prompts_for_restricted_sandbox_escalation() {
                     mcp_elicitations: true,
                 }),
                 permission_profile: &PermissionProfile::read_only(),
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
-                command_origin: ExecPolicyCommandOrigin::Generic,
             },
         )
     );
@@ -1214,9 +1186,7 @@ fn unmatched_on_request_uses_permission_profile_file_system_policy_for_escalatio
             UnmatchedCommandContext {
                 approval_policy: AskForApproval::OnRequest,
                 permission_profile: &PermissionProfile::read_only(),
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
-                command_origin: ExecPolicyCommandOrigin::Generic,
             },
         )
     );
@@ -1233,91 +1203,10 @@ fn known_safe_on_request_still_prompts_for_restricted_sandbox_escalation() {
             UnmatchedCommandContext {
                 approval_policy: AskForApproval::OnRequest,
                 permission_profile: &PermissionProfile::workspace_write(),
-                windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
                 sandbox_permissions: SandboxPermissions::RequireEscalated,
-                command_origin: ExecPolicyCommandOrigin::Generic,
             },
         )
     );
-}
-
-#[test]
-fn managed_cwd_write_profile_has_filesystem_restrictions() {
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
-            },
-            access: FileSystemAccessMode::Read,
-            missing_path_behavior: None,
-        },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
-            },
-            access: FileSystemAccessMode::Write,
-            missing_path_behavior: None,
-        },
-    ]);
-    let permission_profile = PermissionProfile::from_runtime_permissions(
-        &file_system_sandbox_policy,
-        NetworkSandboxPolicy::Restricted,
-    );
-
-    assert!(profile_has_managed_filesystem_restrictions(
-        &permission_profile
-    ));
-}
-
-#[test]
-fn managed_unresolvable_write_profile_has_filesystem_restrictions() {
-    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
-            },
-            access: FileSystemAccessMode::Read,
-            missing_path_behavior: None,
-        },
-        FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(
-                    ":future_special_path",
-                    /*subpath*/ None,
-                ),
-            },
-            access: FileSystemAccessMode::Write,
-            missing_path_behavior: None,
-        },
-    ]);
-    let permission_profile = PermissionProfile::from_runtime_permissions(
-        &file_system_sandbox_policy,
-        NetworkSandboxPolicy::Restricted,
-    );
-
-    assert!(profile_has_managed_filesystem_restrictions(
-        &permission_profile
-    ));
-}
-
-#[test]
-fn managed_full_disk_write_profile_has_no_filesystem_restrictions() {
-    let file_system_sandbox_policy =
-        FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-            path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::Root,
-            },
-            access: FileSystemAccessMode::Write,
-            missing_path_behavior: None,
-        }]);
-    let permission_profile = PermissionProfile::from_runtime_permissions(
-        &file_system_sandbox_policy,
-        NetworkSandboxPolicy::Restricted,
-    );
-
-    assert!(!profile_has_managed_filesystem_restrictions(
-        &permission_profile
-    ));
 }
 
 #[tokio::test]
@@ -1418,75 +1307,6 @@ async fn exec_approval_requirement_rejects_unmatched_sandbox_escalation_when_gra
     .await;
 }
 
-#[test_case::test_case(DangerousCommandPlatform::Posix, WindowsSandboxLevel::RestrictedToken; "posix")]
-#[test_case::test_case(DangerousCommandPlatform::Windows, WindowsSandboxLevel::RestrictedToken; "windows")]
-#[test_case::test_case(DangerousCommandPlatform::Windows, WindowsSandboxLevel::Disabled; "windows_without_sandbox")]
-#[tokio::test]
-async fn granular_dangerous_command_approval_does_not_authorize_escalation(
-    platform: DangerousCommandPlatform,
-    windows_sandbox_level: WindowsSandboxLevel,
-) {
-    let command = match platform {
-        DangerousCommandPlatform::Posix => vec!["rm", "-f", "recording.mp4"],
-        DangerousCommandPlatform::Windows => vec![
-            "powershell.exe",
-            "-Command",
-            "Remove-Item -Force recording.mp4",
-        ],
-    }
-    .into_iter()
-    .map(str::to_owned)
-    .collect::<Vec<_>>();
-    for sandbox_permissions in [
-        SandboxPermissions::UseDefault,
-        SandboxPermissions::WithAdditionalPermissions,
-        SandboxPermissions::RequireEscalated,
-    ] {
-        let requirement = ExecPolicyManager::default()
-            .create_exec_approval_requirement_for_command_platform(
-                ExecApprovalRequest {
-                    command: &command,
-                    approval_policy: AskForApproval::Granular(GranularApprovalConfig {
-                        sandbox_approval: false,
-                        rules: false,
-                        skill_approval: false,
-                        request_permissions: true,
-                        mcp_elicitations: true,
-                    }),
-                    permission_profile: PermissionProfile::workspace_write(),
-                    environment_policy: None,
-                    windows_sandbox_level,
-                    sandbox_permissions,
-                    prefix_rule: None,
-                    allow_prefix_rules: AllowPrefixRules::Honor,
-                },
-                platform,
-            )
-            .await;
-        let expected = if sandbox_permissions == SandboxPermissions::UseDefault
-            && windows_sandbox_level == WindowsSandboxLevel::RestrictedToken
-        {
-            ExecApprovalRequirement::NeedsApproval {
-                reason: None,
-                proposed_execpolicy_amendment: None,
-            }
-        } else {
-            ExecApprovalRequirement::Forbidden {
-                reason: match platform {
-                    DangerousCommandPlatform::Posix => {
-                        "rm -f style commands are not permitted. Use a safer approach".to_string()
-                    }
-                    DangerousCommandPlatform::Windows => REJECT_SANDBOX_APPROVAL_REASON.to_string(),
-                },
-            }
-        };
-        assert_eq!(
-            requirement, expected,
-            "{platform:?}: {sandbox_permissions:?}"
-        );
-    }
-}
-
 #[test]
 fn other_danger_preserves_rejected_prompt_reason() {
     assert_eq!(
@@ -1535,7 +1355,6 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
             }),
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1574,7 +1393,6 @@ async fn forced_rm_preserves_rule_rejection_when_granular_rules_are_disabled() {
             }),
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1600,7 +1418,6 @@ async fn exec_approval_requirement_falls_back_to_heuristics() {
             approval_policy: AskForApproval::UnlessTrusted,
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1627,7 +1444,6 @@ async fn empty_bash_lc_script_falls_back_to_original_command() {
             approval_policy: AskForApproval::UnlessTrusted,
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1658,7 +1474,6 @@ async fn whitespace_bash_lc_script_falls_back_to_original_command() {
             approval_policy: AskForApproval::UnlessTrusted,
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1689,7 +1504,6 @@ async fn request_rule_uses_prefix_rule() {
             approval_policy: AskForApproval::OnRequest,
             permission_profile: PermissionProfile::read_only(),
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1723,7 +1537,6 @@ async fn request_rule_falls_back_when_prefix_rule_does_not_approve_all_commands(
             approval_policy: AskForApproval::OnRequest,
             permission_profile: PermissionProfile::Disabled,
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::Disabled,
             sandbox_permissions: SandboxPermissions::RequireEscalated,
             prefix_rule: Some(vec!["cargo".to_string(), "install".to_string()]),
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -1764,7 +1577,6 @@ async fn heuristics_apply_when_other_commands_match_policy() {
                 approval_policy: AskForApproval::UnlessTrusted,
                 permission_profile: PermissionProfile::Disabled,
                 environment_policy: None,
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: SandboxPermissions::UseDefault,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
@@ -2225,7 +2037,6 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
                 approval_policy: AskForApproval::OnRequest,
                 permission_profile: PermissionProfile::read_only(),
                 environment_policy: None,
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
@@ -2248,7 +2059,6 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
                 approval_policy: AskForApproval::Never,
                 permission_profile: PermissionProfile::read_only(),
                 environment_policy: None,
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
@@ -2260,7 +2070,7 @@ async fn forced_rm_requires_approval_or_specific_rejection_on_all_platforms() {
 }
 
 /// Note this test behaves differently on Windows because it exercises an
-/// `if cfg!(windows)` code path in render_decision_for_unmatched_command().
+/// `if false` code path in render_decision_for_unmatched_command().
 #[tokio::test]
 async fn verify_approval_requirement_for_unsafe_powershell_command() {
     // `brew install powershell` to run this test on a Mac!
@@ -2281,25 +2091,13 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
         "-Command",
         "echo hi @(calc)",
     ])));
-    let (pwsh_approval_reason, expected_req) = if cfg!(windows) {
-        (
-            r#"On Windows, SandboxPolicy::ReadOnly should be assumed to mean
-                that no sandbox is present, so anything that is not "provably
-                safe" should require approval."#,
-            ExecApprovalRequirement::NeedsApproval {
-                reason: None,
-                proposed_execpolicy_amendment: expected_amendment.clone(),
-            },
-        )
-    } else {
-        (
-            "On non-Windows, rely on the read-only sandbox to prevent harm.",
-            ExecApprovalRequirement::Skip {
-                bypass_sandbox: false,
-                proposed_execpolicy_amendment: expected_amendment.clone(),
-            },
-        )
-    };
+    let (pwsh_approval_reason, expected_req) = (
+        "On non-Windows, rely on the read-only sandbox to prevent harm.",
+        ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: expected_amendment.clone(),
+        },
+    );
     assert_eq!(
         expected_req,
         policy
@@ -2308,7 +2106,6 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
                 approval_policy: AskForApproval::OnRequest,
                 permission_profile: PermissionProfile::read_only(),
                 environment_policy: None,
-                windows_sandbox_level: WindowsSandboxLevel::Disabled,
                 sandbox_permissions: permissions,
                 prefix_rule: None,
                 allow_prefix_rules: AllowPrefixRules::Honor,
@@ -2402,7 +2199,6 @@ async fn exec_approval_requirement_for_command(
             approval_policy,
             permission_profile,
             environment_policy: None,
-            windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
             sandbox_permissions,
             prefix_rule,
             allow_prefix_rules: AllowPrefixRules::Honor,
@@ -2575,81 +2371,43 @@ async fn exec_policy_warnings_ignore_untrusted_project_rules_without_config_toml
 }
 
 #[tokio::test]
-async fn windows_powershell_policy_classifies_only_independent_literal_commands() {
-    for (script, expected) in [
-        (
-            "project-cli subtask start --text 'https://example.com'",
-            Decision::Allow,
-        ),
-        ("Write-Output start 'https://example.com'", Decision::Allow),
-        (
-            "Start-Process notepad.exe; Invoke-WebRequest 'http://127.0.0.1/health'",
-            Decision::Allow,
-        ),
-        ("Start-Process 'https://example.com'", Decision::Forbidden),
-        (
-            "Write-Output start 'https://example.com' | Out-String",
-            Decision::Forbidden,
-        ),
-        (
-            "$target = 'https://example.com/'; Start-Process $target",
-            Decision::Forbidden,
-        ),
-        (
-            "Write-Output 'Start-Process https://example.com'",
-            Decision::Forbidden,
-        ),
-        (
-            "wmic process call create 'powershell.exe -Command Start-Process https://example.com'",
-            Decision::Forbidden,
-        ),
-        ("cmd /c start https://example.com", Decision::Forbidden),
-        (
-            "wt cmd.exe /c start https://example.com",
-            Decision::Forbidden,
-        ),
-        (
-            "wt.exe cmd.exe /c start https://example.com",
-            Decision::Forbidden,
-        ),
-        ("wt.exe cmd.exe /c echo hello", Decision::Allow),
-        ("Remove-Item test -Force", Decision::Forbidden),
+async fn granular_dangerous_command_approval_does_not_authorize_escalation() {
+    let command = vec!["rm", "-f", "recording.mp4"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for sandbox_permissions in [
+        SandboxPermissions::UseDefault,
+        SandboxPermissions::WithAdditionalPermissions,
+        SandboxPermissions::RequireEscalated,
     ] {
-        for flags in [&["-Command"][..], &["-NonInteractive", "-Command"][..]] {
-            for configured_executable in ["pwsh", "other-shell"] {
-                let manager = ExecPolicyManager::new(Arc::new(Policy::empty()));
-                let command = [vec_str(&["pwsh"]), vec_str(flags), vec_str(&[script])].concat();
-                let shell = crate::shell::Shell {
-                    shell_type: crate::shell::ShellType::PowerShell,
-                    shell_path: PathBuf::from(configured_executable),
-                };
-                let requirement = manager
-                    .create_exec_approval_requirement_for_shell(
-                        ExecApprovalRequest {
-                            command: &command,
-                            approval_policy: AskForApproval::Never,
-                            permission_profile: PermissionProfile::Disabled,
-                            environment_policy: None,
-                            windows_sandbox_level: WindowsSandboxLevel::Disabled,
-                            sandbox_permissions: SandboxPermissions::UseDefault,
-                            prefix_rule: None,
-                            allow_prefix_rules: AllowPrefixRules::Honor,
-                        },
-                        &shell,
-                        DangerousCommandPlatform::Windows,
-                    )
-                    .await;
-                let actual = match requirement {
-                    ExecApprovalRequirement::Skip { .. } => Decision::Allow,
-                    ExecApprovalRequirement::NeedsApproval { .. } => Decision::Prompt,
-                    ExecApprovalRequirement::NeedsHumanApproval { .. } => Decision::PromptUser,
-                    ExecApprovalRequirement::Forbidden { .. } => Decision::Forbidden,
-                };
-                assert_eq!(
-                    actual, expected,
-                    "{command:?}; shell: {configured_executable}"
-                );
+        let requirement = ExecPolicyManager::default()
+            .create_exec_approval_requirement_for_command(ExecApprovalRequest {
+                command: &command,
+                approval_policy: AskForApproval::Granular(GranularApprovalConfig {
+                    sandbox_approval: false,
+                    rules: false,
+                    skill_approval: false,
+                    request_permissions: true,
+                    mcp_elicitations: true,
+                }),
+                permission_profile: PermissionProfile::workspace_write(),
+                environment_policy: None,
+                sandbox_permissions,
+                prefix_rule: None,
+                allow_prefix_rules: AllowPrefixRules::Honor,
+            })
+            .await;
+        let expected = if sandbox_permissions == SandboxPermissions::UseDefault {
+            ExecApprovalRequirement::NeedsApproval {
+                reason: None,
+                proposed_execpolicy_amendment: None,
             }
-        }
+        } else {
+            ExecApprovalRequirement::Forbidden {
+                reason: "rm -f style commands are not permitted. Use a safer approach".to_string(),
+            }
+        };
+        assert_eq!(requirement, expected, "{sandbox_permissions:?}");
     }
 }

@@ -284,9 +284,6 @@ impl App {
         thread_id: ThreadId,
         action: AgentsOverviewAction,
     ) -> color_eyre::Result<()> {
-        if self.windows_sandbox_blocks_thread_switch() {
-            return Ok(());
-        }
         // Cloud archives only the selected thread; Local lifecycle actions include descendants.
         let removes_subtree = action != AgentsOverviewAction::Archive
             || app_server.thread_params_mode()

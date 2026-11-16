@@ -432,7 +432,6 @@ async fn registration_snapshot_changes_only_after_same_key_replacement_is_instal
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn registration_renewal_recovers_the_session_and_running_process() -> Result<()> {
     let _clock = freeze_clock();

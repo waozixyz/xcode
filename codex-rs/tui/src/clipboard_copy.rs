@@ -297,7 +297,6 @@ fn arboard_copy(
 
 /// Write text to the clipboard via the OSC 52 terminal escape sequence.
 fn write_osc52(sequence: &str) -> Result<(), String> {
-    #[cfg(unix)]
     {
         match std::fs::OpenOptions::new().write(true).open("/dev/tty") {
             Ok(tty) => match write_osc52_to_writer(tty, sequence) {

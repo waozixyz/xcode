@@ -81,13 +81,6 @@ fn test_exec_request(
         ExecExpiration::DefaultTimeout,
         ExecCapturePolicy::ShellTool,
         SandboxType::None,
-        turn.config
-            .effective_workspace_roots()
-            .iter()
-            .map(PathUri::to_abs_path)
-            .collect::<std::io::Result<Vec<_>>>()
-            .expect("test workspace roots are host-native"),
-        turn.windows_sandbox_level,
         permission_profile,
         arg0,
     )
@@ -116,7 +109,6 @@ async fn exec_command_with_tty(
                 process_id,
                 &request,
                 /*tool_ctx*/ None,
-                codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
                 /*network_policy_decider*/ None,
                 tty,
                 turn.initial_environments
@@ -790,88 +782,6 @@ async fn terminating_during_stdin_poll_returns_exited_response(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn completed_pipe_commands_preserve_exit_code() -> anyhow::Result<()> {
-    let (_, turn) = make_session_and_context().await;
-    #[allow(deprecated)]
-    let cwd = turn.cwd.clone();
-    let request = test_exec_request(
-        &turn,
-        vec!["bash".to_string(), "-lc".to_string(), "exit 17".to_string()],
-        cwd,
-        shell_env(),
-    );
-
-    let environment = codex_exec_server::Environment::default_for_tests();
-    let process = UnifiedExecProcessManager::default()
-        .open_session_with_prepared_exec_env(
-            /*process_id*/ 1234,
-            &request,
-            /*tool_ctx*/ None,
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
-            /*network_policy_decider*/ None,
-            /*tty*/ false,
-            &environment,
-        )
-        .await?;
-
-    if !process.has_exited() {
-        let exit_signal = process.cancellation_token();
-        assert!(
-            tokio::time::timeout(Duration::from_secs(2), exit_signal.cancelled())
-                .await
-                .is_ok(),
-            "process did not report exit within timeout"
-        );
-    }
-
-    assert!(process.has_exited());
-    assert_eq!(process.exit_code(), Some(17));
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_uses_remote_exec_server_when_configured() -> anyhow::Result<()> {
-    skip_if_sandbox!(Ok(()));
-    skip_if_no_remote_env!(Ok(()));
-
-    let remote_test_env = remote_test_env().await?;
-    let (_, turn) = make_session_and_context().await;
-    let request = test_exec_request(
-        &turn,
-        vec!["bash".to_string(), "-i".to_string()],
-        remote_test_env.cwd().clone(),
-        shell_env(),
-    );
-
-    let manager = UnifiedExecProcessManager::default();
-    let process = manager
-        .open_session_with_prepared_exec_env(
-            /*process_id*/ 1234,
-            &request,
-            /*tool_ctx*/ None,
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
-            /*network_policy_decider*/ None,
-            /*tty*/ true,
-            remote_test_env.environment(),
-        )
-        .await?;
-
-    process.write(b"printf 'remote-unified-exec\\n'\n").await?;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    let collected = UnifiedExecProcessManager::collect_output_until_deadline(
-        process.output_handles(),
-        /*pause_state*/ None,
-        Instant::now() + Duration::from_millis(2_500),
-    )
-    .await
-    .to_bytes_with_omission_marker();
-
-    assert!(String::from_utf8_lossy(&collected).contains("remote-unified-exec"));
-    Ok(())
-}
-
 #[tokio::test]
 async fn stdin_approval_preserves_the_reviewed_terminal() -> anyhow::Result<()> {
     use crate::session::tests::make_session_and_context_with_auth_and_config_and_rx;
@@ -1107,5 +1017,85 @@ async fn stdin_approval_observes_strict_review_enabled_while_queued() -> anyhow:
             if reason.contains("NUL byte")
     ));
     assert!(session.terminate_background_terminal(process_id).await);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn completed_pipe_commands_preserve_exit_code() -> anyhow::Result<()> {
+    let (_, turn) = make_session_and_context().await;
+    #[allow(deprecated)]
+    let cwd = turn.cwd.clone();
+    let request = test_exec_request(
+        &turn,
+        vec!["bash".to_string(), "-lc".to_string(), "exit 17".to_string()],
+        cwd,
+        shell_env(),
+    );
+
+    let environment = codex_exec_server::Environment::default_for_tests();
+    let process = UnifiedExecProcessManager::default()
+        .open_session_with_prepared_exec_env(
+            /*process_id*/ 1234,
+            &request,
+            /*tool_ctx*/ None,
+            /*network_policy_decider*/ None,
+            /*tty*/ false,
+            &environment,
+        )
+        .await?;
+
+    if !process.has_exited() {
+        let exit_signal = process.cancellation_token();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), exit_signal.cancelled())
+                .await
+                .is_ok(),
+            "process did not report exit within timeout"
+        );
+    }
+
+    assert!(process.has_exited());
+    assert_eq!(process.exit_code(), Some(17));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unified_exec_uses_remote_exec_server_when_configured() -> anyhow::Result<()> {
+    skip_if_sandbox!(Ok(()));
+    skip_if_no_remote_env!(Ok(()));
+
+    let remote_test_env = remote_test_env().await?;
+    let (_, turn) = make_session_and_context().await;
+    let request = test_exec_request(
+        &turn,
+        vec!["bash".to_string(), "-i".to_string()],
+        remote_test_env.cwd().clone(),
+        shell_env(),
+    );
+
+    let manager = UnifiedExecProcessManager::default();
+    let process = manager
+        .open_session_with_prepared_exec_env(
+            /*process_id*/ 1234,
+            &request,
+            /*tool_ctx*/ None,
+            /*network_policy_decider*/ None,
+            /*tty*/ true,
+            remote_test_env.environment(),
+        )
+        .await?;
+
+    process.write(b"printf 'remote-unified-exec\\n'\n").await?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let collected = UnifiedExecProcessManager::collect_output_until_deadline(
+        process.output_handles(),
+        /*pause_state*/ None,
+        Instant::now() + Duration::from_millis(2_500),
+    )
+    .await
+    .to_bytes_with_omission_marker();
+
+    assert!(String::from_utf8_lossy(&collected).contains("remote-unified-exec"));
     Ok(())
 }

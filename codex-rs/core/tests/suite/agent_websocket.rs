@@ -759,56 +759,6 @@ async fn websocket_model_switch_to_responses_lite_omits_top_level_tools() -> Res
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn websocket_test_codex_shell_chain() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let call_id = "exec-command-call";
-    let server = start_websocket_server(vec![vec![
-        vec![
-            ev_response_created("resp-1"),
-            ev_exec_command_call(call_id, "echo websocket"),
-            ev_completed("resp-1"),
-        ],
-        vec![
-            ev_response_created("resp-2"),
-            ev_assistant_message("msg_1", "done"),
-            ev_completed("resp-2"),
-        ],
-    ]])
-    .await;
-
-    let mut builder = test_codex().with_windows_cmd_shell();
-
-    let test = builder.build_with_websocket_server(&server).await?;
-    test.submit_turn_with_policy("run the echo command", test.config.legacy_sandbox_policy())
-        .await?;
-
-    let connection = server.single_connection();
-    assert_eq!(connection.len(), 2);
-
-    let first_turn = connection
-        .first()
-        .expect("missing first turn request")
-        .body_json();
-    let second_turn = connection
-        .get(1)
-        .expect("missing second turn request")
-        .body_json();
-
-    assert_eq!(first_turn["type"].as_str(), Some("response.create"));
-    assert_eq!(second_turn["type"].as_str(), Some("response.create"));
-
-    let input_items = second_turn
-        .get("input")
-        .and_then(Value::as_array)
-        .expect("second response.create input array");
-    assert!(!input_items.is_empty());
-
-    server.shutdown().await;
-    Ok(())
-}
-
 #[test_case::test_case(false, false; "update_plan disabled")]
 #[test_case::test_case(true, false; "update_plan enabled")]
 #[test_case::test_case(true, true; "incremental tools")]
@@ -962,95 +912,6 @@ async fn websocket_first_turn_handles_handshake_delay_with_startup_prewarm() -> 
         "expected request tools to be populated"
     );
     assert_eq!(turn["type"].as_str(), Some("response.create"));
-
-    server.shutdown().await;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn websocket_v2_test_codex_shell_chain() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let call_id = "exec-command-call";
-    let mut exec_command_call = ev_exec_command_call(call_id, "echo websocket");
-    exec_command_call["item"]["id"] = serde_json::json!("fc_exec_command_call");
-    exec_command_call["item"]["internal_chat_message_metadata_passthrough"] =
-        serde_json::json!({"turn_id": "turn-123"});
-    let server = start_websocket_server(vec![vec![
-        vec![ev_response_created("warm-1"), ev_completed("warm-1")],
-        vec![
-            ev_response_created("resp-1"),
-            exec_command_call,
-            ev_completed("resp-1"),
-        ],
-        vec![
-            ev_response_created("resp-2"),
-            ev_assistant_message("msg_1", "done"),
-            ev_completed("resp-2"),
-        ],
-    ]])
-    .await;
-
-    let mut builder = test_codex().with_windows_cmd_shell().with_config(|config| {
-        config
-            .features
-            .enable(Feature::ResponsesWebsocketsV2)
-            .expect("test config should allow feature update");
-    });
-
-    let test = builder.build_with_websocket_server(&server).await?;
-    test.submit_turn_with_policy("run the echo command", test.config.legacy_sandbox_policy())
-        .await?;
-
-    let connection = server.single_connection();
-    assert_eq!(connection.len(), 3);
-
-    let warmup = connection
-        .first()
-        .expect("missing warmup request")
-        .body_json();
-    let first_turn = connection
-        .get(1)
-        .expect("missing first turn request")
-        .body_json();
-    let second_turn = connection
-        .get(2)
-        .expect("missing second turn request")
-        .body_json();
-
-    assert_eq!(warmup["type"].as_str(), Some("response.create"));
-    assert_eq!(warmup["generate"].as_bool(), Some(false));
-    assert_eq!(first_turn["type"].as_str(), Some("response.create"));
-    assert_eq!(first_turn["previous_response_id"].as_str(), Some("warm-1"));
-    assert!(
-        first_turn
-            .get("input")
-            .and_then(Value::as_array)
-            .is_some_and(|items| !items.is_empty())
-    );
-    assert_eq!(second_turn["type"].as_str(), Some("response.create"));
-    assert_eq!(second_turn["previous_response_id"].as_str(), Some("resp-1"));
-
-    let create_items = second_turn
-        .get("input")
-        .and_then(Value::as_array)
-        .expect("response.create input array");
-    assert!(!create_items.is_empty());
-
-    let output_item = create_items
-        .iter()
-        .find(|item| item.get("type").and_then(Value::as_str) == Some("function_call_output"))
-        .expect("function_call_output in create");
-    assert_eq!(
-        output_item.get("call_id").and_then(Value::as_str),
-        Some(call_id)
-    );
-
-    let handshake = server.single_handshake();
-    assert_eq!(
-        handshake.header("openai-beta"),
-        Some(WS_V2_BETA_HEADER_VALUE.to_string())
-    );
 
     server.shutdown().await;
     Ok(())
@@ -1228,6 +1089,145 @@ async fn websocket_v2_next_turn_uses_updated_service_tier() -> Result<()> {
             .get("input")
             .and_then(Value::as_array)
             .is_some_and(|items| !items.is_empty())
+    );
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn websocket_test_codex_shell_chain() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let call_id = "exec-command-call";
+    let server = start_websocket_server(vec![vec![
+        vec![
+            ev_response_created("resp-1"),
+            ev_exec_command_call(call_id, "echo websocket"),
+            ev_completed("resp-1"),
+        ],
+        vec![
+            ev_response_created("resp-2"),
+            ev_assistant_message("msg_1", "done"),
+            ev_completed("resp-2"),
+        ],
+    ]])
+    .await;
+
+    let mut builder = test_codex();
+
+    let test = builder.build_with_websocket_server(&server).await?;
+    test.submit_turn_with_policy("run the echo command", test.config.legacy_sandbox_policy())
+        .await?;
+
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 2);
+
+    let first_turn = connection
+        .first()
+        .expect("missing first turn request")
+        .body_json();
+    let second_turn = connection
+        .get(1)
+        .expect("missing second turn request")
+        .body_json();
+
+    assert_eq!(first_turn["type"].as_str(), Some("response.create"));
+    assert_eq!(second_turn["type"].as_str(), Some("response.create"));
+
+    let input_items = second_turn
+        .get("input")
+        .and_then(Value::as_array)
+        .expect("second response.create input array");
+    assert!(!input_items.is_empty());
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn websocket_v2_test_codex_shell_chain() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let call_id = "exec-command-call";
+    let mut exec_command_call = ev_exec_command_call(call_id, "echo websocket");
+    exec_command_call["item"]["id"] = serde_json::json!("fc_exec_command_call");
+    exec_command_call["item"]["internal_chat_message_metadata_passthrough"] =
+        serde_json::json!({"turn_id": "turn-123"});
+    let server = start_websocket_server(vec![vec![
+        vec![ev_response_created("warm-1"), ev_completed("warm-1")],
+        vec![
+            ev_response_created("resp-1"),
+            exec_command_call,
+            ev_completed("resp-1"),
+        ],
+        vec![
+            ev_response_created("resp-2"),
+            ev_assistant_message("msg_1", "done"),
+            ev_completed("resp-2"),
+        ],
+    ]])
+    .await;
+
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::ResponsesWebsocketsV2)
+            .expect("test config should allow feature update");
+    });
+
+    let test = builder.build_with_websocket_server(&server).await?;
+    test.submit_turn_with_policy("run the echo command", test.config.legacy_sandbox_policy())
+        .await?;
+
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 3);
+
+    let warmup = connection
+        .first()
+        .expect("missing warmup request")
+        .body_json();
+    let first_turn = connection
+        .get(1)
+        .expect("missing first turn request")
+        .body_json();
+    let second_turn = connection
+        .get(2)
+        .expect("missing second turn request")
+        .body_json();
+
+    assert_eq!(warmup["type"].as_str(), Some("response.create"));
+    assert_eq!(warmup["generate"].as_bool(), Some(false));
+    assert_eq!(first_turn["type"].as_str(), Some("response.create"));
+    assert_eq!(first_turn["previous_response_id"].as_str(), Some("warm-1"));
+    assert!(
+        first_turn
+            .get("input")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert_eq!(second_turn["type"].as_str(), Some("response.create"));
+    assert_eq!(second_turn["previous_response_id"].as_str(), Some("resp-1"));
+
+    let create_items = second_turn
+        .get("input")
+        .and_then(Value::as_array)
+        .expect("response.create input array");
+    assert!(!create_items.is_empty());
+
+    let output_item = create_items
+        .iter()
+        .find(|item| item.get("type").and_then(Value::as_str) == Some("function_call_output"))
+        .expect("function_call_output in create");
+    assert_eq!(
+        output_item.get("call_id").and_then(Value::as_str),
+        Some(call_id)
+    );
+
+    let handshake = server.single_handshake();
+    assert_eq!(
+        handshake.header("openai-beta"),
+        Some(WS_V2_BETA_HEADER_VALUE.to_string())
     );
 
     server.shutdown().await;

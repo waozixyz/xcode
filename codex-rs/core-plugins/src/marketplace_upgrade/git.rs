@@ -248,19 +248,11 @@ fn git_command(mode: PluginGitMode) -> Command {
     command
 }
 
-#[cfg(windows)]
-fn git_path_arg(path: &Path) -> PathBuf {
-    strip_windows_verbatim_path_prefix(&path.to_string_lossy())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| path.to_path_buf())
-}
-
-#[cfg(not(windows))]
 fn git_path_arg(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-#[cfg(any(windows, test))]
+#[cfg(test)]
 fn strip_windows_verbatim_path_prefix(path: &str) -> Option<String> {
     let stripped = path.strip_prefix(r"\\?\")?;
     let stripped = stripped

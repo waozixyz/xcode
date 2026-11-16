@@ -5,7 +5,6 @@ use codex_core::exec::ExecParams;
 use codex_core::exec::process_exec_tool_call;
 use codex_core::sandboxing::SandboxPermissions;
 use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::Result;
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_protocol::models::PermissionProfile;
@@ -43,7 +42,6 @@ where
         network: None,
         network_environment_id: None,
         sandbox_permissions: SandboxPermissions::UseDefault,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         justification: None,
         arg0: None,
     };
@@ -54,7 +52,6 @@ where
         &cwd,
         std::slice::from_ref(&cwd),
         &None,
-        /*codex_self_exe*/ &None,
         /*use_legacy_landlock*/ false,
         /*stdout_stream*/ None,
     )

@@ -10,7 +10,6 @@ use std::ffi::OsStr;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(unix)]
 use std::sync::Barrier;
 use tempfile::tempdir;
 use wiremock::Mock;
@@ -24,7 +23,6 @@ use zip::write::SimpleFileOptions;
 
 const TEST_CURATED_PLUGIN_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
-#[cfg(unix)]
 #[test]
 fn pretrust_startup_sync_uses_installed_git_with_hostile_path() {
     const CHILD_HOME: &str = "CODEX_TEST_CURATED_SYNC_HOME";
@@ -228,7 +226,6 @@ fn git_command_sanitizes_ambient_repository_environment() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn pretrust_git_sync_ignores_repository_local_transport_config() {
     let fixture = tempdir().expect("tempdir");
@@ -497,12 +494,10 @@ fn has_plugins_clone_dirs(codex_home: &Path) -> bool {
     })
 }
 
-#[cfg(unix)]
 fn write_executable_script(path: &Path, contents: &str) {
     codex_utils_cargo_bin::write_executable(path, contents).expect("write script");
 }
 
-#[cfg(unix)]
 fn run_git(repo: &Path, args: &[&str]) -> std::process::Output {
     let output = Command::new("git")
         .arg("-C")
@@ -667,7 +662,6 @@ fn read_curated_plugins_sha_reads_trimmed_sha_file() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn remove_stale_curated_repo_temp_dirs_removes_only_matching_directories() {
     use std::os::unix::ffi::OsStrExt;
@@ -710,7 +704,6 @@ fn remove_stale_curated_repo_temp_dirs_removes_only_matching_directories() {
     assert!(unrelated_dir.is_dir());
 }
 
-#[cfg(unix)]
 #[test]
 fn concurrent_syncs_serialize_fetches_without_skipping_remote_checks() {
     let tmp = tempdir().expect("tempdir");
@@ -809,7 +802,6 @@ exit 1
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn sync_openai_plugins_repo_via_git_succeeds_with_local_rewritten_remote() {
     let tmp = tempdir().expect("tempdir");
@@ -1063,7 +1055,6 @@ async fn sync_openai_plugins_repo_uses_http_without_git_transport() {
     assert_curated_gmail_repo(&curated_plugins_repo_path(tmp.path()));
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn sync_openai_plugins_repo_falls_back_to_http_when_git_sync_fails() {
     let tmp = tempdir().expect("tempdir");
@@ -1101,7 +1092,6 @@ exit 1
     assert_eq!(read_curated_plugins_sha(tmp.path()).as_deref(), Some(sha));
 }
 
-#[cfg(unix)]
 #[test]
 fn sync_openai_plugins_repo_via_git_cleans_up_staged_dir_on_fetch_failure() {
     let tmp = tempdir().expect("tempdir");
@@ -1142,7 +1132,6 @@ exit 1
     assert!(!has_plugins_clone_dirs(tmp.path()));
 }
 
-#[cfg(unix)]
 #[test]
 fn sync_openai_plugins_repo_via_git_preserves_existing_snapshot_on_validation_failure() {
     let tmp = tempdir().expect("tempdir");
@@ -1232,7 +1221,6 @@ async fn sync_openai_plugins_repo_via_http_cleans_up_staged_dir_on_extract_failu
 }
 
 /// Plugin executables keep their access permissions, but not setuid, setgid, or sticky bits.
-#[cfg(unix)]
 #[test]
 fn extract_zipball_preserves_only_unix_access_permissions() {
     use std::io::Cursor;

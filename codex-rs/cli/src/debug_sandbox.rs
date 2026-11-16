@@ -19,10 +19,7 @@ use codex_core::exec_env::create_env;
 #[cfg(target_os = "macos")]
 use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
-use codex_core::windows_sandbox::local_binding_policy_for_sandbox;
-use codex_core::windows_sandbox::managed_proxy_routing_for_windows_sandbox;
 use codex_protocol::config_types::SandboxMode;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::permissions::NetworkSandboxPolicy;
@@ -31,7 +28,6 @@ use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxSelection;
 use codex_sandboxing::SandboxTransformRequest;
 use codex_sandboxing::SandboxType as SandboxBackend;
-use codex_sandboxing::SandboxType::WindowsMxc;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_path_uri::PathUri;
@@ -41,7 +37,6 @@ use toml::Value as TomlValue;
 
 use crate::LandlockCommand;
 use crate::SeatbeltCommand;
-use crate::WindowsCommand;
 use crate::exit_status::handle_exit_status;
 
 #[cfg(target_os = "macos")]
@@ -131,47 +126,10 @@ pub async fn run_command_under_landlock(
     .await
 }
 
-pub async fn run_command_under_windows_sandbox(
-    command: WindowsCommand,
-    codex_linux_sandbox_exe: Option<PathBuf>,
-    loader_overrides: LoaderOverrides,
-) -> anyhow::Result<()> {
-    let WindowsCommand {
-        sandbox_state,
-        permissions_profile,
-        config_profile: _,
-        cwd,
-        include_managed_config,
-        config_overrides,
-        command,
-    } = command;
-    let managed_requirements_mode = ManagedRequirementsMode::for_profile_invocation(
-        &permissions_profile,
-        include_managed_config,
-    );
-    run_command_under_sandbox(
-        DebugSandboxConfigOptions {
-            sandbox_state,
-            permissions_profile,
-            cwd,
-            managed_requirements_mode,
-            loader_overrides,
-        },
-        command,
-        config_overrides,
-        codex_linux_sandbox_exe,
-        SandboxType::Windows,
-        /*log_denials*/ false,
-        &[],
-    )
-    .await
-}
-
 enum SandboxType {
     #[cfg(target_os = "macos")]
     Seatbelt,
     Landlock,
-    Windows,
 }
 
 #[derive(Debug)]
@@ -209,10 +167,6 @@ async fn run_command_under_sandbox(
     codex_linux_sandbox_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos")),
-        allow(unused_variables)
-    )]
     allow_unix_sockets: &[AbsolutePathBuf],
 ) -> anyhow::Result<()> {
     let sandbox_state = config_options
@@ -295,14 +249,6 @@ async fn run_command_under_sandbox(
         || config.features.use_legacy_landlock(),
         |state| state.use_legacy_landlock,
     );
-    // The parent can select MXC through a CLI override absent from the child's
-    // disk config. Preserve that backend rather than weakening enforcement.
-    // An explicit MXC launch fails closed if the native implementation is unavailable.
-    let windows_sandbox_type = if sandbox_state.as_ref().is_some_and(|state| state.use_mxc) {
-        WindowsMxc
-    } else {
-        config.effective_local_windows_sandbox_type()
-    };
 
     let sandbox = match permission_profile.enforcement() {
         SandboxEnforcement::Disabled | SandboxEnforcement::External => SandboxBackend::None,
@@ -310,33 +256,6 @@ async fn run_command_under_sandbox(
             #[cfg(target_os = "macos")]
             SandboxType::Seatbelt => SandboxBackend::MacosSeatbelt,
             SandboxType::Landlock => SandboxBackend::LinuxSeccomp,
-            #[cfg(windows)]
-            SandboxType::Windows if windows_sandbox_type == WindowsMxc => WindowsMxc,
-            #[cfg(windows)]
-            SandboxType::Windows => {
-                let session_profile = if sandbox_state.is_none() {
-                    config.permissions.effective_permission_profile()
-                } else {
-                    permission_profile
-                };
-                let workspace_roots = config
-                    .effective_workspace_roots()
-                    .iter()
-                    .map(PathUri::to_abs_path)
-                    .collect::<std::io::Result<Vec<_>>>()
-                    .context("invalid Windows sandbox workspace roots")?;
-                run_command_under_windows_session(
-                    &config,
-                    &session_profile,
-                    command,
-                    cwd.clone(),
-                    workspace_roots,
-                    env,
-                )
-                .await;
-            }
-            #[cfg(not(windows))]
-            SandboxType::Windows => anyhow::bail!("Windows sandbox is only available on Windows"),
         },
     };
 
@@ -354,8 +273,8 @@ async fn run_command_under_sandbox(
         Some(
             spec.start_proxy(
                 &permission_profile,
-                managed_proxy_routing_for_windows_sandbox(windows_sandbox_type),
-                local_binding_policy_for_sandbox(windows_sandbox_type, Some(std::env::consts::OS)),
+                codex_network_proxy::ManagedProxyRouting::SharedIngress,
+                codex_network_proxy::LocalBindingPolicy::DefaultFalse,
                 /*policy_decider*/ None,
                 /*blocked_request_observer*/ None,
                 config.managed_network_requirements_enabled(),
@@ -372,20 +291,14 @@ async fn run_command_under_sandbox(
         .map(codex_core::config::StartedNetworkProxy::proxy);
     let sandbox_exe = match sandbox {
         SandboxBackend::LinuxSeccomp => config.codex_linux_sandbox_exe.clone(),
-        WindowsMxc => Some(std::env::current_exe()?),
-        SandboxBackend::None
-        | SandboxBackend::MacosSeatbelt
-        | SandboxBackend::WindowsRestrictedToken => None,
+        SandboxBackend::None | SandboxBackend::MacosSeatbelt => None,
     };
     let mut command = command.into_iter();
     let program = command
         .next()
         .context("sandbox command must not be empty")?;
     let cwd = PathUri::from_abs_path(cwd);
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let manager = SandboxManager::for_inherited_terminal(allow_unix_sockets);
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    let manager = SandboxManager::new();
     let workspace_roots = sandbox_state.is_none().then(|| {
         config
             .permissions
@@ -421,7 +334,6 @@ async fn run_command_under_sandbox(
         sandbox_policy_cwd: &cwd,
         sandbox_exe: sandbox_exe.as_deref(),
         use_legacy_landlock,
-        windows_sandbox_level: WindowsSandboxLevel::Disabled,
     })?;
 
     let mut child = spawn_debug_sandbox_child(
@@ -451,70 +363,6 @@ async fn run_command_under_sandbox(
     }
 
     handle_exit_status(status);
-}
-
-#[cfg(target_os = "windows")]
-async fn run_command_under_windows_session(
-    config: &Config,
-    permission_profile: &PermissionProfile,
-    command: Vec<String>,
-    cwd: AbsolutePathBuf,
-    workspace_roots: Vec<AbsolutePathBuf>,
-    env: std::collections::HashMap<String, String>,
-) -> ! {
-    use codex_core::windows_sandbox::WindowsSandboxLevelExt;
-    use codex_protocol::config_types::WindowsSandboxLevel;
-    use codex_windows_sandbox::WindowsSandboxProxySettingsMode;
-    use codex_windows_sandbox::WindowsSandboxSessionRequest;
-    use codex_windows_sandbox::resolve_windows_deny_read_paths;
-    use codex_windows_sandbox::spawn_windows_sandbox_session_for_level;
-
-    // Setup reconciles persistent deny ACLs against this list. An empty list
-    // would discard the profile's denies, including on subsequent launches.
-    let (mut file_system, _) = permission_profile.to_runtime_permissions();
-    file_system.remove_skip_missing_path_entries();
-    let file_system = file_system.materialize_project_roots_with_workspace_roots(&workspace_roots);
-    let deny_read_paths = match resolve_windows_deny_read_paths(&file_system, &cwd) {
-        Ok(paths) => paths,
-        Err(err) => {
-            eprintln!("windows sandbox failed: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    let empty_paths: &[AbsolutePathBuf] = &[];
-    let spawned = spawn_windows_sandbox_session_for_level(WindowsSandboxSessionRequest {
-        permission_profile,
-        workspace_roots: workspace_roots.as_slice(),
-        codex_home: config.codex_home.as_path(),
-        command,
-        cwd: cwd.as_path(),
-        env_map: env,
-        windows_sandbox_level: WindowsSandboxLevel::from_config(config),
-        proxy_settings_mode: WindowsSandboxProxySettingsMode::Preserve,
-        proxy_enforced: false,
-        network_proxy_restricting_sid: None,
-        timeout_ms: None,
-        read_roots_override: None,
-        read_roots_include_platform_defaults: false,
-        write_roots_override: None,
-        deny_read_paths_override: &deny_read_paths,
-        deny_write_paths_override: empty_paths,
-        tty: false,
-        stdin_open: true,
-    })
-    .await;
-
-    let spawned = match spawned {
-        Ok(spawned) => spawned,
-        Err(err) => {
-            eprintln!("windows sandbox failed: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    let exit_code = codex_windows_sandbox::forward_sandbox_session_stdio(spawned).await;
-    std::process::exit(exit_code);
 }
 
 async fn spawn_debug_sandbox_child(
@@ -648,7 +496,6 @@ async fn build_debug_sandbox_config_with_loader_overrides(
             .fallback_cwd(Some(codex_home));
     }
     let config = builder.build().await?;
-    config.validate_windows_mxc_requirement()?;
     Ok(config)
 }
 
@@ -917,23 +764,13 @@ enabled = true
         )
         .await?;
 
-        if cfg!(target_os = "windows") {
-            assert_eq!(
-                workspace_write_config
-                    .permissions
-                    .file_system_sandbox_policy(),
-                read_only_config.permissions.file_system_sandbox_policy(),
-                "workspace-write downgrades to read-only when the Windows sandbox is disabled"
-            );
-        } else {
-            assert_ne!(
-                workspace_write_config
-                    .permissions
-                    .file_system_sandbox_policy(),
-                read_only_config.permissions.file_system_sandbox_policy(),
-                "test fixture should distinguish explicit workspace-write from read-only"
-            );
-        }
+        assert_ne!(
+            workspace_write_config
+                .permissions
+                .file_system_sandbox_policy(),
+            read_only_config.permissions.file_system_sandbox_policy(),
+            "test fixture should distinguish explicit workspace-write from read-only"
+        );
         assert_eq!(
             config.permissions.file_system_sandbox_policy(),
             workspace_write_config

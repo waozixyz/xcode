@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use codex_code_mode::CellId;
@@ -94,12 +93,10 @@ impl CancellationDelegate {
         )
     }
 
-    #[cfg(unix)]
     fn hold_slow_cleanup(&self) {
         self.hold_slow_cleanup.store(true, Ordering::Release);
     }
 
-    #[cfg(unix)]
     fn release_slow_cleanup(&self) {
         self.slow_cleanup_release.add_permits(1);
     }
@@ -963,7 +960,6 @@ async fn oversized_initial_response_does_not_close_the_shared_host() {
     session.shutdown().await.expect("shutdown remote session");
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
     let host_program =

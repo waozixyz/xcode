@@ -170,11 +170,7 @@ if payload["prompt"] == "blocked":
     );
     std::fs::write(&script_path, script)
         .unwrap_or_else(|error| panic!("write queue hook script: {error}"));
-    let python = if cfg!(windows) {
-        "python.exe"
-    } else {
-        "python3"
-    };
+    let python = "python3";
     let hooks = serde_json::json!({
         "hooks": {
             "UserPromptSubmit": [{
@@ -801,101 +797,6 @@ async fn externally_changed_queues_dispatch_independently_and_retry_failed_wakes
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rejected_queue_messages_are_consumed_without_retrying_or_blocking_followups()
--> anyhow::Result<()> {
-    let server = start_mock_server().await;
-    let responses = responses::mount_sse_sequence(
-        &server,
-        ["initial-turn", "following-turn"]
-            .into_iter()
-            .map(responses::sse_completed)
-            .collect(),
-    )
-    .await;
-    let (installed, extensions) = registered_queue_extensions();
-    let test = test_codex()
-        .with_extensions(extensions)
-        .with_pre_build_hook(write_rejecting_prompt_hook)
-        .with_windows_cmd_shell()
-        .with_config(trust_discovered_hooks)
-        .with_config(|config| config.include_environment_context = false)
-        .build_with_auto_env(&server)
-        .await?;
-    let thread_id = test.session_configured.thread_id;
-    let staging = QueuedItemService::new(
-        loaded_thread_queue(&test)?,
-        Weak::new(),
-        Arc::new(NoopExtensionEventSink),
-    );
-    for prompt in ["blocked", "C"] {
-        staging.enqueue(thread_id, user_input(prompt)).await?;
-    }
-    let queue = install_registered_queue(&test, installed.as_ref())?;
-
-    // Each turn runs an external hook. Use the event waits' progress deadlines
-    // instead of sharing one wall-clock deadline across all three turns.
-    test.submit_text_turn("A").await?;
-    for _ in 0..2 {
-        wait_for_hooked_turn(&test).await;
-    }
-    wait_for_queue_empty(&queue, thread_id).await?;
-
-    let prompts = responses
-        .requests()
-        .into_iter()
-        .map(|request| {
-            request
-                .message_input_texts("user")
-                .pop()
-                .context("model request has no user input")
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    assert_eq!(vec!["A", "C"], prompts);
-    let hook_log = std::fs::read_to_string(test.codex_home_path().join("queue_prompt_hook.log"))?;
-    assert_eq!(
-        vec!["A", "blocked", "C"],
-        hook_log.lines().collect::<Vec<_>>()
-    );
-    assert_eq!(2, responses.requests().len());
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn explicitly_started_rejected_queue_messages_are_consumed() -> anyhow::Result<()> {
-    let server = start_mock_server().await;
-    let responses =
-        responses::mount_sse_once(&server, responses::sse_completed("unexpected-turn")).await;
-    let test = test_codex()
-        .with_pre_build_hook(write_rejecting_prompt_hook)
-        .with_windows_cmd_shell()
-        .with_config(trust_discovered_hooks)
-        .with_config(|config| config.include_environment_context = false)
-        .build_with_auto_env(&server)
-        .await?;
-    let thread_id = test.session_configured.thread_id;
-    let queue = QueuedItemService::new(
-        loaded_thread_queue(&test)?,
-        Weak::new(),
-        Arc::new(NoopExtensionEventSink),
-    );
-
-    let rejected = queue.enqueue(thread_id, user_input("blocked")).await?;
-    let submission = tokio::time::timeout(
-        Duration::from_secs(10),
-        queue.start(test.codex.as_ref(), Some(rejected.id), /*trace*/ None),
-    )
-    .await?
-    .expect("explicitly started input should be submitted");
-    assert!(matches!(submission, StartIfIdleSubmission::Started { .. }));
-    wait_for_hooked_turn(&test).await;
-    assert!(queue.list(thread_id).await?.is_empty());
-    let hook_log = std::fs::read_to_string(test.codex_home_path().join("queue_prompt_hook.log"))?;
-    assert_eq!(vec!["blocked"], hook_log.lines().collect::<Vec<_>>());
-    assert!(responses.requests().is_empty());
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn local_attachments_are_snapshotted_before_enqueue_and_update() -> anyhow::Result<()> {
     let (queue, home) = test_queue().await?;
     let service = QueuedItemService::new(
@@ -1199,5 +1100,98 @@ async fn resumed_idle_dispatches_input_without_a_loaded_manager() -> anyhow::Res
             .context("missing turn metadata")?,
     )?;
     assert_eq!(metadata["client_type"], "ios_app");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rejected_queue_messages_are_consumed_without_retrying_or_blocking_followups()
+-> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let responses = responses::mount_sse_sequence(
+        &server,
+        ["initial-turn", "following-turn"]
+            .into_iter()
+            .map(responses::sse_completed)
+            .collect(),
+    )
+    .await;
+    let (installed, extensions) = registered_queue_extensions();
+    let test = test_codex()
+        .with_extensions(extensions)
+        .with_pre_build_hook(write_rejecting_prompt_hook)
+        .with_config(trust_discovered_hooks)
+        .with_config(|config| config.include_environment_context = false)
+        .build_with_auto_env(&server)
+        .await?;
+    let thread_id = test.session_configured.thread_id;
+    let staging = QueuedItemService::new(
+        loaded_thread_queue(&test)?,
+        Weak::new(),
+        Arc::new(NoopExtensionEventSink),
+    );
+    for prompt in ["blocked", "C"] {
+        staging.enqueue(thread_id, user_input(prompt)).await?;
+    }
+    let queue = install_registered_queue(&test, installed.as_ref())?;
+
+    // Each turn runs an external hook. Use the event waits' progress deadlines
+    // instead of sharing one wall-clock deadline across all three turns.
+    test.submit_text_turn("A").await?;
+    for _ in 0..2 {
+        wait_for_hooked_turn(&test).await;
+    }
+    wait_for_queue_empty(&queue, thread_id).await?;
+
+    let prompts = responses
+        .requests()
+        .into_iter()
+        .map(|request| {
+            request
+                .message_input_texts("user")
+                .pop()
+                .context("model request has no user input")
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    assert_eq!(vec!["A", "C"], prompts);
+    let hook_log = std::fs::read_to_string(test.codex_home_path().join("queue_prompt_hook.log"))?;
+    assert_eq!(
+        vec!["A", "blocked", "C"],
+        hook_log.lines().collect::<Vec<_>>()
+    );
+    assert_eq!(2, responses.requests().len());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn explicitly_started_rejected_queue_messages_are_consumed() -> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let responses =
+        responses::mount_sse_once(&server, responses::sse_completed("unexpected-turn")).await;
+    let test = test_codex()
+        .with_pre_build_hook(write_rejecting_prompt_hook)
+        .with_config(trust_discovered_hooks)
+        .with_config(|config| config.include_environment_context = false)
+        .build_with_auto_env(&server)
+        .await?;
+    let thread_id = test.session_configured.thread_id;
+    let queue = QueuedItemService::new(
+        loaded_thread_queue(&test)?,
+        Weak::new(),
+        Arc::new(NoopExtensionEventSink),
+    );
+
+    let rejected = queue.enqueue(thread_id, user_input("blocked")).await?;
+    let submission = tokio::time::timeout(
+        Duration::from_secs(10),
+        queue.start(test.codex.as_ref(), Some(rejected.id), /*trace*/ None),
+    )
+    .await?
+    .expect("explicitly started input should be submitted");
+    assert!(matches!(submission, StartIfIdleSubmission::Started { .. }));
+    wait_for_hooked_turn(&test).await;
+    assert!(queue.list(thread_id).await?.is_empty());
+    let hook_log = std::fs::read_to_string(test.codex_home_path().join("queue_prompt_hook.log"))?;
+    assert_eq!(vec!["blocked"], hook_log.lines().collect::<Vec<_>>());
+    assert!(responses.requests().is_empty());
     Ok(())
 }

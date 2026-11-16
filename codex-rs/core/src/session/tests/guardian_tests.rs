@@ -1,3 +1,4 @@
+use codex_network_proxy::EnvironmentNetworkPolicyExt;
 use super::*;
 use crate::config::Constrained;
 use crate::exec_policy::ExecPolicyManager;
@@ -1199,7 +1200,6 @@ async fn compaction_initial_context_preserves_separate_guardian_developer_messag
 }
 
 #[tokio::test]
-#[cfg(unix)]
 async fn exec_command_allows_sticky_turn_permissions_without_inline_request_permissions_feature() {
     let (mut session, turn_context_raw) = make_session_and_context().await;
     session
@@ -1380,8 +1380,6 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         external_time_provider: None,
         inherited_multi_agent_version: None,
         git_enrichment_policy: GitEnrichmentPolicy::Skip,
-        windows_sandbox_proxy_settings_mode:
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve,
     })
     .await
     .expect("spawn guardian subagent");

@@ -381,7 +381,6 @@ fn trusted_roots_require_verified_curated_or_remote_cache() {
         "overridden-remote@openai-curated-remote",
         remote_local_override.as_path(),
     );
-    #[cfg(unix)]
     {
         let alias = temp.path().join("sample-alias");
         std::os::unix::fs::symlink(root.as_path(), &alias).expect("symlink root");
@@ -565,7 +564,6 @@ operations: {scan: {path: scripts/run.py, measurements: {count: {}}}, scan_again
     );
     assert_invalid_metrics_manifest(temp.path(), &root, &oversized_manifest);
 
-    #[cfg(unix)]
     {
         let outside = temp.path().join("outside.py");
         fs::write(&outside, "print('outside')\n").expect("write outside script");
@@ -696,7 +694,6 @@ fn rejects_ambiguous_commands_overlaps_and_symlink_escapes() {
         overlapping.resolve_attribution(&command(&["scripts/run.py"]), &root),
         None
     );
-    #[cfg(unix)]
     {
         let outside = temp.path().join("outside.py");
         fs::write(&outside, "print('outside')\n").expect("write outside script");
@@ -1026,7 +1023,6 @@ async fn identical_script_bytes_do_not_authorize_another_executor_version() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn executor_symlink_cannot_change_authenticated_plugin_or_version() {
     let contents = "printf shared\\n\n";
@@ -1069,7 +1065,6 @@ async fn executor_symlink_cannot_change_authenticated_plugin_or_version() {
     }
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn executor_aliases_use_canonical_plugin_paths() {
     let contents = "printf shared\\n\n";

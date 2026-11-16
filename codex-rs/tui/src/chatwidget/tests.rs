@@ -114,7 +114,6 @@ pub(super) use codex_app_server_protocol::TurnStatus as AppServerTurnStatus;
 pub(super) use codex_app_server_protocol::UserInput;
 pub(super) use codex_app_server_protocol::UserInput as AppServerUserInput;
 pub(super) use codex_app_server_protocol::WarningNotification;
-pub(super) use codex_app_server_protocol::WindowsSandboxSetupMode;
 pub(super) use codex_config::ConfigLayerStack;
 pub(super) use codex_config::Constrained;
 pub(super) use codex_config::ConstraintError;
@@ -166,8 +165,6 @@ pub(super) use crossterm::event::KeyEvent;
 pub(super) use crossterm::event::KeyModifiers;
 pub(super) use insta::assert_snapshot;
 pub(super) use serde_json::json;
-#[cfg(target_os = "windows")]
-pub(super) use serial_test::serial;
 pub(super) use std::collections::HashMap;
 pub(super) use std::path::PathBuf;
 pub(super) use tempfile::NamedTempFile;

@@ -2,7 +2,6 @@ use super::*;
 use crate::shell::ShellType;
 use crate::shell::default_user_shell;
 use crate::shell::get_shell;
-#[cfg(not(windows))]
 use codex_exec_server::Environment;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_path_uri::PathUri;
@@ -95,7 +94,6 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
 }
 
 /// Nested commands must find the first reported tool directory after login startup without duplicating existing entries.
-#[cfg(unix)]
 #[test]
 fn test_get_command_keeps_path_prepends_after_login_startup() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
@@ -165,7 +163,6 @@ fn test_get_command_keeps_path_prepends_after_login_startup() -> anyhow::Result<
 }
 
 /// The requested login shell and its command still run when startup forbids changing PATH.
-#[cfg(unix)]
 #[test]
 fn test_get_command_runs_login_shell_when_path_is_readonly() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
@@ -203,91 +200,6 @@ fn test_get_command_runs_login_shell_when_path_is_readonly() -> anyhow::Result<(
         ),
         (Some(23), "/usr/bin:/bin\n".to_string(), String::new())
     );
-    Ok(())
-}
-
-/// The package path only affects Codex's own POSIX login shells when the executor reports a POSIX path.
-#[test]
-fn test_get_command_does_not_change_nested_login_or_powershell() -> anyhow::Result<()> {
-    for (shell_type, shell_path, arguments, use_login_shell, path) in [
-        (
-            ShellType::Bash,
-            "/bin/bash",
-            r#"{"cmd":"bash -lc 'command -v rg'","login":false}"#,
-            false,
-            "file:///executor/codex-path",
-        ),
-        (
-            ShellType::PowerShell,
-            "pwsh",
-            r#"{"cmd":"Get-Command rg"}"#,
-            true,
-            "file:///executor/codex-path",
-        ),
-        (
-            ShellType::Bash,
-            "/bin/bash",
-            r#"{"cmd":"command -v rg"}"#,
-            true,
-            "file:///C:/executor/codex-path",
-        ),
-    ] {
-        let args: ExecCommandArgs = parse_arguments(arguments)?;
-        let path_dir = PathUri::parse(path)?;
-        let shell = Arc::new(Shell {
-            shell_type,
-            shell_path: PathBuf::from(shell_path),
-        });
-        let resolved = get_command(&args, Arc::clone(&shell), /*allow_login_shell*/ true)
-            .map_err(anyhow::Error::msg)?;
-        assert_eq!(
-            (
-                resolved.command,
-                resolved
-                    .shell
-                    .derive_exec_args_with_path_prepends(&args.cmd, &[path_dir])
-            ),
-            (shell.derive_exec_args(&args.cmd, use_login_shell), None)
-        );
-    }
-    Ok(())
-}
-
-#[test]
-fn test_get_command_resolves_powershell_by_type() -> anyhow::Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let powershell_path = temp_dir.path().join(if cfg!(windows) {
-        "powershell.exe"
-    } else {
-        "powershell"
-    });
-    std::fs::write(&powershell_path, "")?;
-    let json = serde_json::json!({
-        "cmd": "echo hello",
-        "shell": powershell_path,
-    })
-    .to_string();
-
-    let args: ExecCommandArgs = parse_arguments(&json)?;
-
-    assert_eq!(
-        args.shell.as_deref(),
-        Some(powershell_path.to_string_lossy().as_ref())
-    );
-
-    let resolved = get_command(
-        &args,
-        Arc::new(default_user_shell()),
-        /*allow_login_shell*/ true,
-    )
-    .map_err(anyhow::Error::msg)?;
-    let expected_shell = get_shell(ShellType::PowerShell)
-        .unwrap_or_else(|| codex_shell_command::shell_detect::ultimate_fallback_shell().into());
-    assert_eq!(
-        resolved.command,
-        expected_shell.derive_exec_args("echo hello", /*use_login_shell*/ true)
-    );
-    assert_eq!(resolved.shell.shell, expected_shell);
     Ok(())
 }
 
@@ -373,7 +285,6 @@ async fn exec_command_rejects_login_when_selected_environment_disallows_it() {
 }
 
 #[tokio::test]
-#[cfg(not(windows))]
 async fn exec_command_reuses_foreign_windows_grant() {
     use crate::environment_selection::EnvironmentAttachment;
     use crate::session::tests::make_session_and_context_with_auth_and_config_and_rx;

@@ -47,44 +47,26 @@ fn detects_sh() {
 #[test]
 fn can_run_on_shell_test() {
     let cmd = "echo \"Works\"";
-    if cfg!(windows) {
-        assert!(shell_works(
-            get_shell(ShellType::PowerShell),
-            "Out-String 'Works'",
-            /*required*/ true,
-        ));
-        assert!(shell_works(
-            get_shell(ShellType::Cmd),
-            cmd,
-            /*required*/ true,
-        ));
-        assert!(shell_works(
-            Some(ultimate_fallback_shell()),
-            cmd,
-            /*required*/ true
-        ));
-    } else {
-        assert!(shell_works(
-            Some(ultimate_fallback_shell()),
-            cmd,
-            /*required*/ true
-        ));
-        assert!(shell_works(
-            get_shell(ShellType::Zsh),
-            cmd,
-            /*required*/ false
-        ));
-        assert!(shell_works(
-            get_shell(ShellType::Bash),
-            cmd,
-            /*required*/ true
-        ));
-        assert!(shell_works(
-            get_shell(ShellType::Sh),
-            cmd,
-            /*required*/ true
-        ));
-    }
+    assert!(shell_works(
+        Some(ultimate_fallback_shell()),
+        cmd,
+        /*required*/ true
+    ));
+    assert!(shell_works(
+        get_shell(ShellType::Zsh),
+        cmd,
+        /*required*/ false
+    ));
+    assert!(shell_works(
+        get_shell(ShellType::Bash),
+        cmd,
+        /*required*/ true
+    ));
+    assert!(shell_works(
+        get_shell(ShellType::Sh),
+        cmd,
+        /*required*/ true
+    ));
 }
 
 fn shell_works(shell: Option<Shell>, command: &str, required: bool) -> bool {
@@ -100,48 +82,6 @@ fn shell_works(shell: Option<Shell>, command: &str, required: bool) -> bool {
     } else {
         !required
     }
-}
-
-#[test]
-fn derive_exec_args() {
-    let test_bash_shell = Shell {
-        shell_type: ShellType::Bash,
-        shell_path: PathBuf::from("/bin/bash"),
-    };
-    assert_eq!(
-        test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
-        vec!["/bin/bash", "-c", "echo hello"]
-    );
-    assert_eq!(
-        test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ true),
-        vec!["/bin/bash", "-lc", "echo hello"]
-    );
-
-    let test_zsh_shell = Shell {
-        shell_type: ShellType::Zsh,
-        shell_path: PathBuf::from("/bin/zsh"),
-    };
-    assert_eq!(
-        test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
-        vec!["/bin/zsh", "-c", "echo hello"]
-    );
-    assert_eq!(
-        test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ true),
-        vec!["/bin/zsh", "-lc", "echo hello"]
-    );
-
-    let test_powershell_shell = Shell {
-        shell_type: ShellType::PowerShell,
-        shell_path: PathBuf::from("pwsh.exe"),
-    };
-    assert_eq!(
-        test_powershell_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
-        vec!["pwsh.exe", "-NoProfile", "-Command", "echo hello"]
-    );
-    assert_eq!(
-        test_powershell_shell.derive_exec_args("echo hello", /*use_login_shell*/ true),
-        vec!["pwsh.exe", "-Command", "echo hello"]
-    );
 }
 
 /// Diagnostics and `$LINENO` must refer to the original script, even with newlines in the package path.
@@ -226,26 +166,31 @@ async fn test_current_shell_detects_zsh() {
     }
 }
 
-#[tokio::test]
-async fn detects_powershell_as_default() {
-    if !cfg!(windows) {
-        return;
-    }
-
-    let powershell_shell = default_user_shell();
-    let shell_path = powershell_shell.shell_path;
-
-    assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
-}
-
 #[test]
-fn finds_powershell() {
-    if !cfg!(windows) {
-        return;
-    }
+fn derive_exec_args() {
+    let test_bash_shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+    };
+    assert_eq!(
+        test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
+        vec!["/bin/bash", "-c", "echo hello"]
+    );
+    assert_eq!(
+        test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ true),
+        vec!["/bin/bash", "-lc", "echo hello"]
+    );
 
-    let powershell_shell = get_shell(ShellType::PowerShell).unwrap();
-    let shell_path = powershell_shell.shell_path;
-
-    assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
+    let test_zsh_shell = Shell {
+        shell_type: ShellType::Zsh,
+        shell_path: PathBuf::from("/bin/zsh"),
+    };
+    assert_eq!(
+        test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
+        vec!["/bin/zsh", "-c", "echo hello"]
+    );
+    assert_eq!(
+        test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ true),
+        vec!["/bin/zsh", "-lc", "echo hello"]
+    );
 }

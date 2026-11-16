@@ -1,7 +1,6 @@
 //! Bind filesystem and network inputs for sandbox preparation on the execution host.
 
 use crate::SandboxExecRequest;
-use crate::SandboxType;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::io;
@@ -12,8 +11,7 @@ use codex_protocol::permissions::FileSystemPath;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 
-/// A command prepared for its selected sandbox. Native Windows token sessions
-/// must use the Windows session launcher.
+/// A command prepared for its selected sandbox.
 #[must_use]
 pub struct WrappedSandboxCommand {
     pub(super) request: SandboxExecRequest,
@@ -30,12 +28,6 @@ impl WrappedSandboxCommand {
     /// Return a configured process command when argv carries all required sandbox enforcement.
     pub fn into_direct_command(self) -> io::Result<Command> {
         let request = self.request;
-        if request.sandbox == SandboxType::WindowsRestrictedToken {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "a native Windows sandbox requires its session launcher",
-            ));
-        }
         let (program, args) = request.command.split_first().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "sandbox command is empty")
         })?;
@@ -44,7 +36,6 @@ impl WrappedSandboxCommand {
                 .as_deref()
                 .unwrap_or_else(|| OsStr::new(program)),
         );
-        #[cfg(unix)]
         if let Some(arg0) = request.arg0 {
             use std::os::unix::process::CommandExt;
             command.arg0(arg0);

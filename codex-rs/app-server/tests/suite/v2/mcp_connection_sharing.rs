@@ -108,7 +108,6 @@ async fn stdio_sharing_follows_protocol_and_enablement_for_loaded_chats() -> Res
                 ]
             );
         }
-        #[cfg(unix)]
         for process in first_processes.values().chain(second_processes.values()) {
             core_test_support::process::wait_for_process_exit(
                 process
@@ -116,14 +115,6 @@ async fn stdio_sharing_follows_protocol_and_enablement_for_loaded_chats() -> Res
                     .expect("the fixture identifies its PID"),
             )
             .await?;
-        }
-        #[cfg(not(unix))]
-        {
-            let third = app.start_thread(ThreadStartParams::default()).await?.thread;
-            let third_processes = call_servers(&mut app, &third.id).await?;
-            for name in ["alpha", "beta"] {
-                assert_ne!(third_processes[name], first_processes[name]);
-            }
         }
     }
     Ok(())

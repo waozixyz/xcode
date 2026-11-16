@@ -61,9 +61,7 @@ pub(crate) fn managed_codex_bin(codex_home: &Path) -> PathBuf {
     let current = root.join("current");
     let packaged = current.join("bin").join(managed_codex_file_name());
     let legacy = current.join(managed_codex_file_name());
-    if packaged.is_file()
-        || !legacy.is_file() && (cfg!(windows) || root.ends_with("app-server-daemon"))
-    {
+    if packaged.is_file() || !legacy.is_file() && (root.ends_with("app-server-daemon")) {
         packaged
     } else {
         legacy
@@ -123,8 +121,6 @@ pub(crate) async fn supports_daemon_update_loop(codex_bin: &Path) -> bool {
 /// Probe an internal daemon command without running a long-lived process.
 pub(crate) async fn supports_daemon_command(codex_bin: &Path, args: &[&str]) -> bool {
     let mut command = Command::new(codex_bin);
-    #[cfg(windows)]
-    command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     timeout(
         Duration::from_secs(5),
         command
@@ -151,8 +147,6 @@ pub(crate) async fn resolved_managed_codex_bin(codex_bin: &Path) -> Result<PathB
 
 pub(crate) async fn managed_codex_version(codex_bin: &Path) -> Result<String> {
     let mut command = Command::new(codex_bin);
-    #[cfg(windows)]
-    command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     let output = command
         .arg("--version")
         .kill_on_drop(true)
@@ -224,23 +218,15 @@ pub(crate) fn executable_identity_from_reader(
 
 pub(crate) fn path_digest(path: &Path) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
         hasher.update(path.as_os_str().as_bytes());
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        for unit in path.as_os_str().encode_wide() {
-            hasher.update(&unit.to_le_bytes());
-        }
     }
     *hasher.finalize().as_bytes()
 }
 
 fn managed_codex_file_name() -> &'static str {
-    if cfg!(windows) { "codex.exe" } else { "codex" }
+    "codex"
 }
 
 fn parse_codex_version(output: &str) -> Result<String> {

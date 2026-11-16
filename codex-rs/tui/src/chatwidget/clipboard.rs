@@ -25,7 +25,7 @@ impl ChatWidget {
         key: KeyEvent,
         context: ClipboardPasteContext,
     ) -> Option<KeyEventAction> {
-        let shift_insert = cfg!(windows) && key_hint::shift(KeyCode::Insert).is_press(key);
+        let shift_insert = false;
         let image_paste = key.kind == KeyEventKind::Press
             && ((matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&'v'))
                 && key
@@ -44,9 +44,7 @@ impl ChatWidget {
         if suppressed {
             return Some(KeyEventAction::None);
         }
-        let text_fallback = (cfg!(windows)
-            && (key.modifiers == KeyModifiers::CONTROL || shift_insert))
-            .then_some(key.code);
+        let text_fallback = (false).then_some(key.code);
         if text_fallback.is_some() && context == ClipboardPasteContext::Composer {
             self.bottom_pane.prepare_composer_clipboard_paste();
         }

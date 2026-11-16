@@ -3319,7 +3319,6 @@ async fn host_catalog_compacts_shared_paths_under_budget_pressure() -> TestResul
             ),
         )?;
     }
-    #[cfg(unix)]
     {
         let source_skill_dir = test_root.join("shared-skills/linked-skill");
         std::fs::create_dir_all(&source_skill_dir)?;
@@ -3413,7 +3412,6 @@ async fn host_catalog_compacts_shared_paths_under_budget_pressure() -> TestResul
     );
     assert!(catalog.contains("(file: r0/skill-00/SKILL.md)"));
     assert!(catalog.contains("(file: r0/skill-11/SKILL.md)"));
-    #[cfg(unix)]
     assert!(catalog.contains("(file: r0/linked-skill/SKILL.md)"));
     assert!(!catalog.contains("additional skills omitted"));
 

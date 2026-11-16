@@ -16,11 +16,7 @@ use codex_git_utils::FsmonitorProbeRunner;
 use codex_git_utils::detect_fsmonitor_override;
 
 const DIFF_COMMAND_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
-const DISABLE_HOOKS_CONFIG: &str = if cfg!(windows) {
-    "core.hooksPath=NUL"
-} else {
-    "core.hooksPath=/dev/null"
-};
+const DISABLE_HOOKS_CONFIG: &str = "core.hooksPath=/dev/null";
 const EXECUTABLE_FILTER_CONFIG_PATTERN: &str = r"^filter\..*\.(clean|process)$";
 
 // `/diff` may execute Git through a remote workspace, so git-utils owns the
@@ -89,11 +85,7 @@ pub(crate) async fn get_git_diff(
     let untracked_output = untracked_output_res?;
 
     let mut untracked_diff = String::new();
-    let null_device: &Path = if cfg!(windows) {
-        Path::new("NUL")
-    } else {
-        Path::new("/dev/null")
-    };
+    let null_device: &Path = Path::new("/dev/null");
 
     let null_path = null_device.to_str().unwrap_or("/dev/null");
     for file in untracked_output
@@ -263,12 +255,10 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
     use std::collections::VecDeque;
-    #[cfg(unix)]
     use std::fs;
     use std::future::Future;
     use std::path::PathBuf;
     use std::pin::Pin;
-    #[cfg(unix)]
     use std::process::Command as ProcessCommand;
     use std::sync::Mutex;
 
@@ -602,7 +592,6 @@ mod tests {
         assert_command_metadata(&runner.commands(), &cwd);
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn get_git_diff_does_not_execute_configured_filters_fsmonitor_or_hooks() {
         let tempdir = tempfile::tempdir().expect("create temp directory");
@@ -683,7 +672,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn get_git_diff_does_not_execute_helpers_while_checking_dirty_submodules() {
         let tempdir = tempfile::tempdir().expect("create temp directory");
@@ -799,10 +787,9 @@ mod tests {
     }
 
     fn null_device() -> &'static str {
-        if cfg!(windows) { "NUL" } else { "/dev/null" }
+        "/dev/null"
     }
 
-    #[cfg(unix)]
     fn run_git_setup(cwd: &Path, args: &[&str]) {
         let output = ProcessCommand::new("git")
             .args(args)
@@ -818,7 +805,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     fn write_marker_helper(path: &Path) {
         codex_utils_cargo_bin::write_executable(
             path,
@@ -893,10 +879,8 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     struct LocalRunner;
 
-    #[cfg(unix)]
     impl WorkspaceCommandExecutor for LocalRunner {
         fn run(
             &self,

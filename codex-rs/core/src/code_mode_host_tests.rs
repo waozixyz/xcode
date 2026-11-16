@@ -12,7 +12,6 @@ use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
 use codex_code_mode::NoopCodeModeSessionDelegate;
 use codex_code_mode::RuntimeResponse;
-#[cfg(unix)]
 use core_test_support::code_mode_host::CodeModeHostRecorder;
 use pretty_assertions::assert_eq;
 use tokio::time::timeout;
@@ -22,7 +21,6 @@ use super::ProcessOwnedGrpcCodeModeSessionProvider;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 20);
 
-#[cfg(unix)]
 #[path = "code_mode_host_lifecycle_tests.rs"]
 mod lifecycle;
 
@@ -62,12 +60,8 @@ async fn execute(
 
 #[tokio::test]
 async fn grpc_stdio_sessions_share_a_host_and_isolate_state() -> Result<()> {
-    #[cfg(unix)]
     let recorder = CodeModeHostRecorder::new()?;
-    #[cfg(unix)]
     let host_program = recorder.program();
-    #[cfg(not(unix))]
-    let host_program = codex_utils_cargo_bin::cargo_bin("codex-code-mode-host")?;
     let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(host_program);
     assert_eq!(
         provider
@@ -76,7 +70,6 @@ async fn grpc_stdio_sessions_share_a_host_and_isolate_state() -> Result<()> {
             .map_err(anyhow::Error::msg)?,
         CodeModeProcessMetricsSample::NotRunning
     );
-    #[cfg(unix)]
     assert!(recorder.invocations()?.is_empty());
     let (first, second) = tokio::try_join!(provider.create_session(), provider.create_session())
         .map_err(anyhow::Error::msg)?;
@@ -107,7 +100,6 @@ async fn grpc_stdio_sessions_share_a_host_and_isolate_state() -> Result<()> {
         }]
     );
     second.shutdown().await.map_err(anyhow::Error::msg)?;
-    #[cfg(unix)]
     assert_eq!(
         recorder.invocations()?,
         vec!["--listen grpc+stdio://".to_string()],
@@ -116,7 +108,6 @@ async fn grpc_stdio_sessions_share_a_host_and_isolate_state() -> Result<()> {
     drop(first);
     drop(second);
     drop(provider);
-    #[cfg(unix)]
     {
         let pid = recorder.pid()?;
         timeout(TEST_TIMEOUT, async {
@@ -146,7 +137,6 @@ async fn grpc_stdio_host_exits_when_stdin_closes() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn hung_grpc_stdio_host_is_reaped_and_the_session_recovers() -> Result<()> {
     let recorder = CodeModeHostRecorder::new()?;

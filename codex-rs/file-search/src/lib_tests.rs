@@ -415,7 +415,6 @@ fn run_returns_directory_matches_for_query() {
     }));
 }
 
-#[cfg(unix)]
 #[test]
 fn run_classifies_followed_directory_symlink_as_directory() {
     use std::os::unix::fs::symlink;

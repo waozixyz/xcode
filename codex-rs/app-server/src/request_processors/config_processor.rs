@@ -19,8 +19,6 @@ use codex_app_server_protocol::CliAuthCredentialsStoreMode;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ComputerUseMacosRequirements;
 use codex_app_server_protocol::ComputerUseRequirements;
-use codex_app_server_protocol::ComputerUseWindowsExeRequirement;
-use codex_app_server_protocol::ComputerUseWindowsRequirements;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigReadParams;
 use codex_app_server_protocol::ConfigReadResponse;
@@ -44,7 +42,6 @@ use codex_app_server_protocol::NetworkRequirements;
 use codex_app_server_protocol::NetworkUnixSocketPermission;
 use codex_app_server_protocol::NewThreadModelDefaults;
 use codex_app_server_protocol::SandboxMode;
-use codex_app_server_protocol::WindowsSandboxImplementation;
 use codex_config::ConfigRequirementsToml;
 use codex_config::HookEventsToml;
 use codex_config::HookHandlerConfig as CoreHookHandlerConfig;
@@ -80,7 +77,6 @@ const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
     "remote_control",
     "remote_plugin",
     "tool_suggest",
-    "windows_sandbox_service",
 ];
 
 #[derive(Clone)]
@@ -550,23 +546,6 @@ pub(crate) fn map_requirements_to_api(
                 .filter_map(map_sandbox_mode_requirement_to_api)
                 .collect()
         }),
-        allowed_windows_sandbox_implementations: requirements.windows.and_then(|windows| {
-            windows
-                .allowed_sandbox_implementations
-                .map(|implementations| {
-                    implementations
-                        .into_iter()
-                        .map(|implementation| match implementation {
-                            codex_config::WindowsSandboxImplementationToml::Elevated => {
-                                WindowsSandboxImplementation::Elevated
-                            }
-                            codex_config::WindowsSandboxImplementationToml::Unelevated => {
-                                WindowsSandboxImplementation::Unelevated
-                            }
-                        })
-                        .collect()
-                })
-        }),
         allowed_permission_profiles: requirements.allowed_permission_profiles,
         default_permissions: requirements.default_permissions,
         allowed_web_search_modes: requirements.allowed_web_search_modes.map(|modes| {
@@ -654,28 +633,6 @@ fn map_computer_use_requirements_to_api(
                         .collect()
                 }),
             }),
-        windows: computer_use
-            .windows
-            .map(|windows| ComputerUseWindowsRequirements {
-                aumids: windows.aumids.map(|aumids| {
-                    aumids
-                        .into_iter()
-                        .map(|(aumid, requirement)| {
-                            (aumid, map_allow_deny_requirement_to_api(requirement))
-                        })
-                        .collect()
-                }),
-                exes: windows.exes.map(|exes| {
-                    exes.into_iter()
-                        .map(|exe| ComputerUseWindowsExeRequirement {
-                            publisher_name: exe.publisher_name,
-                            product_name: exe.product_name,
-                            binary_name: exe.binary_name,
-                            access: map_allow_deny_requirement_to_api(exe.access),
-                        })
-                        .collect()
-                }),
-            }),
     }
 }
 
@@ -753,11 +710,7 @@ fn map_browser_use_access_approval_lifetime_to_api(
 }
 
 fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> ManagedHooksRequirements {
-    let ManagedHooksRequirementsToml {
-        managed_dir,
-        windows_managed_dir,
-        hooks,
-    } = hooks;
+    let ManagedHooksRequirementsToml { managed_dir, hooks } = hooks;
     let HookEventsToml {
         pre_model_request,
         post_model_request,
@@ -777,7 +730,6 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
 
     ManagedHooksRequirements {
         managed_dir,
-        windows_managed_dir,
         pre_model_request: map_hook_matcher_groups_to_api(pre_model_request),
         post_model_request: map_hook_matcher_groups_to_api(post_model_request),
         pre_tool_use: map_hook_matcher_groups_to_api(pre_tool_use),
@@ -819,14 +771,12 @@ fn map_hook_handler_to_api(handler: CoreHookHandlerConfig) -> ConfiguredHookHand
     match handler {
         CoreHookHandlerConfig::Command {
             command,
-            command_windows,
             timeout_sec,
             r#async,
             status_message,
             additional_context_limit,
         } => ConfiguredHookHandler::Command {
             command,
-            command_windows,
             timeout_sec,
             r#async,
             status_message,
@@ -964,10 +914,7 @@ mod tests {
     use codex_app_server_protocol::BrowserUseRequirements;
     use codex_app_server_protocol::ComputerUseMacosRequirements;
     use codex_app_server_protocol::ComputerUseRequirements;
-    use codex_app_server_protocol::ComputerUseWindowsExeRequirement;
-    use codex_app_server_protocol::ComputerUseWindowsRequirements;
     use codex_app_server_protocol::FeedbackRequirements;
-    use codex_app_server_protocol::WindowsSandboxImplementation;
     use codex_config::AllowDenyRequirementToml;
     use codex_config::AutoReviewRequirementsToml;
     use codex_config::BrowserUseAccessApprovalLifetimeToml;
@@ -976,13 +923,10 @@ mod tests {
     use codex_config::CloudConfigBundleLoader;
     use codex_config::ComputerUseMacosRequirementsToml;
     use codex_config::ComputerUseRequirementsToml;
-    use codex_config::ComputerUseWindowsExeRequirementToml;
-    use codex_config::ComputerUseWindowsRequirementsToml;
     use codex_config::ConfigRequirementsToml;
     use codex_config::LoaderOverrides;
     use codex_config::ModelsRequirementsToml;
     use codex_config::NewThreadModelDefaultsToml;
-    use codex_config::WindowsRequirementsToml;
     use codex_config::types::FeedbackConfigToml;
     use codex_config::types::ToolSuggestDisabledTool;
     use codex_exec_server::EnvironmentManager;
@@ -1167,6 +1111,43 @@ client_id = "mcp-client"
     }
 
     #[test]
+    fn requirements_api_includes_exact_managed_values() {
+        let sqlite_home = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-state"))
+            .expect("managed sqlite home should be absolute");
+        let log_dir = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-logs"))
+            .expect("managed log dir should be absolute");
+        let model_catalog_json =
+            AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-models.json"))
+                .expect("managed model catalog path should be absolute");
+        let mapped = map_test_requirements(ConfigRequirementsToml {
+            sqlite_home: Some(sqlite_home.clone()),
+            log_dir: Some(log_dir.clone()),
+            model_catalog_json: Some(model_catalog_json.clone()),
+            check_for_update_on_startup: Some(false),
+            allow_login_shell: Some(false),
+            feedback: Some(FeedbackConfigToml {
+                enabled: Some(false),
+            }),
+            ..ConfigRequirementsToml::default()
+        });
+
+        assert_eq!(mapped.sqlite_home, Some(PathUri::from(sqlite_home)));
+        assert_eq!(mapped.log_dir, Some(PathUri::from(log_dir)));
+        assert_eq!(
+            mapped.model_catalog_json,
+            Some(PathUri::from(model_catalog_json))
+        );
+        assert_eq!(mapped.check_for_update_on_startup, Some(false));
+        assert_eq!(mapped.allow_login_shell, Some(false));
+        assert_eq!(
+            mapped.feedback,
+            Some(FeedbackRequirements {
+                enabled: Some(false),
+            })
+        );
+    }
+
+    #[test]
     fn requirements_api_includes_browser_and_computer_use_requirements() {
         let mapped = map_test_requirements(ConfigRequirementsToml {
             allow_browser_and_computer_use: Some(false),
@@ -1214,18 +1195,6 @@ client_id = "mcp-client"
                         "com.apple.Safari".to_string(),
                         AllowDenyRequirementToml::Allow,
                     )])),
-                }),
-                windows: Some(ComputerUseWindowsRequirementsToml {
-                    aumids: Some(BTreeMap::from([(
-                        "Microsoft.Paint_8wekyb3d8bbwe!App".to_string(),
-                        AllowDenyRequirementToml::Allow,
-                    )])),
-                    exes: Some(vec![ComputerUseWindowsExeRequirementToml {
-                        publisher_name: "CN=Google LLC".to_string(),
-                        product_name: "Google Chrome".to_string(),
-                        binary_name: Some("chrome.exe".to_string()),
-                        access: AllowDenyRequirementToml::Deny,
-                    }]),
                 }),
             }),
             ..ConfigRequirementsToml::default()
@@ -1280,78 +1249,6 @@ client_id = "mcp-client"
                         AllowDenyRequirement::Allow,
                     )])),
                 }),
-                windows: Some(ComputerUseWindowsRequirements {
-                    aumids: Some(BTreeMap::from([(
-                        "Microsoft.Paint_8wekyb3d8bbwe!App".to_string(),
-                        AllowDenyRequirement::Allow,
-                    )])),
-                    exes: Some(vec![ComputerUseWindowsExeRequirement {
-                        publisher_name: "CN=Google LLC".to_string(),
-                        product_name: "Google Chrome".to_string(),
-                        binary_name: Some("chrome.exe".to_string()),
-                        access: AllowDenyRequirement::Deny,
-                    }]),
-                }),
-            })
-        );
-    }
-
-    #[test]
-    fn requirements_api_includes_allowed_windows_sandbox_implementations() {
-        let mapped = map_test_requirements(ConfigRequirementsToml {
-            windows: Some(WindowsRequirementsToml {
-                allowed_sandbox_implementations: Some(vec![
-                    codex_config::WindowsSandboxImplementationToml::Elevated,
-                    codex_config::WindowsSandboxImplementationToml::Unelevated,
-                ]),
-                allow_mxc: None,
-                require_mxc: None,
-            }),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(
-            mapped.allowed_windows_sandbox_implementations,
-            Some(vec![
-                WindowsSandboxImplementation::Elevated,
-                WindowsSandboxImplementation::Unelevated,
-            ])
-        );
-    }
-
-    #[test]
-    fn requirements_api_includes_exact_managed_values() {
-        let sqlite_home = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-state"))
-            .expect("managed sqlite home should be absolute");
-        let log_dir = AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-logs"))
-            .expect("managed log dir should be absolute");
-        let model_catalog_json =
-            AbsolutePathBuf::try_from(std::env::temp_dir().join("managed-models.json"))
-                .expect("managed model catalog path should be absolute");
-        let mapped = map_test_requirements(ConfigRequirementsToml {
-            sqlite_home: Some(sqlite_home.clone()),
-            log_dir: Some(log_dir.clone()),
-            model_catalog_json: Some(model_catalog_json.clone()),
-            check_for_update_on_startup: Some(false),
-            allow_login_shell: Some(false),
-            feedback: Some(FeedbackConfigToml {
-                enabled: Some(false),
-            }),
-            ..ConfigRequirementsToml::default()
-        });
-
-        assert_eq!(mapped.sqlite_home, Some(PathUri::from(sqlite_home)));
-        assert_eq!(mapped.log_dir, Some(PathUri::from(log_dir)));
-        assert_eq!(
-            mapped.model_catalog_json,
-            Some(PathUri::from(model_catalog_json))
-        );
-        assert_eq!(mapped.check_for_update_on_startup, Some(false));
-        assert_eq!(mapped.allow_login_shell, Some(false));
-        assert_eq!(
-            mapped.feedback,
-            Some(FeedbackRequirements {
-                enabled: Some(false),
             })
         );
     }

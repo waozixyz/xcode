@@ -22,7 +22,7 @@ codex-utils-audio = { workspace = true }
 codex-utils-output-truncation = { workspace = true }
 codex-utils-string = { workspace = true }
 deno_core_icudata = { workspace = true, optional = true }
-futures = { workspace = true, features = ["executor", "std"] }
+futures = { workspace = true, features = ["async-await", "executor", "std"] }
 opentelemetry = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

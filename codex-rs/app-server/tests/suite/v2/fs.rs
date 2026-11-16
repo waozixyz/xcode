@@ -23,16 +23,14 @@ use tempfile::TempDir;
 use tokio::time::Duration;
 use tokio::time::timeout;
 
-#[cfg(unix)]
 use std::os::unix::fs::symlink;
-#[cfg(unix)]
 use std::process::Command;
 
 // macOS and Windows Bazel CI can spend tens of seconds starting app-server
 // subprocesses or processing test RPCs under load.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(target_os = "macos")]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(60);
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(target_os = "macos"))]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const OPTIONAL_FS_CHANGE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -146,7 +144,6 @@ async fn fs_methods_return_error_when_local_environment_is_disabled() -> Result<
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fs_get_metadata_reports_symlink() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -575,7 +572,6 @@ async fn fs_copy_rejects_copying_directory_into_descendant() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fs_copy_preserves_symlinks_in_recursive_copy() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -607,7 +603,6 @@ async fn fs_copy_preserves_symlinks_in_recursive_copy() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fs_copy_ignores_unknown_special_files_in_recursive_copy() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -648,7 +643,6 @@ async fn fs_copy_ignores_unknown_special_files_in_recursive_copy() -> Result<()>
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fs_copy_rejects_standalone_fifo_source() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -873,13 +867,6 @@ async fn maybe_fs_changed_notification(
 fn replace_file_atomically(path: &PathBuf, contents: &str) -> Result<()> {
     let temp_path = path.with_extension("lock");
     std::fs::write(&temp_path, contents)?;
-
-    #[cfg(windows)]
-    match std::fs::remove_file(path) {
-        Ok(()) => {}
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(err.into()),
-    }
 
     std::fs::rename(temp_path, path)?;
     Ok(())

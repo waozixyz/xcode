@@ -2113,7 +2113,7 @@ auth = ["bearer"]"#,
 #[tokio::test]
 async fn credential_broker_ambiguity_guard_survives_permission_profile_selection()
 -> anyhow::Result<()> {
-    for (key, other_key, other_value, ambiguous, credential_masking) in [
+    for (key, other_key, other_value, _ambiguous, credential_masking) in [
         ("GH_HOST", "gh_host", "second.example", true, false),
         ("VENDOR_HOST", "vendor_host", "second.example", true, false),
         (
@@ -2163,7 +2163,7 @@ extends = "first"
             .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
             .build()
             .await?;
-        let expected_enabled = !(cfg!(windows) && ambiguous);
+        let expected_enabled = true;
         if credential_masking && !expected_enabled {
             insta::assert_snapshot!(config.startup_warnings.join("\n"), @r"Credential masking is inactive because shell environment overrides contain conflicting case-insensitive provider keys. Commands will receive unmasked credentials. Remove the conflicting entries from `shell_environment_policy.set`.");
         } else {
@@ -4165,7 +4165,6 @@ wire_api = "responses"
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn project_trust_does_not_match_configured_alias_for_canonical_cwd() -> std::io::Result<()> {
     let tmp = tempdir()?;

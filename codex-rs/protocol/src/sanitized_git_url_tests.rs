@@ -5,6 +5,8 @@ use serde::Deserialize;
 use serde::de::value::Error;
 use serde::de::value::StrDeserializer;
 use serde_json::json;
+use gix_url::Scheme;
+use gix_url::Url;
 
 /// HTTPS usernames and passwords must never survive construction.
 #[test]
@@ -302,4 +304,119 @@ fn git_info_deserialization_accepts_null_repository_url() {
         .expect("deserialize legacy Git metadata with a null repository URL");
 
     assert_eq!(info.repository_url, None);
+}
+
+/// The gix-url implementation this crate used before the Ziran port.
+fn gix_sanitize(value: &str) -> Result<String, &'static str> {
+    // Remote helpers wrap another remote, so peel off their prefixes
+    // without recursion before passing the address to the Git URL parser.
+    let mut address = value;
+    while let Some((transport, nested_address)) = address.split_once("::")
+        && !transport.is_empty()
+        && transport.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        })
+    {
+        // Helpers can also receive executable command lines containing
+        // arbitrary secrets; scan the whole payload once and reject those.
+        if address.len() == value.len() && nested_address.chars().any(char::is_whitespace) {
+            return Err("invalid git remote URL");
+        }
+        address = nested_address;
+    }
+    let helper_prefix = &value[..value.len() - address.len()];
+    let original = value;
+    let value = address;
+
+    // Parse first to recognize both URL and SCP-style remotes and reject
+    // malformed inputs before reconstructing the original text.
+    let url = match Url::try_from(value) {
+        Ok(url) => url,
+        Err(_) => {
+            // gix mistakes an IPv6 address's first colon for the SCP path
+            // separator when a username comes before the bracketed host.
+            let (user, host_and_path) =
+                value.split_once('@').ok_or("invalid git remote URL")?;
+            let (host, path) = host_and_path
+                .strip_prefix('[')
+                .and_then(|host_and_path| host_and_path.split_once("]:"))
+                .ok_or("invalid git remote URL")?;
+            if user.is_empty() || path.is_empty() {
+                return Err("invalid git remote URL");
+            }
+            // SCP paths are opaque and can contain characters that URL parsing rejects.
+            let ssh_url = format!("ssh://{user}@[{host}]/");
+            Url::try_from(ssh_url.as_str()).map_err(|_| "invalid git remote URL")?
+        }
+    };
+
+    // SSH's conventional `git` user is a transport identity, not a secret;
+    // every other username and all passwords must be removed.
+    let preserve_ssh_git_user = url.scheme == Scheme::Ssh && url.user() == Some("git");
+
+    // Inspect the authority directly because gix treats the complete
+    // `file://` authority as its host and does not expose its userinfo.
+    // Rebuilding only this part also preserves escaped repository paths.
+    if let Some((scheme, authority_and_path)) = value.split_once("://") {
+        // Git treats '?' and '#' as authority text on non-HTTP transports.
+        let authority_end = if matches!(scheme, "http" | "https") {
+            authority_and_path.find(['/', '?', '#'])
+        } else {
+            authority_and_path.find('/')
+        }
+        .unwrap_or(authority_and_path.len());
+        let (authority, path) = authority_and_path.split_at(authority_end);
+        let Some((_, host)) = authority.rsplit_once('@') else {
+            return Ok(original.to_owned());
+        };
+        if preserve_ssh_git_user && url.password().is_none() {
+            return Ok(original.to_owned());
+        }
+        let user = if preserve_ssh_git_user { "git@" } else { "" };
+        return Ok(format!("{helper_prefix}{scheme}://{user}{host}{path}"));
+    }
+
+    // Parsed serialization can alter Git paths, so preserve the exact
+    // original representation whenever no credential needs removal.
+    if url.password().is_none() && (url.user().is_none() || preserve_ssh_git_user) {
+        return Ok(original.to_owned());
+    }
+
+    // SCP-style remotes have no URL authority; remove only `user@` and
+    // leave the original `host:path` untouched.
+    let authority_end = value.find(':').unwrap_or(value.len());
+    let user_end = value[..authority_end]
+        .rfind('@')
+        .ok_or("invalid git remote URL")?;
+    Ok(format!("{helper_prefix}{}", &value[user_end + 1..]))
+}
+
+/// Deterministic xorshift, so failures reproduce without a seed file.
+fn next(state: &mut u64) -> u64 {
+    *state ^= *state << 13;
+    *state ^= *state >> 7;
+    *state ^= *state << 17;
+    *state
+}
+
+/// The Ziran sanitizer agrees with gix-url on generated remotes.
+#[test]
+fn matches_gix_url_on_generated_remotes() {
+    let pieces = [
+        "https://", "http://", "ssh://", "git://", "file://", "ext::", "hg::", "remote-hg::", "ftp://",
+        "git+ssh://", "x://", "", "user", "git", "alice", ":", "@", "secret", "%40", "%3A", "%ff", "%",
+        "%2", "[", "]", "::1", "2001:db8::1", "fe80::1%25eth0", "127.0.0.1", "github.com", "Example.COM",
+        "example.com", ":22", ":0", ":65536", ":abc", "/", "/org/repo.git", "org/repo", "~user/repo", "?",
+        "#", " ", "\\", "é", "\u{a0}", "localhost", "*", "a::b", "-oProxyCommand", "..", "x",
+    ];
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    for round in 0..200_000 {
+        let count = 1 + (next(&mut state) % 7) as usize;
+        let remote: String = (0..count)
+            .map(|_| pieces[(next(&mut state) % pieces.len() as u64) as usize])
+            .collect();
+        let expected = gix_sanitize(&remote);
+        let actual = SanitizedGitUrl::try_from(remote.as_str()).map(String::from);
+        assert_eq!(actual, expected, "round {round}: {remote:?}");
+    }
 }

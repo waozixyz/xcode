@@ -2593,7 +2593,7 @@ async fn copy_shortcut_can_be_remapped() {
         assert_matches!(
             chat.handle_key_event(paste),
             crate::chatwidget::KeyEventAction::PasteImage { text_fallback, .. }
-                if text_fallback == (cfg!(windows) && modifiers == KeyModifiers::CONTROL)
+                if text_fallback == (false && modifiers == KeyModifiers::CONTROL)
                     .then_some(code)
         );
         chat.handle_key_event(KeyEvent {
@@ -2602,26 +2602,7 @@ async fn copy_shortcut_can_be_remapped() {
         });
     }
     // Crossterm maps VK_INSERT + SHIFT_PRESSED directly to Insert + Shift on Windows.
-    let shift_insert = KeyEvent::new(KeyCode::Insert, KeyModifiers::SHIFT);
-    if cfg!(windows) {
-        chat.bottom_pane.set_disable_paste_burst(/*disabled*/ false);
-        chat.handle_key_event(KeyEvent::from(KeyCode::Char('q')));
-        assert_matches!(
-            chat.handle_key_event(shift_insert),
-            KeyEventAction::PasteImage {
-                text_fallback: Some(KeyCode::Insert),
-                ..
-            }
-        );
-        assert_eq!(chat.bottom_pane.composer_text(), "q");
-        assert_matches!(chat.handle_key_event(shift_insert), KeyEventAction::None);
-        chat.handle_key_event(KeyEvent {
-            kind: KeyEventKind::Release,
-            ..shift_insert
-        });
-        chat.bottom_pane
-            .set_composer_text(String::new(), Vec::new(), Vec::new());
-    }
+    let _shift_insert = KeyEvent::new(KeyCode::Insert, KeyModifiers::SHIFT);
     let mut keymap_config = chat.config_ref().tui_keymap.clone();
     keymap_config.global.copy = Some(codex_config::types::KeybindingsSpec::One(
         codex_config::types::KeybindingSpec("alt-v".to_string()),

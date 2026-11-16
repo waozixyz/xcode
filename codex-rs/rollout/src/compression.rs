@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
 mod access_metadata;
@@ -143,7 +142,6 @@ pub(crate) fn materialize_rollout_for_append_blocking(path: &Path) -> io::Result
                     // Hard-link publication must not retain Windows' temporary-file attribute.
                     let mut options = std::fs::OpenOptions::new();
                     options.write(true).create_new(true);
-                    #[cfg(unix)]
                     options.mode(0o600);
                     options.open(path)
                 },
@@ -341,7 +339,6 @@ mod worker {
     use std::fs::Permissions;
     use std::io;
     use std::io::Write;
-    #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
     use std::path::Path;
     use std::path::PathBuf;
@@ -981,7 +978,6 @@ mod worker {
         len: u64,
         modified: SystemTime,
         permissions: Permissions,
-        #[cfg(unix)]
         change_time: (i64, i64),
     }
 
@@ -1001,7 +997,6 @@ mod worker {
             len: metadata.len(),
             modified,
             permissions: metadata.permissions(),
-            #[cfg(unix)]
             change_time: (metadata.ctime(), metadata.ctime_nsec()),
         };
         let age = SystemTime::now()
@@ -1016,9 +1011,6 @@ mod worker {
     fn same_file_state(path: &Path, expected: &FileState) -> io::Result<bool> {
         match std::fs::metadata(path) {
             Ok(metadata) => {
-                // Ownership and ACL edits change ctime even when mode, length
-                // and mtime are unchanged. Do not publish stale access metadata.
-                #[cfg(unix)]
                 if (metadata.ctime(), metadata.ctime_nsec()) != expected.change_time {
                     return Ok(false);
                 }

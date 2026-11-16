@@ -535,7 +535,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn guardian_assessment_action_round_trips_execve_shape() {
         let value = serde_json::json!({

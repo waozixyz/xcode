@@ -361,7 +361,6 @@ async fn local_listing_and_search_ignore_symlinks() {
     ] {
         std::fs::write(path, content).expect("write memory fixture");
     }
-    #[cfg(unix)]
     std::os::unix::fs::symlink(&outside_root, memory_root.join("linked-directory"))
         .expect("create memory fixture symlink");
 

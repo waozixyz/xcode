@@ -136,9 +136,6 @@ async fn test_step(
     config
         .server_permissions
         .insert(SERVER_NAME.to_string(), server_permissions);
-    config
-        .environment_use_mxc
-        .insert(format!("{label}-environment"), label == "new");
     let config = Arc::new(config);
     let prepared = PreparedMcpCall::new(
         Arc::clone(&connections),
@@ -174,134 +171,6 @@ async fn test_step(
         client,
         tool_catalog,
     }
-}
-
-#[tokio::test]
-async fn prepared_call_keeps_captured_connection_and_authority_after_refresh() -> anyhow::Result<()>
-{
-    let old = test_step(
-        "old",
-        AppToolApproval::Prompt,
-        /*supports_sandbox_state_meta*/ true,
-    )
-    .await;
-    let old_call = old
-        .step
-        .prepare_call(SERVER_NAME, TOOL_NAME)
-        .expect("old step should prepare the advertised tool");
-    let old_connections = Arc::downgrade(&old.step.connections);
-
-    let new = test_step(
-        "new",
-        AppToolApproval::Approve,
-        /*supports_sandbox_state_meta*/ false,
-    )
-    .await;
-    let new_call = new
-        .step
-        .prepare_call(SERVER_NAME, TOOL_NAME)
-        .expect("new step should prepare the advertised tool");
-
-    assert_eq!(
-        (
-            old.step.tools()[0].tool.description.as_deref(),
-            old_call.tool_info().tool.description.as_deref(),
-            old_call.server_origin(),
-            old_call.server_environment_id(),
-            old_call.server_pollutes_memory(),
-            old_call.tool_approval_mode(),
-            old_call.plugin_id(),
-            old_call.is_selected_plugin_server(),
-            old_call
-                .server_supports_sandbox_state_meta_capability()
-                .await?,
-        ),
-        (
-            Some("old catalog"),
-            Some("old catalog"),
-            Some("https://old.example"),
-            "old-environment",
-            true,
-            AppToolApproval::Prompt,
-            Some("old-plugin"),
-            true,
-            true,
-        )
-    );
-    assert_eq!(
-        (
-            new.step.tools()[0].tool.description.as_deref(),
-            new_call.tool_info().tool.description.as_deref(),
-            new_call.server_environment_id(),
-            new_call.tool_approval_mode(),
-        ),
-        (
-            Some("new catalog"),
-            Some("new catalog"),
-            "new-environment",
-            AppToolApproval::Approve,
-        )
-    );
-    assert!(Arc::ptr_eq(&old_call.client.client, &old.client));
-    assert!(!Arc::ptr_eq(&old.client, &new.client));
-    let McpPermissionSource::Environment { sandbox, .. } = old_call.permission_source() else {
-        anyhow::bail!("expected the old call to keep its environment permissions");
-    };
-    let old_root = AbsolutePathBuf::current_dir()?.join("old");
-    assert_eq!(
-        (
-            &sandbox.cwd,
-            &sandbox.user_home_dir,
-            &sandbox.temporary_directories
-        ),
-        (
-            &PathUri::from_abs_path(&old_root.join("executor")),
-            &Some(PathUri::from_abs_path(&old_root.join("home"))),
-            &Some(vec![PathUri::from_abs_path(&old_root.join("tmp"))]),
-        ),
-    );
-    let McpPermissionSource::Thread { host_cwd, .. } = new_call.permission_source() else {
-        anyhow::bail!("expected thread permissions");
-    };
-    assert_eq!(host_cwd, &AbsolutePathBuf::current_dir()?.join("new"));
-    assert_eq!(
-        (
-            old_call.config().approval_policy.value(),
-            old_call.permission_profile(),
-            old_call.config().approvals_reviewer,
-            old_call.config().environment_use_mxc.get("old-environment"),
-        ),
-        (
-            AskForApproval::Never,
-            &PermissionProfile::read_only(),
-            ApprovalsReviewer::User,
-            Some(&false),
-        )
-    );
-    assert_eq!(
-        (
-            new_call.config().approval_policy.value(),
-            new_call.config().approvals_reviewer,
-            new_call.config().environment_use_mxc.get("new-environment"),
-        ),
-        (
-            AskForApproval::OnRequest,
-            ApprovalsReviewer::AutoReview,
-            Some(&true)
-        )
-    );
-
-    drop(old.step);
-    assert!(
-        old_connections.upgrade().is_some(),
-        "the prepared call should keep its captured connection set alive"
-    );
-    drop(old_call);
-    assert!(
-        old_connections.upgrade().is_none(),
-        "the captured connection set should be released with the prepared call"
-    );
-    Ok(())
 }
 
 #[tokio::test]
@@ -467,7 +336,6 @@ async fn preparation_holds_catalog_authority_until_it_finishes() {
 
 #[tokio::test]
 async fn sandbox_executable_requires_local_stdio_and_a_full_cli() -> anyhow::Result<()> {
-    #[cfg(unix)]
     use std::os::unix::ffi::OsStrExt;
 
     let step = test_step(
@@ -550,7 +418,6 @@ async fn sandbox_executable_requires_local_stdio_and_a_full_cli() -> anyhow::Res
                 std::env::current_dir()?,
             )?,
             use_legacy_landlock: false,
-            use_mxc: false,
         };
         let expected_state = serde_json::to_value(&state)?;
         let mut metadata = Some(serde_json::json!({
@@ -571,5 +438,126 @@ async fn sandbox_executable_requires_local_stdio_and_a_full_cli() -> anyhow::Res
         }
         assert_eq!(metadata, Some(expected_metadata));
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepared_call_keeps_captured_connection_and_authority_after_refresh() -> anyhow::Result<()>
+{
+    let old = test_step(
+        "old",
+        AppToolApproval::Prompt,
+        /*supports_sandbox_state_meta*/ true,
+    )
+    .await;
+    let old_call = old
+        .step
+        .prepare_call(SERVER_NAME, TOOL_NAME)
+        .expect("old step should prepare the advertised tool");
+    let old_connections = Arc::downgrade(&old.step.connections);
+
+    let new = test_step(
+        "new",
+        AppToolApproval::Approve,
+        /*supports_sandbox_state_meta*/ false,
+    )
+    .await;
+    let new_call = new
+        .step
+        .prepare_call(SERVER_NAME, TOOL_NAME)
+        .expect("new step should prepare the advertised tool");
+
+    assert_eq!(
+        (
+            old.step.tools()[0].tool.description.as_deref(),
+            old_call.tool_info().tool.description.as_deref(),
+            old_call.server_origin(),
+            old_call.server_environment_id(),
+            old_call.server_pollutes_memory(),
+            old_call.tool_approval_mode(),
+            old_call.plugin_id(),
+            old_call.is_selected_plugin_server(),
+            old_call
+                .server_supports_sandbox_state_meta_capability()
+                .await?,
+        ),
+        (
+            Some("old catalog"),
+            Some("old catalog"),
+            Some("https://old.example"),
+            "old-environment",
+            true,
+            AppToolApproval::Prompt,
+            Some("old-plugin"),
+            true,
+            true,
+        )
+    );
+    assert_eq!(
+        (
+            new.step.tools()[0].tool.description.as_deref(),
+            new_call.tool_info().tool.description.as_deref(),
+            new_call.server_environment_id(),
+            new_call.tool_approval_mode(),
+        ),
+        (
+            Some("new catalog"),
+            Some("new catalog"),
+            "new-environment",
+            AppToolApproval::Approve,
+        )
+    );
+    assert!(Arc::ptr_eq(&old_call.client.client, &old.client));
+    assert!(!Arc::ptr_eq(&old.client, &new.client));
+    let McpPermissionSource::Environment { sandbox, .. } = old_call.permission_source() else {
+        anyhow::bail!("expected the old call to keep its environment permissions");
+    };
+    let old_root = AbsolutePathBuf::current_dir()?.join("old");
+    assert_eq!(
+        (
+            &sandbox.cwd,
+            &sandbox.user_home_dir,
+            &sandbox.temporary_directories
+        ),
+        (
+            &PathUri::from_abs_path(&old_root.join("executor")),
+            &Some(PathUri::from_abs_path(&old_root.join("home"))),
+            &Some(vec![PathUri::from_abs_path(&old_root.join("tmp"))]),
+        ),
+    );
+    let McpPermissionSource::Thread { host_cwd, .. } = new_call.permission_source() else {
+        anyhow::bail!("expected thread permissions");
+    };
+    assert_eq!(host_cwd, &AbsolutePathBuf::current_dir()?.join("new"));
+    assert_eq!(
+        (
+            old_call.config().approval_policy.value(),
+            old_call.permission_profile(),
+            old_call.config().approvals_reviewer,
+        ),
+        (
+            AskForApproval::Never,
+            &PermissionProfile::read_only(),
+            ApprovalsReviewer::User,
+        )
+    );
+    assert_eq!(
+        (
+            new_call.config().approval_policy.value(),
+            new_call.config().approvals_reviewer,
+        ),
+        (AskForApproval::OnRequest, ApprovalsReviewer::AutoReview,)
+    );
+
+    drop(old.step);
+    assert!(
+        old_connections.upgrade().is_some(),
+        "the prepared call should keep its captured connection set alive"
+    );
+    drop(old_call);
+    assert!(
+        old_connections.upgrade().is_none(),
+        "the captured connection set should be released with the prepared call"
+    );
     Ok(())
 }

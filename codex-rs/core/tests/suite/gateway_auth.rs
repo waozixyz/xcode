@@ -31,11 +31,7 @@ use wiremock::matchers::path;
 
 fn gateway_export_settings(token_path: &std::path::Path) -> Result<String> {
     let path_arg = serde_json::to_string(token_path)?;
-    let command = if cfg!(windows) {
-        format!("command = 'cmd.exe'\nargs = ['/D', '/C', 'type', {path_arg}]")
-    } else {
-        format!("command = 'cat'\nargs = [{path_arg}]")
-    };
+    let command = format!("command = 'cat'\nargs = [{path_arg}]");
     Ok(format!(
         "delivery = {{ kind = 'cookie', name = 'gateway' }}\n[gateway_oauth.credential_export]\n{command}"
     ))

@@ -77,7 +77,6 @@ fn init_login_file_logging(config: &Config) -> Option<WorkerGuard> {
     let mut log_file_opts = OpenOptions::new();
     log_file_opts.create(true).append(true);
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         log_file_opts.mode(0o600);

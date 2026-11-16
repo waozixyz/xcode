@@ -1,7 +1,6 @@
 //! Atomic credential-file replacement without broadening existing file permissions.
 //! Symlinks retain their target; hard links and read-only files fail rather than split identity.
 
-#[cfg(not(windows))]
 use std::fs::File;
 use std::io;
 use std::path::Path;
@@ -43,7 +42,6 @@ pub(super) fn check_replaceable(path: &Path) -> io::Result<()> {
             "credential file is read-only",
         ));
     }
-    #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if metadata.nlink() > 1 && metadata.is_file() {
@@ -58,16 +56,9 @@ pub(super) fn check_replaceable(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
 pub(super) fn replacement(path: &Path) -> io::Result<tempfile::NamedTempFile<File>> {
     tempfile::Builder::new().prefix(".auth-").tempfile_in(
         path.parent()
             .ok_or_else(|| io::Error::other("credential file has no parent"))?,
     )
 }
-
-#[cfg(windows)]
-#[path = "storage_file_windows.rs"]
-mod windows;
-#[cfg(windows)]
-pub(super) use windows::replacement;

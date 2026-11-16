@@ -165,9 +165,6 @@ mod account_tests;
 #[path = "thread_resume_network_tests.rs"]
 mod network_tests;
 
-#[cfg(windows)]
-const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
-#[cfg(not(windows))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[tokio::test]
@@ -1120,11 +1117,7 @@ async fn cold_resume_workspace_roots_validate_foreign_startup_paths() -> Result<
         .join("..")
         .to_string_lossy()
         .into_owned();
-    let (foreign_cwd, foreign_extra) = if cfg!(windows) {
-        ("/foreign/project", "/foreign/extra")
-    } else {
-        (r"C:\foreign\project", r"C:\foreign\extra")
-    };
+    let (foreign_cwd, foreign_extra) = (r"C:\foreign\project", r"C:\foreign\extra");
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         // Startup metadata uses the app-server host's paths, not executor paths.
@@ -2043,18 +2036,7 @@ async fn cold_resume_permission_overrides_win_over_persisted_profile() -> Result
 }
 
 // Unelevated Windows sandboxes cannot enforce managed deny-read.
-#[cfg_attr(unix, test_case(
-    SandboxMode::DangerFullAccess,
-    BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
-    "[permissions.filesystem]\ndeny_read = [\"./private\"]",
-    AppSandboxPolicy::WorkspaceWrite {
-        writable_roots: Vec::new(),
-        network_access: false,
-        exclude_tmpdir_env_var: false,
-        exclude_slash_tmp: false,
-    };
-    "managed deny-read"
-))]
+#[test_case (SandboxMode :: DangerFullAccess , BUILT_IN_PERMISSION_PROFILE_WORKSPACE , "[permissions.filesystem]\ndeny_read = [\"./private\"]" , AppSandboxPolicy :: WorkspaceWrite { writable_roots : Vec :: new () , network_access : false , exclude_tmpdir_env_var : false , exclude_slash_tmp : false , } ; "managed deny-read")]
 #[test_case(
     SandboxMode::DangerFullAccess,
     BUILT_IN_PERMISSION_PROFILE_WORKSPACE,
@@ -5471,36 +5453,6 @@ async fn thread_resume_rejects_mismatched_path_for_running_thread_id() -> Result
         primary.read_stream_until_notification_message("turn/started"),
     )
     .await??;
-
-    #[cfg(windows)]
-    {
-        let active_path = thread.path.as_ref().expect("thread should have path");
-        let active_path_display = active_path.as_os_str().to_string_lossy();
-        let equivalent_path = if let Some(path) = active_path_display.strip_prefix(r"\\?\UNC\") {
-            PathBuf::from(format!(r"\\{path}"))
-        } else if let Some(path) = active_path_display.strip_prefix(r"\\?\") {
-            PathBuf::from(path)
-        } else if let Some(path) = active_path_display.strip_prefix(r"\\") {
-            PathBuf::from(format!(r"\\?\UNC\{path}"))
-        } else {
-            PathBuf::from(format!(r"\\?\{active_path_display}"))
-        };
-        let normalized_resume_id = primary
-            .send_thread_resume_request(ThreadResumeParams {
-                thread_id: thread_id.clone(),
-                path: Some(equivalent_path),
-                ..Default::default()
-            })
-            .await?;
-        let normalized_resume_resp: JSONRPCResponse = timeout(
-            DEFAULT_READ_TIMEOUT,
-            primary.read_stream_until_response_message(RequestId::Integer(normalized_resume_id)),
-        )
-        .await??;
-        let ThreadResumeResponse { thread, .. } =
-            to_response::<ThreadResumeResponse>(normalized_resume_resp)?;
-        assert_eq!(thread.id, thread_id);
-    }
 
     let stale_thread_id = Uuid::new_v4().to_string();
     let stale_path = rollout_path(codex_home.path(), "2025-01-01T00-00-00", &stale_thread_id);

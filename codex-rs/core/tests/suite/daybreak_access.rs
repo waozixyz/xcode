@@ -36,7 +36,6 @@ enum AccessCase {
     InstalledStdio,
     UndeclaredDaybreakName,
     ExternalTokens,
-    #[cfg(unix)]
     RemoteStdio,
     UnownedStdio,
     InstalledHttp,
@@ -48,7 +47,7 @@ enum AccessCase {
 #[test_case(AccessCase::InstalledStdio; "installed local plugin")]
 #[test_case(AccessCase::UndeclaredDaybreakName; "undeclared Daybreak tool name")]
 #[test_case(AccessCase::ExternalTokens; "external ChatGPT tokens")]
-#[cfg_attr(unix, test_case(AccessCase::RemoteStdio; "installed remote stdio plugin"))]
+#[test_case (AccessCase :: RemoteStdio ; "installed remote stdio plugin")]
 #[test_case(AccessCase::UnownedStdio; "unowned local server")]
 #[test_case(AccessCase::InstalledHttp; "HTTP plugin in default environment")]
 #[test_case(AccessCase::MutableStdio; "mutable plugin tool")]
@@ -57,16 +56,12 @@ enum AccessCase {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn daybreak_metadata_follows_the_actual_plugin_call(case: AccessCase) -> Result<()> {
     skip_if_no_network!(Ok(()));
-    #[cfg(unix)]
     let remote = if matches!(case, AccessCase::RemoteStdio) {
         Some(core_test_support::exec_server::ExecServerProcess::start().await?)
     } else {
         None
     };
-    #[cfg(unix)]
     let remote_url = remote.as_ref().map(|remote| remote.websocket_url.clone());
-    #[cfg(not(unix))]
-    let remote_url: Option<String> = None;
     let tool_name = if matches!(
         case,
         AccessCase::UndeclaredDaybreakName | AccessCase::InstalledHttp
@@ -233,7 +228,6 @@ async fn daybreak_metadata_follows_the_actual_plugin_call(case: AccessCase) -> R
                 ],"stale":false}
             }}))
         }
-        #[cfg(unix)]
         AccessCase::RemoteStdio => None,
         AccessCase::UndeclaredDaybreakName
         | AccessCase::UnownedStdio

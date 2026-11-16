@@ -276,12 +276,7 @@ async fn copy_on_select_respects_terminal_defaults_and_config_overrides() -> any
             (TerminalName::Ghostty, None, None, true),
             (TerminalName::Kitty, None, None, !cfg!(target_os = "macos")),
             (TerminalName::WindowsTerminal, None, None, false),
-            (
-                TerminalName::VsCode,
-                None,
-                None,
-                !cfg!(target_os = "windows"),
-            ),
+            (TerminalName::VsCode, None, None, true),
             (TerminalName::Alacritty, None, None, true),
             (TerminalName::GnomeTerminal, None, None, true),
             (TerminalName::Konsole, None, None, true),

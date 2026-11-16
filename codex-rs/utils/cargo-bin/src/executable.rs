@@ -8,7 +8,6 @@ use std::path::Path;
 use std::process::Command;
 
 /// Writes a small Unix script fixture and makes it executable with mode 0o755.
-#[cfg(unix)]
 pub fn write_executable(path: &Path, script: &str) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
 

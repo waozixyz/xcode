@@ -380,7 +380,6 @@ async fn snapshot_for_config_merges_extension_host_and_legacy_plugin_roots() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn snapshot_for_config_preserves_host_precedence_for_symlinked_plugin_root() {
     use std::os::unix::fs::symlink;

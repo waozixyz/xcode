@@ -1186,12 +1186,6 @@ fn looks_copyable(text: &str) -> bool {
         return true;
     }
 
-    if cfg!(target_os = "windows") {
-        return text.starts_with(r"\\") // unc and win32 paths
-            || text.starts_with(r"\??\") // NT DOS paths
-            || matches!(text.as_bytes(), [drive, b':', b'/' | b'\\', ..] if drive.is_ascii_alphabetic()); // standard drive absolute C:/ and D:\ paths
-    }
-
     false
 }
 
@@ -2007,11 +2001,7 @@ Run codex doctor without --summary for detailed diagnostics.
             );
         }
 
-        let snapshot_name = if cfg!(windows) {
-            "copyable_items_color_windows"
-        } else {
-            "copyable_items_color"
-        };
+        let snapshot_name = "copyable_items_color";
         insta::assert_snapshot!(snapshot_name, rendered.replace('\u{1b}', "<ESC>"));
     }
 }

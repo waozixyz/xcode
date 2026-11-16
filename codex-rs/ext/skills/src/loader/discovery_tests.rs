@@ -39,7 +39,6 @@ async fn discover(root: &Path) -> SkillDiscovery {
     .await
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn discovers_hidden_directory_through_visible_symlink() {
     let root = TempDir::new().expect("root temp dir");
@@ -64,7 +63,6 @@ async fn discovers_hidden_directory_through_visible_symlink() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn ignores_symlinked_skill_files_and_directory_cycles() {
     let root = TempDir::new().expect("root temp dir");

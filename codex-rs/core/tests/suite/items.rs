@@ -1,5 +1,3 @@
-#![cfg(not(target_os = "windows"))]
-
 use anyhow::Ok;
 use codex_core::TurnInputRequest;
 use codex_features::Feature;

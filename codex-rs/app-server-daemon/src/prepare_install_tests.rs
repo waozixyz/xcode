@@ -1,5 +1,4 @@
 //! Covers complete-package staging, conservative selection, and legacy preservation.
-#![cfg(unix)]
 use std::collections::BTreeMap;
 
 use super::InstallMode;

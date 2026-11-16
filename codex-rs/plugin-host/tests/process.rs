@@ -3,7 +3,6 @@ use codex_plugin_host::PluginProcessError;
 use futures::SinkExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
-#[cfg(unix)]
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
@@ -18,7 +17,6 @@ async fn owns_a_separate_process_group_and_reaps_the_helper()
     let program = codex_utils_cargo_bin::cargo_bin("codex-plugin-test-helper")?;
     let mut child = PluginProcess::spawn(&program, &CancellationToken::new()).await?;
     let (input, output) = child.pipes();
-    #[cfg(unix)]
     {
         let bytes = output.next().await.expect("expected frame")?;
         let (pid, group): (u32, i32) = serde_json::from_slice(&bytes)?;
@@ -62,7 +60,6 @@ async fn already_canceled_startup_does_not_launch_the_helper()
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn dropping_the_helper_also_closes_descendant_pipes() -> Result<(), Box<dyn std::error::Error>>
 {
@@ -84,7 +81,6 @@ async fn dropping_the_helper_also_closes_descendant_pipes() -> Result<(), Box<dy
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn caller_can_cancel_a_stalled_handshake_and_reap_the_helper()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -154,7 +150,6 @@ async fn preserves_exit_status_and_bounded_stderr_from_startup_and_runtime_failu
         } else {
             let mut child = PluginProcess::spawn(executable, &CancellationToken::new()).await?;
             let (input, output) = child.pipes();
-            #[cfg(unix)]
             let _group = output.next().await.expect("expected frame")?;
             input.feed(b"crash".to_vec().into()).await?;
             input.flush().await?;

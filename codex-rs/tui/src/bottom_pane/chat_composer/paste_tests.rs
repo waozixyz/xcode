@@ -6,7 +6,6 @@ use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
-#[cfg(unix)]
 #[test]
 fn pasting_fifo_path_keeps_it_editable() {
     let dir = tempfile::tempdir().unwrap();

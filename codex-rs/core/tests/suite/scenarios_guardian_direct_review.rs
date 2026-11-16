@@ -517,58 +517,6 @@ async fn direct_permissions_review_matches_live_action() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn direct_patch_review_skips_writable_file_without_writes() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-    let builder = test_codex().with_model("gpt-5.5").with_config(|config| {
-        super::configure_scenario_catalog(config);
-        config.approvals_reviewer = ApprovalsReviewer::AutoReview;
-        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
-        // Writable patches can bypass review only when a sandbox is available.
-        config.permissions.windows_sandbox_mode =
-            Some(codex_config::types::WindowsSandboxModeToml::Unelevated);
-        config
-            .permissions
-            .set_permission_profile(PermissionProfile::workspace_write())
-            .expect("workspace-write permissions");
-    });
-    let harness = TestCodexHarness::with_auto_env_builder(builder).await?;
-    let test = harness.test();
-    harness
-        .write_file("guardian-skipped.txt", "before\n")
-        .await?;
-    let mock = responses::mount_sse_once(
-        harness.server(),
-        sse(vec![ev_completed("unexpected-review")]),
-    )
-    .await;
-
-    test.codex
-        .inject_response_items(vec![serde_json::from_value(json!({
-            "type": "custom_tool_call",
-            "call_id": "patch-skip",
-            "name": "apply_patch",
-            "input": "*** Begin Patch\n*** Update File: guardian-skipped.txt\n@@\n-before\n+after\n*** End Patch",
-        }))?])
-        .await?;
-    assert_eq!(
-        test.codex
-            .guardian_review(&CancellationToken::new())
-            .await?,
-        GuardianReviewResult {
-            call_id: "patch-skip".to_owned(),
-            assessment: None,
-        }
-    );
-    assert!(mock.requests().is_empty());
-    assert_eq!(
-        harness.read_file_text("guardian-skipped.txt").await?,
-        "before\n"
-    );
-    test.codex.shutdown_and_wait().await?;
-    Ok(())
-}
-
 #[test_case::test_case(AskForApproval::Never; "never")]
 #[test_case::test_case(AskForApproval::Granular(codex_protocol::protocol::GranularApprovalConfig {
     sandbox_approval: true,
@@ -634,7 +582,6 @@ pub(super) fn model_input(request: &ResponsesRequest, parent: ThreadId) -> Resul
     ))
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test]
 async fn direct_exec_review_applies_hook_rewrite_before_policy_check() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -738,7 +685,6 @@ prefix_rule(pattern=["git", "init", "guardian-rewritten"], decision="prompt")
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tokio::test]
 async fn direct_exec_review_honors_hook_denial_before_policy_skip() -> Result<()> {
     use codex_protocol::protocol::EventMsg;
@@ -812,6 +758,56 @@ async fn direct_exec_review_honors_hook_denial_before_policy_skip() -> Result<()
 
     assert!(!harness.path_exists("guardian-original").await?);
 
+    test.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn direct_patch_review_skips_writable_file_without_writes() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let builder = test_codex().with_model("gpt-5.5").with_config(|config| {
+        super::configure_scenario_catalog(config);
+        config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+        // Writable patches can bypass review only when a sandbox is available.
+        config
+            .permissions
+            .set_permission_profile(PermissionProfile::workspace_write())
+            .expect("workspace-write permissions");
+    });
+    let harness = TestCodexHarness::with_auto_env_builder(builder).await?;
+    let test = harness.test();
+    harness
+        .write_file("guardian-skipped.txt", "before\n")
+        .await?;
+    let mock = responses::mount_sse_once(
+        harness.server(),
+        sse(vec![ev_completed("unexpected-review")]),
+    )
+    .await;
+
+    test.codex
+        .inject_response_items(vec![serde_json::from_value(json!({
+            "type": "custom_tool_call",
+            "call_id": "patch-skip",
+            "name": "apply_patch",
+            "input": "*** Begin Patch\n*** Update File: guardian-skipped.txt\n@@\n-before\n+after\n*** End Patch",
+        }))?])
+        .await?;
+    assert_eq!(
+        test.codex
+            .guardian_review(&CancellationToken::new())
+            .await?,
+        GuardianReviewResult {
+            call_id: "patch-skip".to_owned(),
+            assessment: None,
+        }
+    );
+    assert!(mock.requests().is_empty());
+    assert_eq!(
+        harness.read_file_text("guardian-skipped.txt").await?,
+        "before\n"
+    );
     test.codex.shutdown_and_wait().await?;
     Ok(())
 }

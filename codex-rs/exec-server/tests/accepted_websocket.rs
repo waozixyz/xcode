@@ -12,7 +12,6 @@ use axum::extract::WebSocketUpgrade;
 use axum::response::IntoResponse;
 use axum::routing::any;
 use codex_api::AuthProvider;
-#[cfg(unix)]
 use codex_exec_server::EnvironmentConnectionState;
 use codex_exec_server::EnvironmentInfo;
 use codex_exec_server::EnvironmentManager;
@@ -20,7 +19,6 @@ use codex_exec_server::EnvironmentObservedStatus;
 use codex_exec_server::EnvironmentStatus;
 use codex_exec_server::EnvironmentStatusKind;
 use codex_exec_server::ExecParams;
-#[cfg(unix)]
 use codex_exec_server::ExecProcessEvent;
 use codex_exec_server::ExecResponse;
 use codex_exec_server::ExecServerClientConnectOptions;
@@ -32,7 +30,6 @@ use codex_exec_server::ReadParams;
 use codex_exec_server::ReadResponse;
 use codex_exec_server::RemoteEnvironmentConfig;
 use codex_exec_server::RemoteEnvironmentTransport;
-#[cfg(unix)]
 use codex_exec_server::WriteStatus;
 use codex_exec_server_protocol::JSONRPCError;
 use codex_exec_server_protocol::JSONRPCErrorError;
@@ -225,8 +222,6 @@ async fn accepted_websocket_interoperates_and_recovers_with_real_direct_executor
         large_file_contents,
     );
 
-    // The process fixture uses a POSIX shell; metadata and shutdown remain tested on all platforms.
-    #[cfg(unix)]
     {
         let mut proxy = proxy;
         let backend = environment.get_exec_backend();

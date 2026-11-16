@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 use std::time::Instant;
 
 #[cfg(target_os = "linux")]
@@ -38,7 +38,7 @@ pub(super) fn copy(text: &str, deadline: Instant) -> Result<(), String> {
     }
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 fn command(executable: &std::path::Path, path: &std::ffi::OsStr) -> tokio::process::Command {
     // Spawn only the native shell here: directly spawning a Windows exe can block on WSL.
     let mut command = tokio::process::Command::new("/bin/sh");
@@ -107,7 +107,7 @@ pub(super) fn native_clipboard() -> Result<arboard::Clipboard, String> {
     Err("WSL native clipboard unavailable on this platform".into())
 }
 
-#[cfg(any(target_os = "linux", all(test, unix)))]
+#[cfg(any(target_os = "linux", test))]
 async fn write_command(
     mut command: tokio::process::Command,
     text: &str,
@@ -172,6 +172,6 @@ async fn write_command(
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 #[path = "wsl_tests.rs"]
 mod tests;

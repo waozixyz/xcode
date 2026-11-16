@@ -173,7 +173,6 @@ async fn credential_files_scope_token_caches_and_refreshes() {
     std::fs::write(&first_file, "first-token").unwrap();
     std::fs::write(&second_file, "second-token").unwrap();
 
-    #[cfg(unix)]
     let (command, args) = (
         "sh".to_string(),
         vec![
@@ -181,18 +180,6 @@ async fn credential_files_scope_token_caches_and_refreshes() {
             "cat \"$GOOGLE_APPLICATION_CREDENTIALS\"".into(),
         ],
     );
-    #[cfg(windows)]
-    let (command, args) = {
-        std::fs::write(
-            tempdir.path().join("read-token.cmd"),
-            "@type \"%GOOGLE_APPLICATION_CREDENTIALS%\"\r\n",
-        )
-        .unwrap();
-        (
-            "cmd.exe".to_string(),
-            vec!["/d".into(), "/c".into(), r".\read-token.cmd".into()],
-        )
-    };
     let mut first_info = ModelProviderInfo::create_gcp_provider();
     first_info.auth = Some(ModelProviderAuthInfo {
         command,

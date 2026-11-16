@@ -2,12 +2,6 @@
 
 mod backend;
 mod background_command;
-#[cfg(windows)]
-pub use backend::windows::DetachedLaunchRestricted;
-#[cfg(windows)]
-pub use backend::windows::is_elevated;
-#[cfg(windows)]
-use backend::windows::try_lock_file;
 mod client;
 mod diagnostics;
 mod install_lock;
@@ -42,7 +36,6 @@ use codex_app_server_protocol::RemoteControlPairingStartResponse;
 use codex_app_server_transport::app_server_control_socket_path;
 use codex_utils_home_dir::find_codex_home;
 use managed_install::managed_codex_bin;
-#[cfg(any(unix, windows))]
 use managed_install::managed_codex_version;
 use serde::Serialize;
 use settings::DaemonSettings;
@@ -52,13 +45,7 @@ use telemetry::StartFailure;
 use tokio::time::sleep;
 
 const START_POLL_INTERVAL: Duration = Duration::from_millis(50);
-// An older updater can pass background policy to a replacement daemon, so retain
-// the longer readiness allowance during upgrades on macOS. On Linux, a cold
-// start from a rotational disk can take more than ten seconds.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 const START_TIMEOUT: Duration = Duration::from_secs(30);
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-const START_TIMEOUT: Duration = Duration::from_secs(10);
 // Leave room for the longest graceful stop, forced-exit check, and restart.
 const OPERATION_LOCK_TIMEOUT: Duration =
     Duration::from_secs(MAX_SHUTDOWN_GRACE_SECONDS as u64 + 75);
@@ -214,7 +201,6 @@ pub struct RemoteControlOutput {
     pub app_server_version: Option<String>,
 }
 
-#[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestartIfRunningOutcome {
     Busy,
@@ -224,7 +210,6 @@ pub(crate) enum RestartIfRunningOutcome {
     Restarted,
 }
 
-#[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestartMode {
     IfVersionChanged,
@@ -232,7 +217,6 @@ pub(crate) enum RestartMode {
     Always,
 }
 
-#[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RestartDecision {
     NotReady,
@@ -242,28 +226,17 @@ enum RestartDecision {
 
 pub async fn run(command: LifecycleCommand) -> Result<LifecycleOutput> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    if matches!(
-        command,
-        LifecycleCommand::Start { .. } | LifecycleCommand::Restart { .. }
-    ) {
-        backend::windows::ensure_not_elevated()?;
-    }
     // Keep daemon package preparation off callers' async stack frames.
     Box::pin(Daemon::from_environment()?.run(command)).await
 }
 
 pub async fn bootstrap(options: BootstrapOptions) -> Result<BootstrapOutput> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    backend::windows::ensure_not_elevated()?;
     Box::pin(Daemon::from_environment()?.bootstrap(options)).await
 }
 
 pub async fn ensure_remote_control_ready() -> Result<RemoteControlReadyOutput> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    backend::windows::ensure_not_elevated()?;
     Box::pin(Daemon::from_environment()?.ensure_remote_control_ready()).await
 }
 
@@ -290,8 +263,6 @@ pub async fn start_remote_control_pairing() -> Result<RemoteControlPairingStartR
 
 pub async fn set_remote_control(mode: RemoteControlMode) -> Result<RemoteControlOutput> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    backend::windows::ensure_not_elevated()?;
     Box::pin(Daemon::from_environment()?.set_remote_control(mode)).await
 }
 
@@ -300,8 +271,6 @@ pub async fn run_pid_update_loop(
     restore_release: Option<String>,
 ) -> Result<()> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    backend::windows::ensure_not_elevated()?;
     update_loop::run(http_client_factory, restore_release).await
 }
 
@@ -323,21 +292,11 @@ pub async fn update(
     http_client_factory: codex_http_client::HttpClientFactory,
 ) -> Result<UpdateOutput> {
     ensure_supported_platform()?;
-    #[cfg(windows)]
-    backend::windows::ensure_not_elevated()?;
     update_loop::request_manual_update(&Daemon::from_environment()?, http_client_factory).await
 }
 
-#[cfg(any(unix, windows))]
 fn ensure_supported_platform() -> Result<()> {
     Ok(())
-}
-
-#[cfg(not(any(unix, windows)))]
-fn ensure_supported_platform() -> Result<()> {
-    Err(anyhow!(
-        "codex app-server daemon lifecycle is only supported on Unix and Windows platforms"
-    ))
 }
 
 #[derive(Clone)]
@@ -555,7 +514,6 @@ impl Daemon {
             .await)
     }
 
-    #[cfg(any(unix, windows))]
     pub(crate) async fn try_restart_if_running(
         &self,
         mode: RestartMode,
@@ -605,8 +563,6 @@ impl Daemon {
                 }
                 RestartDecision::AlreadyCurrent => RestartIfRunningOutcome::AlreadyCurrent,
                 RestartDecision::Restart => {
-                    #[cfg(windows)]
-                    backend::windows::ensure_detached_launch(managed_codex_bin)?;
                     if let Err(err) = thread_recovery::discard_pending(self) {
                         let _ = stderr_writer().write_all(format!(
                             "warning: failed to clear stale daemon recovery before update: {err}\n"
@@ -901,7 +857,6 @@ impl Daemon {
         backend::pid_update_loop_backend(self.backend_paths(&settings))
             .stop()
             .await?;
-        #[cfg(unix)]
         {
             use std::os::unix::fs::FileTypeExt;
 
@@ -927,7 +882,6 @@ impl Daemon {
         backend.start().await?;
         let info = self.wait_until_ready().await?;
         let auto_update_enabled = managed.ensure_managed_updater(&settings).await?;
-        #[cfg(unix)]
         // Older automatic updaters have no manual request socket to wait for.
         if auto_update_enabled
             && managed_install::supports_daemon_command(
@@ -1099,8 +1053,6 @@ impl Daemon {
 
     fn ensure_managed_codex_bin(&self) -> Result<()> {
         if self.managed_codex_bin.is_file() {
-            #[cfg(windows)]
-            backend::windows::ensure_detached_launch(&self.managed_codex_bin)?;
             return Ok(());
         }
 
@@ -1110,14 +1062,8 @@ impl Daemon {
         ))
     }
 
-    #[cfg(any(unix, windows))]
     async fn managed_codex_version_best_effort(&self) -> Option<String> {
         managed_codex_version(&self.managed_codex_bin).await.ok()
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    async fn managed_codex_version_best_effort(&self) -> Option<String> {
-        None
     }
 
     fn backend_paths(&self, settings: &DaemonSettings) -> BackendPaths {
@@ -1163,7 +1109,6 @@ impl Daemon {
 
     async fn open_operation_lock_file(&self) -> Result<tokio::fs::File> {
         if let Some(parent) = self.operation_lock_file.parent() {
-            #[cfg(unix)]
             if let Some(home) = parent.parent() {
                 tokio::fs::create_dir_all(home).await?;
             }
@@ -1242,7 +1187,6 @@ fn already_remote_control_status(mode: RemoteControlMode) -> RemoteControlStatus
     }
 }
 
-#[cfg(any(unix, windows))]
 fn restart_decision(
     mode: RestartMode,
     info: Option<&client::ProbeInfo>,
@@ -1262,7 +1206,6 @@ fn restart_decision(
     }
 }
 
-#[cfg(unix)]
 fn try_lock_file(file: &tokio::fs::File) -> Result<bool> {
     use std::os::fd::AsRawFd;
 
@@ -1278,12 +1221,7 @@ fn try_lock_file(file: &tokio::fs::File) -> Result<bool> {
     Err(err).context("failed to lock daemon operation")
 }
 
-#[cfg(not(any(unix, windows)))]
-fn try_lock_file(_file: &tokio::fs::File) -> Result<bool> {
-    Ok(true)
-}
-
-#[cfg(all(test, any(unix, windows)))]
+#[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
@@ -1300,7 +1238,6 @@ mod tests {
     use super::RestartMode;
     use super::restart_decision;
     use crate::client::ProbeInfo;
-    #[cfg(unix)]
     use crate::settings::DaemonSettings;
 
     #[test]
@@ -1513,7 +1450,6 @@ mod tests {
         assert!(!daemon.recovery_file().expect("recovery path").exists());
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn managed_local_backend_counts_as_bootstrapped_without_updater() {
         let home = TempDir::new().expect("home");

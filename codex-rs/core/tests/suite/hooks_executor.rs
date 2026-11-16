@@ -7,14 +7,12 @@ use codex_core::StartThreadOptions;
 use codex_core::TurnInputRequest;
 use codex_core::shell::ShellType;
 use codex_core::shell::get_shell;
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::EnvironmentConfigReadParams;
 use codex_exec_server::ExecServerRuntimeOptions;
 use codex_features::Feature;
 use codex_protocol::capabilities::CapabilityRootLocation;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfileSnapshot;
 use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
@@ -402,90 +400,6 @@ async fn thread_lists_the_environment_hook_that_blocks_a_turn() -> Result<()> {
 }
 
 const HOOK_INPUT_PROMPT: &str = "environment-hook-prompt";
-
-#[test_case(
-    ShellType::PowerShell,
-    "& (Get-Process -Id $PID).Path -NoProfile -Command '[Console]::Error.WriteLine(([Console]::In.ReadLine() | ConvertFrom-Json).prompt); exit 2'",
-    HookRunStatus::Blocked, HOOK_INPUT_PROMPT;
-    "PowerShell preserves a native hook's blocking exit status"
-)]
-#[test_case(
-    ShellType::PowerShell, "ForEach-Object { ($_ | ConvertFrom-Json).prompt }",
-    HookRunStatus::Completed, HOOK_INPUT_PROMPT;
-    "PowerShell delivers the prompt to a successful hook"
-)]
-#[test_case(
-    ShellType::PowerShell, "ForEach-Object { $_ }; Write-Error 'hook failed'",
-    HookRunStatus::Failed, "hook exited with code 1";
-    "PowerShell reports a cmdlet failure"
-)]
-#[cfg_attr(unix, test_case(
-    ShellType::Bash, "(grep -o environment-hook-prompt)",
-    HookRunStatus::Completed, HOOK_INPUT_PROMPT;
-    "Bash delivers the prompt and EOF to a hook starting with a subshell"
-))]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn environment_hook_receives_prompt_and_reports_exit_status(
-    shell_type: ShellType,
-    command: &str,
-    expected_status: HookRunStatus,
-    expected_output: &str,
-) -> Result<()> {
-    let Some(shell) = get_shell(shell_type) else {
-        assert!(
-            cfg!(unix) && shell_type == ShellType::PowerShell,
-            "expected {shell_type:?} to be installed"
-        );
-        return Ok(());
-    };
-    let server = start_mock_server().await;
-    mount_response_once(&server, completed_turn_response("after-hook")).await;
-    let test = test_codex()
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::CodexHooks)
-                .expect("enable hooks");
-        })
-        .with_user_shell(shell)
-        .build(&server)
-        .await?;
-    let thread = &test.codex;
-    let selection = thread
-        .environment_selections()
-        .await
-        .into_iter()
-        .next()
-        .context("thread should have a selected environment")?;
-    let mut config = environment_config_for_selection(&test.config, &selection);
-    config.environment_hooks = serde_json::from_value(json!({
-        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": command}]}]
-    }))?;
-    thread.environment_ready(&selection, config).await?;
-
-    thread
-        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
-            text: HOOK_INPUT_PROMPT.to_string(),
-            text_elements: Vec::new(),
-        }]))
-        .await?;
-    let run = wait_for_event_match(thread, |event| match event {
-        EventMsg::HookCompleted(event) => Some(event.run.clone()),
-        _ => None,
-    })
-    .await;
-    let entries: Vec<_> = run
-        .entries
-        .iter()
-        .map(|entry| entry.text.as_str())
-        .collect();
-    assert_eq!(
-        (run.status, entries),
-        (expected_status, vec![expected_output])
-    );
-    wait_for_event(thread, |event| matches!(event, EventMsg::TurnComplete(_))).await;
-    Ok(())
-}
 
 #[test_case(HookRunStatus::Completed, 0; "allowed command runs on its owner")]
 #[test_case(HookRunStatus::Blocked, 2; "denied command stays blocked on its owner")]
@@ -1674,8 +1588,6 @@ impl ExecutorHookFixture {
                         self.test.config.permissions.permission_profile().clone(),
                     ),
                     shell_environment_policy: Default::default(),
-                    windows_sandbox_level: WindowsSandboxLevel::from_config(&self.test.config),
-                    windows_sandbox_type: self.test.config.permissions.windows_sandbox_type,
                     use_legacy_landlock: self.test.config.features.use_legacy_landlock(),
                     exec_policy: None,
                     mcp_policy: None,
@@ -1730,4 +1642,64 @@ impl ExecutorHookFixture {
             .filter(|request| request["method"] == "tools/call")
             .collect())
     }
+}
+
+#[test_case (ShellType :: Bash , "(grep -o environment-hook-prompt)" , HookRunStatus :: Completed , HOOK_INPUT_PROMPT ; "Bash delivers the prompt and EOF to a hook starting with a subshell")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn environment_hook_receives_prompt_and_reports_exit_status(
+    shell_type: ShellType,
+    command: &str,
+    expected_status: HookRunStatus,
+    expected_output: &str,
+) -> Result<()> {
+    let Some(shell) = get_shell(shell_type) else {
+        panic!("expected {shell_type:?} to be installed");
+    };
+    let server = start_mock_server().await;
+    mount_response_once(&server, completed_turn_response("after-hook")).await;
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodexHooks)
+                .expect("enable hooks");
+        })
+        .with_user_shell(shell)
+        .build(&server)
+        .await?;
+    let thread = &test.codex;
+    let selection = thread
+        .environment_selections()
+        .await
+        .into_iter()
+        .next()
+        .context("thread should have a selected environment")?;
+    let mut config = environment_config_for_selection(&test.config, &selection);
+    config.environment_hooks = serde_json::from_value(json!({
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": command}]}]
+    }))?;
+    thread.environment_ready(&selection, config).await?;
+
+    thread
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: HOOK_INPUT_PROMPT.to_string(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+    let run = wait_for_event_match(thread, |event| match event {
+        EventMsg::HookCompleted(event) => Some(event.run.clone()),
+        _ => None,
+    })
+    .await;
+    let entries: Vec<_> = run
+        .entries
+        .iter()
+        .map(|entry| entry.text.as_str())
+        .collect();
+    assert_eq!(
+        (run.status, entries),
+        (expected_status, vec![expected_output])
+    );
+    wait_for_event(thread, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    Ok(())
 }

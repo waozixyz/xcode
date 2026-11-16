@@ -89,8 +89,6 @@ mod system;
 mod thread_inventory;
 mod title;
 mod updates;
-#[cfg(target_os = "windows")]
-mod windows_dev_drive;
 
 #[cfg(test)]
 #[path = "doctor/desktop_tests.rs"]
@@ -396,10 +394,6 @@ async fn build_report(
     checks.push(run_sync_check("disk", progress.clone(), || {
         disk::check(config_result.as_ref().ok(), &cwd)
     }));
-    #[cfg(target_os = "windows")]
-    checks.push(run_sync_check("dev drive", progress.clone(), || {
-        windows_dev_drive::check(&cwd)
-    }));
     match &config_result {
         Ok(config) => {
             // Other checks below do synchronous work inside join!. Keep the
@@ -569,7 +563,7 @@ async fn build_report(
 
     progress.begin("desktop");
     if let Some(desktop) = desktop::collect().await {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "macos")]
         if let Some(application) = desktop.application.as_ref() {
             updates::append_desktop_update(&mut checks, config_result.as_ref().ok(), application)
                 .await;
@@ -1031,7 +1025,6 @@ fn describe_install_context(context: &InstallContext) -> String {
         } => {
             let platform = match platform {
                 StandalonePlatform::Unix => "unix",
-                StandalonePlatform::Windows => "windows",
             };
             match &context.package_layout {
                 Some(package_layout) => {
@@ -1761,48 +1754,6 @@ fn terminal_check(no_color_flag: bool) -> DoctorCheck {
     terminal_check_from_inputs(TerminalCheckInputs::detect(no_color_flag))
 }
 
-#[cfg(windows)]
-fn windows_console_details() -> Vec<String> {
-    use windows_sys::Win32::Foundation::HANDLE;
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::Console::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    use windows_sys::Win32::System::Console::GetConsoleCP;
-    use windows_sys::Win32::System::Console::GetConsoleMode;
-    use windows_sys::Win32::System::Console::GetConsoleOutputCP;
-    use windows_sys::Win32::System::Console::GetStdHandle;
-    use windows_sys::Win32::System::Console::STD_ERROR_HANDLE;
-    use windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE;
-
-    let mut details = Vec::new();
-    details.push(format!("console input code page: {}", unsafe {
-        GetConsoleCP()
-    }));
-    details.push(format!("console output code page: {}", unsafe {
-        GetConsoleOutputCP()
-    }));
-    details.push(console_mode_detail("stdout console mode", unsafe {
-        GetStdHandle(STD_OUTPUT_HANDLE)
-    }));
-    details.push(console_mode_detail("stderr console mode", unsafe {
-        GetStdHandle(STD_ERROR_HANDLE)
-    }));
-
-    fn console_mode_detail(label: &str, handle: HANDLE) -> String {
-        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
-            return format!("{label}: unavailable");
-        }
-        let mut mode = 0_u32;
-        if unsafe { GetConsoleMode(handle, &mut mode) } == 0 {
-            return format!("{label}: unavailable");
-        }
-        let vt_enabled = mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0;
-        format!("{label}: 0x{mode:08x} (VT processing: {vt_enabled})")
-    }
-
-    details
-}
-
-#[cfg(not(windows))]
 fn windows_console_details() -> Vec<String> {
     Vec::new()
 }
@@ -3060,16 +3011,6 @@ fn stdio_command_resolves(
         if executable_path_exists(&candidate).is_ok() {
             return Ok(());
         }
-        #[cfg(windows)]
-        {
-            let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
-            for extension in pathext.split(';').filter(|extension| !extension.is_empty()) {
-                let candidate = dir.join(format!("{command}{extension}"));
-                if executable_path_exists(&candidate).is_ok() {
-                    return Ok(());
-                }
-            }
-        }
     }
     Err("not found on PATH".to_string())
 }
@@ -3082,7 +3023,6 @@ fn executable_path_exists(path: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(unix)]
 fn executable_file_permission(path: &Path, metadata: &std::fs::Metadata) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -3091,11 +3031,6 @@ fn executable_file_permission(path: &Path, metadata: &std::fs::Metadata) -> Resu
     } else {
         Ok(())
     }
-}
-
-#[cfg(not(unix))]
-fn executable_file_permission(_path: &Path, _metadata: &std::fs::Metadata) -> Result<(), String> {
-    Ok(())
 }
 
 fn path_readiness(details: &mut Vec<String>, label: &str, path: &Path) {
@@ -4288,10 +4223,7 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_check_skips_host_path_checks_for_remote_stdio() {
-        #[cfg(not(windows))]
         let cwd = r"C:\Users\openai\share";
-        #[cfg(windows)]
-        let cwd = "/home/openai/share";
         let cwd = toml::Value::String(cwd.to_string());
         let remote_server: McpServerConfig = toml::from_str(&format!(
             r#"
@@ -4350,7 +4282,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn read_probe_file_rejects_unreadable_file() {
         use std::os::unix::fs::PermissionsExt;
@@ -4373,7 +4304,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[cfg(unix)]
     #[test]
     fn executable_path_exists_rejects_non_executable_file() {
         use std::os::unix::fs::PermissionsExt;

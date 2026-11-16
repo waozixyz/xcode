@@ -52,7 +52,6 @@ non-character key so ordinary text input is not intercepted. Ctrl-alt characters
 input on Windows."
             ));
         }
-        #[cfg(unix)]
         if *prefix == key_hint::ctrl(KeyCode::Char('z')) {
             return Err(format!(
                 "Invalid `tui.keymap.global.leader` = `{label}`: ctrl-z is reserved for suspending \

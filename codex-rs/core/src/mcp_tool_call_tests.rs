@@ -292,15 +292,11 @@ print({hook_output:?})
     );
 
     std::fs::write(&script_path, script).expect("write MCP permission hook script");
-    let python = if cfg!(windows) { "python" } else { "python3" };
-    let script_path_arg = if cfg!(windows) {
-        script_path.display().to_string()
-    } else {
-        format!(
-            "'{}'",
-            script_path.display().to_string().replace('\'', "'\\''")
-        )
-    };
+    let python = "python3";
+    let script_path_arg = format!(
+        "'{}'",
+        script_path.display().to_string().replace('\'', "'\\''")
+    );
     std::fs::write(
         turn_context.config.codex_home.join("hooks.json"),
         serde_json::json!({
@@ -333,12 +329,8 @@ print({hook_output:?})
     let hooks = session.hooks().reconfigured(HooksConfig {
         feature_enabled: true,
         config_layer_stack: Some(trusted_config_layer_stack),
-        shell_program: (!cfg!(windows)).then_some("/bin/sh".to_string()),
-        shell_args: if cfg!(windows) {
-            Vec::new()
-        } else {
-            vec!["-c".to_string()]
-        },
+        shell_program: (true).then_some("/bin/sh".to_string()),
+        shell_args: vec!["-c".to_string()],
         ..HooksConfig::default()
     });
     session.services.hooks.store(Arc::new(hooks));
@@ -1447,8 +1439,6 @@ async fn mcp_sandbox_cwd_uses_matching_server_environment_uri() -> anyhow::Resul
                     environment_hooks: Default::default(),
                     allow_login_shell: true,
                     workspace_roots: Vec::new(),
-                    windows_sandbox_level: turn_context.windows_sandbox_level,
-                    windows_sandbox_type: turn_context.config.permissions.windows_sandbox_type,
                     use_legacy_landlock: turn_context.config.features.use_legacy_landlock(),
                     permission_profile: turn_context
                         .config

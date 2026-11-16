@@ -74,9 +74,6 @@ const SERVICE_VERSION: &str = "0.0.0-test";
 async fn native_counts_follow_completed_messages_without_request_replay(
     mode: ModeKind,
 ) -> Result<()> {
-    #[cfg(windows)]
-    const READ_TIMEOUT: Duration = Duration::from_secs(25);
-    #[cfg(not(windows))]
     const READ_TIMEOUT: Duration = Duration::from_secs(10);
 
     let server = responses::start_mock_server().await;
@@ -1293,25 +1290,21 @@ enabled = true
     Ok(())
 }
 
-#[cfg_attr(windows, ignore = "plugin metrics fixture is Unix-only")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_plugin_script_emits_measurement_analytics() -> Result<()> {
     assert_plugin_measurement_analytics(/*remote*/ false, /*background*/ false).await
 }
 
-#[cfg_attr(windows, ignore = "plugin metrics fixture is Unix-only")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_unified_plugin_script_emits_measurement_analytics() -> Result<()> {
     assert_plugin_measurement_analytics(/*remote*/ true, /*background*/ false).await
 }
 
-#[cfg_attr(windows, ignore = "plugin metrics fixture is Unix-only")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unified_background_plugin_script_emits_measurements_after_turn_completion() -> Result<()> {
     assert_plugin_measurement_analytics(/*remote*/ false, /*background*/ true).await
 }
 
-#[cfg_attr(windows, ignore = "plugin metrics fixture is Unix-only")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_unified_background_plugin_script_emits_measurements_after_turn_completion()
 -> Result<()> {

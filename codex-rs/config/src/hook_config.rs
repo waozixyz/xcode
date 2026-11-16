@@ -40,19 +40,14 @@ pub struct HookStateToml {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManagedHooksRequirementsToml {
     pub managed_dir: Option<PathBuf>,
-    pub windows_managed_dir: Option<PathBuf>,
     #[serde(flatten)]
     pub hooks: Box<HookEventsToml>,
 }
 
 impl ManagedHooksRequirementsToml {
     pub fn is_empty(&self) -> bool {
-        let Self {
-            managed_dir,
-            windows_managed_dir,
-            hooks,
-        } = self;
-        managed_dir.is_none() && windows_managed_dir.is_none() && hooks.is_empty()
+        let Self { managed_dir, hooks } = self;
+        managed_dir.is_none() && hooks.is_empty()
     }
 
     pub fn handler_count(&self) -> usize {
@@ -60,15 +55,7 @@ impl ManagedHooksRequirementsToml {
     }
 
     pub fn managed_dir_for_current_platform(&self) -> Option<&Path> {
-        #[cfg(windows)]
-        {
-            self.windows_managed_dir.as_deref()
-        }
-
-        #[cfg(not(windows))]
-        {
-            self.managed_dir.as_deref()
-        }
+        self.managed_dir.as_deref()
     }
 }
 

@@ -14,7 +14,6 @@ use tempfile::tempdir;
 use codex_keyring_store::tests::MockKeyringStore;
 use keyring::Error as KeyringError;
 
-#[cfg(unix)]
 #[test]
 fn file_storage_creates_dangling_symlink_target_and_rejects_cycles() -> anyhow::Result<()> {
     use std::os::unix::fs::symlink;
@@ -39,7 +38,6 @@ fn file_storage_creates_dangling_symlink_target_and_rejects_cycles() -> anyhow::
     Ok(())
 }
 
-#[cfg(unix)]
 #[test]
 fn file_storage_does_not_replace_read_only_or_hard_linked_credentials() -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -155,7 +153,6 @@ async fn file_storage_save_persists_auth_dot_json() -> anyhow::Result<()> {
     );
     assert_eq!(storage.load()?, Some(replacement));
 
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(

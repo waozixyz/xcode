@@ -222,7 +222,6 @@ async fn run_codex_thread_interactive_respects_pre_cancelled_spawn() {
                 codex_extension_api::SessionIsolation::Inherit,
                 /*initial_history*/ None,
                 crate::session::GitEnrichmentPolicy::Fresh,
-                codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
             ),
         )
         .await
@@ -283,7 +282,6 @@ async fn delegate_start_analytics_honors_child_opt_out_with_enabled_parent() {
             codex_extension_api::SessionIsolation::Inherit,
             /*initial_history*/ None,
             crate::session::GitEnrichmentPolicy::Fresh,
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         )
         .await
         .expect("delegate session should start");
@@ -384,7 +382,6 @@ async fn delegate_isolation_does_not_depend_on_attribution() {
             isolation,
             /*initial_history*/ None,
             crate::session::GitEnrichmentPolicy::Fresh,
-            codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
         )
         .await
         .expect("delegate session should start");
@@ -450,7 +447,6 @@ async fn run_codex_thread_interactive_rejects_approval_policy_that_can_prompt() 
         codex_extension_api::SessionIsolation::Inherit,
         /*initial_history*/ None,
         crate::session::GitEnrichmentPolicy::Fresh,
-        codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
     )
     .await;
 
@@ -484,7 +480,6 @@ async fn tree_shutdown_waits_for_private_delegate() {
         codex_extension_api::SessionIsolation::Isolated,
         /*initial_history*/ None,
         crate::session::GitEnrichmentPolicy::Fresh,
-        codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
     )
     .await
     .expect("start private delegate");

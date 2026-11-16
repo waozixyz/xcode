@@ -1,4 +1,3 @@
-#![cfg(not(target_os = "windows"))]
 #![allow(clippy::unwrap_used)]
 
 use anyhow::Context;
@@ -68,11 +67,7 @@ async fn tool_call_output_configured_limit_chars_type() -> Result<()> {
     let fixture = builder.build(&server).await?;
 
     let call_id = "shell-too-large";
-    let command = if cfg!(windows) {
-        "for ($i=1; $i -le 100000; $i++) { Write-Output $i }"
-    } else {
-        "seq 1 100000"
-    };
+    let command = "seq 1 100000";
     let args = serde_json::json!({
         "cmd": command,
         "yield_time_ms": 5_000,
@@ -147,11 +142,7 @@ async fn tool_call_output_exceeds_limit_truncated_chars_limit() -> Result<()> {
     let fixture = builder.build(&server).await?;
 
     let call_id = "shell-too-large";
-    let command = if cfg!(windows) {
-        "for ($i=1; $i -le 100000; $i++) { Write-Output $i }"
-    } else {
-        "seq 1 100000"
-    };
+    let command = "seq 1 100000";
     let args = serde_json::json!({
         "cmd": command,
         "yield_time_ms": 5_000,
@@ -223,11 +214,7 @@ async fn tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> {
     let fixture = builder.build(&server).await?;
 
     let call_id = "shell-too-large";
-    let command = if cfg!(windows) {
-        "for ($i=1; $i -le 100000; $i++) { Write-Output $i }"
-    } else {
-        "seq 1 100000"
-    };
+    let command = "seq 1 100000";
     let args = serde_json::json!({
         "cmd": command,
         "yield_time_ms": 5_000,
@@ -305,11 +292,7 @@ async fn tool_call_output_truncated_only_once() -> Result<()> {
     let mut builder = test_codex().with_model("gpt-5.5");
     let fixture = builder.build(&server).await?;
     let call_id = "shell-single-truncation";
-    let command = if cfg!(windows) {
-        "for ($i=1; $i -le 10000; $i++) { Write-Output $i }"
-    } else {
-        "seq 1 10000"
-    };
+    let command = "seq 1 10000";
     let args = serde_json::json!({
         "cmd": command,
         "yield_time_ms": 5_000,

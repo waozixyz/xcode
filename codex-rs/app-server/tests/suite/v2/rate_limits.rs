@@ -588,7 +588,6 @@ async fn send_add_credits_nudge_email_requires_chatgpt_auth() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore = "covered by Linux and macOS CI")]
 #[tokio::test]
 async fn send_add_credits_nudge_email_posts_expected_body() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -636,7 +635,6 @@ async fn send_add_credits_nudge_email_posts_expected_body() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore = "covered by Linux and macOS CI")]
 #[tokio::test]
 async fn send_add_credits_nudge_email_maps_cooldown() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -679,7 +677,6 @@ async fn send_add_credits_nudge_email_maps_cooldown() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(target_os = "windows", ignore = "covered by Linux and macOS CI")]
 #[tokio::test]
 async fn send_add_credits_nudge_email_surfaces_backend_failure() -> Result<()> {
     let codex_home = TempDir::new()?;

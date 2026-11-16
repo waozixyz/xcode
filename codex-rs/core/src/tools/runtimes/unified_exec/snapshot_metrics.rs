@@ -25,8 +25,7 @@ impl SnapshotMetrics {
             .is_some_and(|network| network.enabled() && network.credential_broker_enabled());
         // Executor snapshots emit at their own selection boundary. Disabled,
         // remote legacy, and non-login invocations are outside this denominator.
-        if !cfg!(unix)
-            || req.shell_snapshot.is_some()
+        if req.shell_snapshot.is_some()
             || prepared.turn_environment.environment().is_remote()
             || !config.features.enabled(Feature::ShellSnapshot)
             || !prepared.resolved.shell.is_posix_login()

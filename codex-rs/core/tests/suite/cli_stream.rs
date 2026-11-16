@@ -8,7 +8,6 @@ use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
 use std::io;
-#[cfg(unix)]
 use std::os::unix::process::CommandExt as _;
 use std::process::Command;
 use std::process::Output;
@@ -92,24 +91,8 @@ struct ChildProcessCleanupGuard(u32);
 
 impl Drop for ChildProcessCleanupGuard {
     fn drop(&mut self) {
-        #[cfg(unix)]
         {
             let _ = codex_utils_pty::process_group::kill_process_group(self.0);
-        }
-
-        #[cfg(windows)]
-        {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &self.0.to_string(), "/T", "/F"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        }
-
-        #[cfg(not(any(unix, windows)))]
-        {
-            let _ = self.0;
         }
     }
 }
@@ -118,7 +101,6 @@ impl Drop for ChildProcessCleanupGuard {
 // can spawn shell/Python grandchildren, so the timeout path must reap the whole
 // process group instead of only the direct CLI child.
 fn run_cli_command(command: &mut Command) -> io::Result<Output> {
-    #[cfg(unix)]
     command.process_group(0);
 
     command

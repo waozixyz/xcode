@@ -4,7 +4,6 @@ use super::preserve;
 use super::prune;
 use pretty_assertions::assert_eq;
 
-#[cfg(any(unix, windows))]
 #[tokio::test]
 async fn pruning_resets_the_write_position_of_a_legacy_nonappend_writer() -> anyhow::Result<()> {
     use std::io::Write;

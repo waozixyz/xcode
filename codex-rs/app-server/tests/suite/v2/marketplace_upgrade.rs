@@ -22,9 +22,6 @@ use tempfile::TempDir;
 use test_case::test_case;
 use tokio::time::timeout;
 
-#[cfg(windows)]
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(25);
-#[cfg(not(windows))]
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const INSTALLED_MARKETPLACES_DIR: &str = ".tmp/marketplaces";
 
@@ -427,8 +424,8 @@ async fn marketplace_upgrade_named_marketplace_only() -> Result<()> {
     Ok(())
 }
 
-#[cfg_attr(unix, test_case(Some("git version 2.19.6"); "older Git"))]
-#[cfg_attr(unix, test_case(Some("unknown"); "unknown Git version"))]
+#[test_case (Some ("git version 2.19.6") ; "older Git")]
+#[test_case (Some ("unknown") ; "unknown Git version")]
 #[test_case(None; "installed Git")]
 #[tokio::test]
 async fn marketplace_upgrade_reuses_the_installed_revision_when_git_supports_it(
@@ -452,7 +449,6 @@ async fn marketplace_upgrade_reuses_the_installed_revision_when_git_supports_it(
         .with_codex_home(codex_home.path())
         .with_env_overrides(&[("GIT_TRACE_PACKET", packets.to_str())])
         .without_auto_env();
-    #[cfg(unix)]
     let builder = if let Some(version) = reported_version {
         let path = std::env::var("PATH")?;
         let bin = codex_home.path().join("bin");

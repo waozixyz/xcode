@@ -315,149 +315,6 @@ async fn cua_tool_call_lifecycle_requires_a_start_and_deduplicates_replay() {
 }
 
 #[tokio::test]
-async fn item_lifecycle_notifications_publish_command_execution_event() {
-    let mut reducer = AnalyticsReducer::default();
-    let mut events = Vec::new();
-
-    ingest_review_prerequisites(&mut reducer, &mut events).await;
-    reducer
-        .ingest(
-            AnalyticsFact::Notification(Box::new(sample_turn_started_notification(
-                "thread-1", "turn-1",
-            ))),
-            &mut events,
-        )
-        .await;
-    for model in ["invoking-model", "later-model"] {
-        reducer
-            .ingest(
-                AnalyticsFact::Notification(Box::new(ServerNotification::ItemStarted(
-                    ItemStartedNotification::new(
-                        "thread-1".to_string(),
-                        "turn-1".to_string(),
-                        {
-                            let mut item = sample_command_execution_item(
-                                CommandExecutionStatus::InProgress,
-                                /*exit_code*/ None,
-                                /*duration_ms*/ None,
-                            );
-                            if let ThreadItemPayload::CommandExecution { model_context, .. } =
-                                &mut item
-                            {
-                                *model_context =
-                                    Some(codex_protocol::items::ModelInvocationContext {
-                                        model_slug: model.to_string(),
-                                        reasoning_effort: Some("max".to_string()),
-                                    });
-                            }
-                            item
-                        },
-                        /*started_at_ms*/ 1_000,
-                    ),
-                ))),
-                &mut events,
-            )
-            .await;
-    }
-    assert!(
-        events.is_empty(),
-        "tool item event should emit on completion"
-    );
-
-    reducer
-        .ingest(
-            AnalyticsFact::Notification(Box::new(ServerNotification::ItemCompleted(
-                ItemCompletedNotification::new(
-                    "thread-1".to_string(),
-                    "turn-1".to_string(),
-                    sample_command_execution_item_with_actions(
-                        CommandExecutionStatus::Completed,
-                        Some(0),
-                        Some(42),
-                        vec![
-                            CommandAction::Read {
-                                command: "cat README.md".to_string(),
-                                name: "README.md".to_string(),
-                                path: test_path_buf("/tmp/README.md").abs().into(),
-                            },
-                            CommandAction::ListFiles {
-                                command: "ls".to_string(),
-                                path: None,
-                            },
-                            CommandAction::Search {
-                                command: "rg TODO".to_string(),
-                                query: Some("TODO".to_string()),
-                                path: None,
-                            },
-                            CommandAction::Unknown {
-                                command: "cargo test".to_string(),
-                            },
-                        ],
-                        Some("sample@openai-curated"),
-                        Some("scripts/run.py"),
-                        Some(SandboxType::WindowsMxc),
-                    ),
-                    /*started_at_ms*/ None,
-                    /*completed_at_ms*/ 1_045,
-                ),
-            ))),
-            &mut events,
-        )
-        .await;
-
-    let payload = serde_json::to_value(&events).expect("serialize events");
-    assert_eq!(payload.as_array().expect("events array").len(), 1);
-    assert_eq!(payload[0]["event_params"]["model_slug"], "invoking-model");
-    assert_eq!(payload[0]["event_params"]["sandbox_backend"], "windows_mxc");
-    assert_eq!(payload[0]["event_params"]["reasoning_effort"], "max");
-    assert_eq!(payload[0]["event_type"], "codex_command_execution_event");
-    assert_eq!(payload[0]["event_params"]["thread_id"], "thread-1");
-    assert_eq!(payload[0]["event_params"]["session_id"], "session-thread-1");
-    assert_eq!(payload[0]["event_params"]["turn_id"], "turn-1");
-    assert_eq!(payload[0]["event_params"]["item_id"], "item-1");
-    assert_eq!(payload[0]["event_params"]["tool_name"], "shell");
-    assert_eq!(
-        payload[0]["event_params"]["plugin_id"],
-        "sample@openai-curated"
-    );
-    assert_eq!(payload[0]["event_params"]["script_path"], "scripts/run.py");
-    assert_eq!(
-        payload[0]["event_params"]["command_execution_source"],
-        "agent"
-    );
-    assert_eq!(payload[0]["event_params"]["terminal_status"], "completed");
-    assert_eq!(
-        payload[0]["event_params"]["final_approval_outcome"],
-        "unknown"
-    );
-    assert_eq!(
-        payload[0]["event_params"]["failure_kind"],
-        serde_json::Value::Null
-    );
-    assert_eq!(payload[0]["event_params"]["exit_code"], 0);
-    assert_eq!(payload[0]["event_params"]["command_total_action_count"], 4);
-    assert_eq!(payload[0]["event_params"]["command_read_action_count"], 1);
-    assert_eq!(
-        payload[0]["event_params"]["command_list_files_action_count"],
-        1
-    );
-    assert_eq!(payload[0]["event_params"]["command_search_action_count"], 1);
-    assert_eq!(
-        payload[0]["event_params"]["command_unknown_action_count"],
-        1
-    );
-    assert_eq!(payload[0]["event_params"]["started_at_ms"], 1_000);
-    assert_eq!(payload[0]["event_params"]["completed_at_ms"], 1_045);
-    assert_eq!(payload[0]["event_params"]["duration_ms"], 45);
-    assert_eq!(payload[0]["event_params"]["execution_duration_ms"], 42);
-    assert_eq!(
-        payload[0]["event_params"]["app_server_client"]["client_name"],
-        "codex-tui"
-    );
-    assert_eq!(payload[0]["event_params"]["thread_source"], "user");
-}
-
-#[tokio::test]
 async fn collaborator_tool_events_keep_response_ids_when_completion_races_sampling() {
     for response_first in [false, true] {
         let mut reducer = AnalyticsReducer::default();
@@ -1037,4 +894,147 @@ async fn image_generation_events_preserve_transparent_background_metadata() {
         );
         assert_eq!(payload["event_params"]["terminal_status"], json!(status));
     }
+}
+
+#[tokio::test]
+async fn item_lifecycle_notifications_publish_command_execution_event() {
+    let mut reducer = AnalyticsReducer::default();
+    let mut events = Vec::new();
+
+    ingest_review_prerequisites(&mut reducer, &mut events).await;
+    reducer
+        .ingest(
+            AnalyticsFact::Notification(Box::new(sample_turn_started_notification(
+                "thread-1", "turn-1",
+            ))),
+            &mut events,
+        )
+        .await;
+    for model in ["invoking-model", "later-model"] {
+        reducer
+            .ingest(
+                AnalyticsFact::Notification(Box::new(ServerNotification::ItemStarted(
+                    ItemStartedNotification::new(
+                        "thread-1".to_string(),
+                        "turn-1".to_string(),
+                        {
+                            let mut item = sample_command_execution_item(
+                                CommandExecutionStatus::InProgress,
+                                /*exit_code*/ None,
+                                /*duration_ms*/ None,
+                            );
+                            if let ThreadItemPayload::CommandExecution { model_context, .. } =
+                                &mut item
+                            {
+                                *model_context =
+                                    Some(codex_protocol::items::ModelInvocationContext {
+                                        model_slug: model.to_string(),
+                                        reasoning_effort: Some("max".to_string()),
+                                    });
+                            }
+                            item
+                        },
+                        /*started_at_ms*/ 1_000,
+                    ),
+                ))),
+                &mut events,
+            )
+            .await;
+    }
+    assert!(
+        events.is_empty(),
+        "tool item event should emit on completion"
+    );
+
+    reducer
+        .ingest(
+            AnalyticsFact::Notification(Box::new(ServerNotification::ItemCompleted(
+                ItemCompletedNotification::new(
+                    "thread-1".to_string(),
+                    "turn-1".to_string(),
+                    sample_command_execution_item_with_actions(
+                        CommandExecutionStatus::Completed,
+                        Some(0),
+                        Some(42),
+                        vec![
+                            CommandAction::Read {
+                                command: "cat README.md".to_string(),
+                                name: "README.md".to_string(),
+                                path: test_path_buf("/tmp/README.md").abs().into(),
+                            },
+                            CommandAction::ListFiles {
+                                command: "ls".to_string(),
+                                path: None,
+                            },
+                            CommandAction::Search {
+                                command: "rg TODO".to_string(),
+                                query: Some("TODO".to_string()),
+                                path: None,
+                            },
+                            CommandAction::Unknown {
+                                command: "cargo test".to_string(),
+                            },
+                        ],
+                        Some("sample@openai-curated"),
+                        Some("scripts/run.py"),
+                        Some(SandboxType::LinuxSeccomp),
+                    ),
+                    /*started_at_ms*/ None,
+                    /*completed_at_ms*/ 1_045,
+                ),
+            ))),
+            &mut events,
+        )
+        .await;
+
+    let payload = serde_json::to_value(&events).expect("serialize events");
+    assert_eq!(payload.as_array().expect("events array").len(), 1);
+    assert_eq!(payload[0]["event_params"]["model_slug"], "invoking-model");
+    assert_eq!(payload[0]["event_params"]["sandbox_backend"], "seccomp");
+    assert_eq!(payload[0]["event_params"]["reasoning_effort"], "max");
+    assert_eq!(payload[0]["event_type"], "codex_command_execution_event");
+    assert_eq!(payload[0]["event_params"]["thread_id"], "thread-1");
+    assert_eq!(payload[0]["event_params"]["session_id"], "session-thread-1");
+    assert_eq!(payload[0]["event_params"]["turn_id"], "turn-1");
+    assert_eq!(payload[0]["event_params"]["item_id"], "item-1");
+    assert_eq!(payload[0]["event_params"]["tool_name"], "shell");
+    assert_eq!(
+        payload[0]["event_params"]["plugin_id"],
+        "sample@openai-curated"
+    );
+    assert_eq!(payload[0]["event_params"]["script_path"], "scripts/run.py");
+    assert_eq!(
+        payload[0]["event_params"]["command_execution_source"],
+        "agent"
+    );
+    assert_eq!(payload[0]["event_params"]["terminal_status"], "completed");
+    assert_eq!(
+        payload[0]["event_params"]["final_approval_outcome"],
+        "unknown"
+    );
+    assert_eq!(
+        payload[0]["event_params"]["failure_kind"],
+        serde_json::Value::Null
+    );
+    assert_eq!(payload[0]["event_params"]["exit_code"], 0);
+    assert_eq!(payload[0]["event_params"]["command_total_action_count"], 4);
+    assert_eq!(payload[0]["event_params"]["command_read_action_count"], 1);
+    assert_eq!(
+        payload[0]["event_params"]["command_list_files_action_count"],
+        1
+    );
+    assert_eq!(payload[0]["event_params"]["command_search_action_count"], 1);
+    assert_eq!(
+        payload[0]["event_params"]["command_unknown_action_count"],
+        1
+    );
+    assert_eq!(payload[0]["event_params"]["started_at_ms"], 1_000);
+    assert_eq!(payload[0]["event_params"]["completed_at_ms"], 1_045);
+    assert_eq!(payload[0]["event_params"]["duration_ms"], 45);
+    assert_eq!(payload[0]["event_params"]["execution_duration_ms"], 42);
+    assert_eq!(
+        payload[0]["event_params"]["app_server_client"]["client_name"],
+        "codex-tui"
+    );
+    assert_eq!(payload[0]["event_params"]["thread_source"], "user");
 }

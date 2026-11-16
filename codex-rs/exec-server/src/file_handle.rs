@@ -119,14 +119,7 @@ impl FileHandleManager {
             let mut position = offset;
             while position < end {
                 let written = (position - offset) as usize;
-                #[cfg(unix)]
                 let result = std::os::unix::fs::FileExt::write_at(
-                    file.as_ref(),
-                    &bytes[written..],
-                    position,
-                );
-                #[cfg(windows)]
-                let result = std::os::windows::fs::FileExt::seek_write(
                     file.as_ref(),
                     &bytes[written..],
                     position,
@@ -200,14 +193,8 @@ fn read_block_at(file: &File, offset: u64, len: usize) -> io::Result<FileReadBlo
     })
 }
 
-#[cfg(unix)]
 fn read_file_at(file: &File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
     std::os::unix::fs::FileExt::read_at(file, bytes, offset)
-}
-
-#[cfg(windows)]
-fn read_file_at(file: &File, bytes: &mut [u8], offset: u64) -> io::Result<usize> {
-    std::os::windows::fs::FileExt::seek_read(file, bytes, offset)
 }
 
 fn validate_read_block_len(len: usize) -> io::Result<()> {

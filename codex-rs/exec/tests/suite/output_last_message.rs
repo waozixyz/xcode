@@ -1,5 +1,3 @@
-#![cfg(unix)]
-
 //! Exercise the CLI output path used by automation with a synthetic model response.
 
 use core_test_support::responses;

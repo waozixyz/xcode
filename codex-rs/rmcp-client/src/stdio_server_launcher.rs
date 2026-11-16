@@ -16,20 +16,15 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::future::Future;
 use std::io;
-#[cfg(windows)]
-use std::os::windows::io::OwnedHandle;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-#[cfg(unix)]
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-#[cfg(unix)]
 use std::thread::sleep;
-#[cfg(unix)]
 use std::thread::spawn;
 use std::time::Duration;
 
@@ -45,17 +40,12 @@ use codex_exec_server::ExecProcess;
 use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
-#[cfg(unix)]
 use codex_utils_pty::Child;
 use codex_utils_pty::Command;
-#[cfg(unix)]
 use codex_utils_pty::DescriptorPolicy;
 use codex_utils_pty::ProcessMode;
-#[cfg(unix)]
 use codex_utils_pty::process_group::kill_process_group;
-#[cfg(unix)]
 use codex_utils_pty::process_group::terminate_process_group;
-#[cfg(unix)]
 use codex_utils_pty::process_group::wait_for_process_group_exit;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -352,17 +342,14 @@ impl StdioServerLauncher for LocalStdioServerLauncher {
 
 // Local private implementation.
 
-#[cfg(unix)]
 const PROCESS_GROUP_TERM_GRACE_PERIOD: Duration = Duration::from_secs(2);
 
-#[cfg(unix)]
 const RESTART_DRAIN_GRACE_PERIOD: Duration = Duration::from_millis(250);
 
 // Keep queued stderr diagnostics before closing the reader, even when an
 // escaped descendant prevents the pipe from reaching EOF.
 const STDERR_READER_DRAIN_GRACE_PERIOD: Duration = Duration::from_millis(250);
 
-#[cfg(unix)]
 enum LocalProcessTerminator {
     ProcessGroup(u32),
     // The SDK may drop the failed transport before the caller can decide whether to restart it.
@@ -372,11 +359,9 @@ enum LocalProcessTerminator {
     },
 }
 
-#[cfg(unix)]
 #[derive(Clone)]
 struct KillDiscoveryGroupOnDrop(Arc<Mutex<Option<Box<Child>>>>);
 
-#[cfg(unix)]
 impl KillDiscoveryGroupOnDrop {
     fn new(child: Box<Child>) -> Self {
         Self(Arc::new(Mutex::new(Some(child))))
@@ -398,30 +383,16 @@ impl KillDiscoveryGroupOnDrop {
     }
 }
 
-#[cfg(unix)]
 impl Drop for KillDiscoveryGroupOnDrop {
     fn drop(&mut self) {
         let _ = self.kill();
     }
 }
 
-#[cfg(unix)]
 fn kill_process_group_and_warn(pid: u32) -> io::Result<()> {
     kill_process_group(pid)
         .inspect_err(|error| warn!("Failed to kill MCP process group {pid}: {error}"))
 }
-
-#[cfg(windows)]
-enum LocalProcessTerminator {
-    Job {
-        job: codex_utils_pty::JobObject,
-        discovery_root: Option<OwnedHandle>,
-    },
-    Process(OwnedHandle),
-}
-
-#[cfg(not(any(unix, windows)))]
-struct LocalProcessTerminator;
 
 pub(crate) struct StdioServerProcessHandle {
     program_name: String,
@@ -472,29 +443,10 @@ impl LocalStdioServerLauncher {
             let mut command = Command::new(&resolved_program);
             command.current_dir(&cwd).envs(&envs).args(&args);
             command.process_mode(ProcessMode::NewGroup);
-            // MCP uses only stdio; select Explicit to exclude unrelated
-            // orchestrator descriptors from the server and commands it launches.
-            // Descriptor allowlisting is Unix-only. Windows can still inherit unrelated
-            // handles and needs a handle allowlist in the shared spawn backend.
-            #[cfg(unix)]
             command.descriptor_policy(DescriptorPolicy::Explicit);
             command
         };
-        #[cfg(windows)]
-        let mut command = build_command();
-        #[cfg(not(windows))]
         let command = build_command();
-        #[cfg(windows)]
-        let job = match codex_utils_pty::JobObject::create_without_breakaway() {
-            Ok(job) => {
-                command.prepare_suspended_spawn(&job);
-                Some(job)
-            }
-            Err(error) => {
-                warn!("Windows MCP process job containment unavailable: {error}");
-                None
-            }
-        };
 
         // The async caller can be cancelled while this blocking worker is inside spawn.
         let slot = replacement_slot.as_ref().map(|slot| slot.blocking_lock());
@@ -505,35 +457,6 @@ impl LocalStdioServerLauncher {
             ));
         }
         let stdio = local_stdio_io::spawn(command)?;
-        #[cfg(windows)]
-        let (stdio, job) = match job {
-            Some(job) => match stdio
-                .child
-                .id()
-                .ok_or_else(|| io::Error::other("missing suspended MCP server process id"))
-                .and_then(|process_id| job.assign_and_resume_process(process_id))
-            {
-                Ok(Some(root)) => (stdio, Some((job, root))),
-                Ok(None) => (stdio, None),
-                Err(error) => {
-                    warn!(
-                        "Windows MCP process job containment failed; retrying without it: {error}"
-                    );
-                    drop(stdio);
-                    drop(job);
-                    (local_stdio_io::spawn(build_command())?, None)
-                }
-            },
-            None => (stdio, None),
-        };
-        #[cfg(windows)]
-        let protocol_mode = if job.is_none() && protocol_mode == McpProtocolMode::DiscoverLocalStdio
-        {
-            // A probe can require a restart. Without a job we cannot stop its descendants.
-            McpProtocolMode::Legacy
-        } else {
-            protocol_mode
-        };
         let process_id = stdio.child.id();
         // A legacy replacement still belongs to the discovery startup that launched it.
         let discovery_owned = (protocol_mode == McpProtocolMode::DiscoverLocalStdio
@@ -541,23 +464,6 @@ impl LocalStdioServerLauncher {
             && process_id.is_some();
         let (transport, stderr) =
             LocalStdioTransport::new(stdio, program_name.clone(), protocol_mode);
-        #[cfg(windows)]
-        let terminator = match job {
-            Some((job, root)) => Some(LocalProcessTerminator::Job {
-                job,
-                discovery_root: discovery_owned.then_some(root),
-            }),
-            None => process_id.and_then(|process_id| {
-                match codex_utils_pty::JobObject::open_process_handle(process_id) {
-                    Ok(handle) => Some(LocalProcessTerminator::Process(handle)),
-                    Err(error) => {
-                        warn!("Windows MCP process handle unavailable: {error}");
-                        None
-                    }
-                }
-            }),
-        };
-        #[cfg(unix)]
         let (transport, terminator) = {
             let mut transport = transport;
             let terminator = process_id.map(|pid| {
@@ -572,8 +478,6 @@ impl LocalStdioServerLauncher {
             });
             (transport, terminator)
         };
-        #[cfg(not(any(unix, windows)))]
-        let terminator = process_id.map(|_| LocalProcessTerminator);
         let stderr_reader = stderr.map(|stderr| {
             let program_name = program_name.clone();
             let (stop_tx, mut stop_rx) = watch::channel(());
@@ -633,7 +537,6 @@ impl LocalStdioServerLauncher {
 }
 
 impl LocalProcessTerminator {
-    #[cfg(unix)]
     fn terminate_discovery(&self, reason: StdioTermination) -> io::Result<()> {
         let Self::DiscoveryLeader { leader, .. } = self else {
             return Err(io::Error::other("missing Unix MCP discovery leader"));
@@ -665,7 +568,6 @@ impl LocalProcessTerminator {
         Ok(())
     }
 
-    #[cfg(unix)]
     fn terminate(&self) {
         let (process_group_id, discovery) = match self {
             Self::ProcessGroup(pid) => (*pid, None),
@@ -713,40 +615,6 @@ impl LocalProcessTerminator {
             });
         }
     }
-
-    #[cfg(windows)]
-    fn terminate_discovery(&self, _reason: StdioTermination) -> io::Result<()> {
-        match self {
-            Self::Job {
-                job,
-                discovery_root: Some(root),
-            } => job.terminate_and_wait(root, Duration::from_secs(1)),
-            _ => Err(io::Error::other(
-                "cannot restart an uncontained Windows MCP server",
-            )),
-        }
-    }
-
-    #[cfg(windows)]
-    fn terminate(&self) {
-        let result = match self {
-            Self::Job { job, .. } => job.terminate(),
-            Self::Process(process_handle) => {
-                codex_utils_pty::JobObject::terminate_process_handle(process_handle)
-            }
-        };
-        if let Err(error) = result {
-            warn!("Failed to terminate Windows MCP process: {error}");
-        }
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    fn terminate_discovery(&self, _reason: StdioTermination) -> io::Result<()> {
-        Err(io::Error::other("MCP stdio restart is unsupported"))
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    fn terminate(&self) {}
 }
 
 impl StdioServerProcessHandle {
@@ -1038,44 +906,6 @@ mod tests {
     use codex_protocol::shell_environment;
     use pretty_assertions::assert_eq;
 
-    #[cfg(windows)]
-    #[test]
-    fn idle_local_mcp_pipe_reads_leave_blocking_io_available() -> anyhow::Result<()> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .max_blocking_threads(1)
-            .enable_all()
-            .build()?;
-        runtime.block_on(async {
-            let cwd = std::env::current_dir()?;
-            let launcher = LocalStdioServerLauncher::new(cwd.clone());
-            for mode in [McpProtocolMode::Legacy, McpProtocolMode::V20260728] {
-                // set /p waits for stdin and leaves both output pipes open and quiet.
-                let command = StdioServerCommand::new(
-                    "cmd.exe".into(),
-                    ["/d", "/q", "/c", "set /p idle="]
-                        .map(OsString::from)
-                        .into(),
-                    None,
-                    Vec::new(),
-                    None,
-                    mode,
-                );
-                let mut transport = launcher.launch(command).await?;
-                // Poll the stdout read before scheduling the filesystem operation. The
-                // launcher also drains stderr. A blocking read can occupy the only slot.
-                let pending = transport.receive().now_or_never().is_none();
-                let metadata =
-                    tokio::time::timeout(Duration::from_secs(5), tokio::fs::metadata(&cwd)).await;
-                // Release the child even on the failing, pre-fix path.
-                transport.close().await?;
-                anyhow::ensure!(pending, "helper exited before its idle read");
-                metadata??;
-            }
-            Ok(())
-        })
-    }
-
     #[test]
     fn remote_env_policy_uses_core_env_without_remote_source_vars() {
         let policy = ExecutorStdioServerLauncher::remote_env_policy(&[], &HashMap::new());
@@ -1195,10 +1025,6 @@ mod tests {
         // Older executors apply the final overlay with a case-sensitive merge.
         child_env.extend(overrides.clone());
         let mut expected = env;
-        if cfg!(windows) {
-            expected.remove("SystemDrive");
-            expected.remove("LocalAppData");
-        }
         expected.extend(overrides);
         assert_eq!(child_env, expected);
     }

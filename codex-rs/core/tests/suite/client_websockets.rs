@@ -2844,11 +2844,7 @@ async fn command_gateway_stops_after_a_second_unauthorized_websocket_upgrade() {
         .expect(2)
         .mount(&server)
         .await;
-    let command = if cfg!(windows) {
-        "command = 'cmd.exe', args = ['/D', '/C', 'echo', 'exported']"
-    } else {
-        "command = 'echo', args = ['exported']"
-    };
+    let command = "command = 'echo', args = ['exported']";
     let provider = toml::from_str(&format!(
         r#"
 name = "gateway"

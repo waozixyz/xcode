@@ -244,7 +244,6 @@ struct HostConnection {
 impl HostConnection {
     fn spawn(host_program: &Path) -> io::Result<Self> {
         let mut command = Command::from(background_command(host_program));
-        #[cfg(unix)]
         command.process_group(/*pgroup*/ 0);
         command
             .args(["--listen", "grpc+stdio://"])

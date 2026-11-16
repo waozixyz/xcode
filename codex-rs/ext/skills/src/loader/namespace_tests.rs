@@ -1,8 +1,6 @@
 use codex_exec_server::FileSystemEnvironmentAccessor;
 use codex_exec_server::LOCAL_FS;
-#[cfg(unix)]
 use codex_protocol::protocol::SkillScope;
-#[cfg(unix)]
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
@@ -11,9 +9,7 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
-#[cfg(unix)]
 use crate::loader::HostSkillRoot;
-#[cfg(unix)]
 use crate::loader::load_host_skill_root;
 
 use super::SkillNamespaceResolver;
@@ -109,7 +105,6 @@ async fn nearest_valid_manifest_overrides_or_falls_back_to_outer_namespace() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn symlinked_external_directories_do_not_inherit_plugin_namespace() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);
@@ -141,7 +136,6 @@ async fn symlinked_external_directories_do_not_inherit_plugin_namespace() {
     );
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn ancestor_symlink_roots_preserve_inherited_plugin_namespace() {
     let access = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);

@@ -366,7 +366,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn serialize_invalid_typed_response_returns_jsonrpc_error() {
         use std::ffi::OsString;

@@ -1,29 +1,22 @@
 use std::collections::HashMap;
-#[cfg(unix)]
 use std::fs::File;
 use std::io::ErrorKind;
-#[cfg(unix)]
 use std::os::fd::AsRawFd;
-#[cfg(unix)]
 use std::os::fd::FromRawFd;
-#[cfg(unix)]
 use std::os::fd::RawFd;
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 use std::process::Command as StdCommand;
-#[cfg(all(unix, not(target_os = "linux")))]
+#[cfg(not(target_os = "linux"))]
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicBool;
-#[cfg(not(unix))]
-use std::time::Duration;
 
 use anyhow::Result;
 use portable_pty::CommandBuilder;
-#[cfg(not(windows))]
 use portable_pty::native_pty_system;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -38,7 +31,6 @@ use crate::process::PtyHandles;
 use crate::process::PtyMasterHandle;
 use crate::process::SpawnedProcess;
 use crate::process::TerminalSize;
-#[cfg(unix)]
 use crate::process::exit_code_from_status;
 
 /// Extra descriptors accompanying a process launch.
@@ -58,21 +50,13 @@ impl<'a> ChildFds<'a> {
     }
 }
 
-/// Returns true when ConPTY support is available (Windows only).
-#[cfg(windows)]
-pub fn conpty_supported() -> bool {
-    crate::win::conpty_supported()
-}
-
 /// Returns true when ConPTY support is available (non-Windows always true).
-#[cfg(not(windows))]
 pub fn conpty_supported() -> bool {
     true
 }
 
 struct PtyChildTerminator {
     killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    #[cfg(unix)]
     process_group_id: Option<u32>,
 }
 
@@ -80,7 +64,6 @@ impl ChildTerminator for PtyChildTerminator {
     fn signal(&mut self, signal: ProcessSignal) -> std::io::Result<()> {
         match signal {
             ProcessSignal::Interrupt => {
-                #[cfg(unix)]
                 if let Some(process_group_id) = self.process_group_id {
                     return crate::process_group::interrupt_process_group(process_group_id);
                 }
@@ -91,7 +74,6 @@ impl ChildTerminator for PtyChildTerminator {
     }
 
     fn kill(&mut self) -> std::io::Result<()> {
-        #[cfg(unix)]
         if let Some(process_group_id) = self.process_group_id {
             // Match the pipe backend's hard-kill behavior so descendant
             // processes from interactive shells/REPLs do not survive shutdown.
@@ -110,12 +92,10 @@ impl ChildTerminator for PtyChildTerminator {
     }
 }
 
-#[cfg(unix)]
 struct RawPidTerminator {
     process_group_id: u32,
 }
 
-#[cfg(unix)]
 impl ChildTerminator for RawPidTerminator {
     fn signal(&mut self, signal: ProcessSignal) -> std::io::Result<()> {
         match signal {
@@ -131,15 +111,7 @@ impl ChildTerminator for RawPidTerminator {
 }
 
 fn platform_native_pty_system() -> Box<dyn portable_pty::PtySystem + Send> {
-    #[cfg(windows)]
-    {
-        Box::new(crate::win::ConPtySystem::default())
-    }
-
-    #[cfg(not(windows))]
-    {
-        native_pty_system()
-    }
+    native_pty_system()
 }
 
 /// Spawn a process attached to a PTY, preserving selected inherited file
@@ -157,9 +129,6 @@ pub async fn spawn_process(
         anyhow::bail!("missing program for PTY spawn");
     }
 
-    #[cfg(not(unix))]
-    let _ = inherited_fds;
-
     #[cfg(target_os = "linux")]
     if crate::spawn_helper::is_available()
         && inherited_fds.as_slice().is_empty()
@@ -172,7 +141,6 @@ pub async fn spawn_process(
         return spawn_process_preserving_fds(program, args, cwd, env, arg0, size, inherited_fds)
             .await;
     }
-    #[cfg(unix)]
     if !inherited_fds.as_slice().is_empty() {
         return spawn_process_preserving_fds(program, args, cwd, env, arg0, size, inherited_fds)
             .await;
@@ -191,7 +159,6 @@ async fn spawn_process_portable(
 ) -> Result<SpawnedProcess> {
     let pty_system = platform_native_pty_system();
     let pair = pty_system.openpty(size.into())?;
-    #[cfg(unix)]
     let io = crate::unix_io::PtyIo::new(
         pair.master
             .as_raw_fd()
@@ -209,7 +176,6 @@ async fn spawn_process_portable(
     }
 
     let mut child = pair.slave.spawn_command(command_builder)?;
-    #[cfg(unix)]
     // portable-pty establishes the spawned PTY child as a new session leader on
     // Unix, so PID == PGID and we can reuse the pipe backend's process-group
     // hard-kill semantics for descendants.
@@ -219,53 +185,11 @@ async fn spawn_process_portable(
     let (writer_tx, writer_rx) = mpsc::channel::<Vec<u8>>(128);
     let (stdout_tx, stdout_rx) = mpsc::channel::<Vec<u8>>(128);
     let (_stderr_tx, stderr_rx) = mpsc::channel::<Vec<u8>>(1);
-    #[cfg(unix)]
     let (reader_handle, writer_handle) = io.spawn(
         stdout_tx,
         writer_rx,
         crate::unix_io::StdinCloseBehavior::SendEof,
     );
-    #[cfg(not(unix))]
-    let (reader_handle, writer_handle) = {
-        let mut reader = pair.master.try_clone_reader()?;
-        let reader_handle: JoinHandle<()> = tokio::task::spawn_blocking(move || {
-            let mut buf = [0u8; 8_192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let _ = stdout_tx.blocking_send(buf[..n].to_vec());
-                    }
-                    Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(5));
-                        continue;
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        let mut writer_rx = writer_rx;
-        let writer = pair.master.take_writer()?;
-        let writer = Arc::new(tokio::sync::Mutex::new(writer));
-        let writer_handle: JoinHandle<()> = tokio::spawn({
-            let writer = Arc::clone(&writer);
-            async move {
-                #[cfg(windows)]
-                let mut windows_input = crate::WindowsTtyInputNormalizer::default();
-                while let Some(bytes) = writer_rx.recv().await {
-                    #[cfg(windows)]
-                    let bytes = windows_input.normalize(&bytes);
-                    let mut guard = writer.lock().await;
-                    use std::io::Write;
-                    let _ = guard.write_all(&bytes);
-                    let _ = guard.flush();
-                }
-            }
-        });
-        (reader_handle, writer_handle)
-    };
 
     let (exit_tx, exit_rx) = oneshot::channel::<i32>();
     let exit_status = Arc::new(AtomicBool::new(false));
@@ -285,11 +209,7 @@ async fn spawn_process_portable(
     });
 
     let handles = PtyHandles {
-        _slave: if cfg!(windows) {
-            Some(pair.slave)
-        } else {
-            None
-        },
+        _slave: None,
         _master: PtyMasterHandle::Resizable(pair.master),
     };
 
@@ -297,7 +217,6 @@ async fn spawn_process_portable(
         writer_tx,
         Box::new(PtyChildTerminator {
             killer,
-            #[cfg(unix)]
             process_group_id,
         }),
         Some(reader_handle),
@@ -318,7 +237,6 @@ async fn spawn_process_portable(
     })
 }
 
-#[cfg(unix)]
 async fn spawn_process_preserving_fds(
     program: &str,
     args: &[String],
@@ -477,7 +395,6 @@ async fn spawn_process_preserving_fds(
     })
 }
 
-#[cfg(unix)]
 fn open_unix_pty(size: TerminalSize) -> Result<(File, File)> {
     let mut master: RawFd = -1;
     let mut slave: RawFd = -1;
@@ -508,7 +425,6 @@ fn open_unix_pty(size: TerminalSize) -> Result<(File, File)> {
     Ok(unsafe { (File::from_raw_fd(master), File::from_raw_fd(slave)) })
 }
 
-#[cfg(unix)]
 fn set_cloexec(fd: RawFd) -> std::io::Result<()> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags == -1 {
@@ -522,7 +438,6 @@ fn set_cloexec(fd: RawFd) -> std::io::Result<()> {
 }
 
 /// Called only in the child: never make attachments inheritable in the parent.
-#[cfg(unix)]
 pub(crate) fn make_fds_inheritable(fds: &[RawFd]) -> std::io::Result<()> {
     for &fd in fds {
         // SAFETY: fcntl only changes the current process's descriptor flags.
@@ -606,42 +521,8 @@ pub fn close_inherited_fds_except(preserved_fds: &[RawFd]) {
     }
 }
 
-// Other Unix platforms use best-effort /dev/fd cleanup.
-// Directory enumeration allocates, so this path is not guaranteed fork-safe.
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
-pub(crate) fn close_inherited_fds_except(preserved_fds: &[RawFd]) {
-    if let Ok(dir) = std::fs::read_dir("/dev/fd") {
-        let mut fds = Vec::new();
-        for entry in dir {
-            let num = entry
-                .ok()
-                .map(|entry| entry.file_name())
-                .and_then(|name| name.into_string().ok())
-                .and_then(|name| name.parse::<RawFd>().ok());
-            if let Some(num) = num {
-                if num <= 2 || preserved_fds.contains(&num) {
-                    continue;
-                }
-                // Keep CLOEXEC descriptors open so std::process can still use
-                // its internal exec-error pipe to report spawn failures.
-                let flags = unsafe { libc::fcntl(num, libc::F_GETFD) };
-                if flags == -1 || flags & libc::FD_CLOEXEC != 0 {
-                    continue;
-                }
-                fds.push(num);
-            }
-        }
-        for fd in fds {
-            unsafe {
-                libc::close(fd);
-            }
-        }
-    }
-}
-
 /// Establish the controlling terminal and signal state before a PTY target exec.
 /// This also runs in the legacy pre-exec callback, so it must stay async-signal-safe.
-#[cfg(unix)]
 pub(crate) fn configure_child_terminal() -> std::io::Result<()> {
     // SAFETY: These operations only change the calling child's signal/session state.
     unsafe {

@@ -50,9 +50,9 @@ const REMOTE_IMAGE_URL_ERROR: &str =
 
 // macOS and Windows Bazel CI can spend tens of seconds starting app-server
 // subprocesses or processing test RPCs under load.
-#[cfg(any(target_os = "macos", windows))]
+#[cfg(target_os = "macos")]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(60);
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(target_os = "macos"))]
 const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::test]

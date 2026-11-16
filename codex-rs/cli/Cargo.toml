@@ -61,6 +61,7 @@ codex-install-context = { workspace = true }
 codex-login = { workspace = true }
 codex-memories-write = { workspace = true }
 codex-mcp = { workspace = true }
+codex-network-proxy = { workspace = true }
 codex-model-provider = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-plugin = { workspace = true }
@@ -112,15 +113,6 @@ which = { workspace = true }
 
 [target.'cfg(all(target_os = "linux", target_env = "musl", any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
 tikv-jemallocator = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-codex_windows_sandbox = { package = "codex-windows-sandbox", path = "../windows-sandbox-rs" }
-windows-sys = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_Storage_Packaging_Appx",
-    "Win32_System_Console",
-    "Win32_System_Threading",
-] }
 
 [build-dependencies]
 cc = "1"

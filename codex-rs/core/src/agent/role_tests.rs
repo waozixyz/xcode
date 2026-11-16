@@ -108,7 +108,6 @@ async fn apply_role_returns_unavailable_for_missing_user_role_file() {
     assert_eq!(err, AGENT_TYPE_UNAVAILABLE_ERROR);
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn apply_role_rejects_symlinked_role_file() {
     let (home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
@@ -388,7 +387,6 @@ async fn apply_role_preserves_existing_service_tier_without_override() {
 }
 
 #[tokio::test]
-#[cfg(not(windows))]
 async fn apply_role_preserves_parent_sandbox_permissions() {
     let (home, mut config) = test_config_with_cli_overrides(vec![
         (
@@ -631,7 +629,6 @@ async fn apply_role_takes_precedence_over_existing_session_flags_for_same_key() 
     assert_eq!(session_flags_layer_count(&config), before_layers + 1);
 }
 
-#[cfg_attr(windows, ignore)]
 #[tokio::test]
 async fn apply_role_skills_config_disables_skill_for_spawned_agent() {
     let (home, mut config) = test_config_with_cli_overrides(Vec::new()).await;

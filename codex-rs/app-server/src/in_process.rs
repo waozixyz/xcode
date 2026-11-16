@@ -1190,7 +1190,6 @@ mod tests {
         ));
     }
 
-    #[cfg(unix)]
     async fn spawn_streaming_test_process(
         cwd: &Path,
         handle: &str,
@@ -1232,7 +1231,6 @@ mod tests {
 
     /// A kill after child exit must promptly report it has exited while the client is still
     /// waiting to consume the complete download and its successful exit notification.
-    #[cfg(unix)]
     #[tokio::test]
     async fn process_output_and_exit_survive_a_full_in_process_event_queue() {
         use base64::Engine;
@@ -1294,7 +1292,6 @@ mod tests {
     }
 
     /// Unread output must not block process control replies or a subsequent kill on the same handle.
-    #[cfg(unix)]
     #[tokio::test]
     async fn in_process_kill_completes_while_process_output_is_stalled() {
         use codex_app_server_protocol::ProcessKillParams;

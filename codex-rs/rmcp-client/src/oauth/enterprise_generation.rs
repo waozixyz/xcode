@@ -45,18 +45,11 @@ impl EnterpriseOAuthGenerationFile {
         let path = find_codex_home()?.join("mcp-oauth-locks").join(name);
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             options
                 .mode(0o600)
                 .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
-            options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
         }
         let file = options.open(path)?;
         ensure!(

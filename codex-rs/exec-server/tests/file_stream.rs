@@ -1,6 +1,5 @@
 mod common;
 
-#[cfg(unix)]
 use anyhow::Context;
 use anyhow::Result;
 use codex_exec_server::Environment;
@@ -22,12 +21,8 @@ use futures::StreamExt;
 use futures::TryStreamExt;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
-#[cfg(any(unix, windows))]
 use std::time::Duration;
 use tempfile::TempDir;
-#[cfg(windows)]
-use tokio::net::windows::named_pipe::ServerOptions;
-#[cfg(any(unix, windows))]
 use tokio::time::timeout;
 use uuid::Uuid;
 
@@ -215,7 +210,6 @@ async fn completed_streams_release_handle_capacity() -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
 #[test_case::test_case(true ; "follow")]
 #[test_case::test_case(false ; "no_follow")]
 #[tokio::test]
@@ -269,56 +263,6 @@ async fn file_reads_reject_fifo_without_waiting_for_a_writer(follow_symlinks: bo
     Ok(())
 }
 
-#[cfg(windows)]
-#[tokio::test]
-async fn file_reads_reject_named_pipes() -> Result<()> {
-    let server = exec_server().await?;
-    let file_system = connect_file_system(server.websocket_url())?;
-
-    let read_path = format!(r"\\.\pipe\codex-fs-read-{}", Uuid::new_v4());
-    let _read_pipe = ServerOptions::new()
-        .first_pipe_instance(true)
-        .create(&read_path)?;
-    let read_error = timeout(
-        Duration::from_secs(1),
-        file_system.read_file(
-            &PathUri::from_host_native_path(std::path::Path::new(&read_path))?,
-            ReadFileOptions::default(),
-            /*sandbox*/ None,
-        ),
-    )
-    .await
-    .expect("reading a named pipe should not hang")
-    .expect_err("reading a named pipe should be rejected");
-
-    let stream_path = format!(r"\\.\pipe\codex-fs-stream-{}", Uuid::new_v4());
-    let _stream_pipe = ServerOptions::new()
-        .first_pipe_instance(true)
-        .create(&stream_path)?;
-    let stream_result = timeout(
-        Duration::from_secs(1),
-        file_system.read_file_stream(
-            &PathUri::from_host_native_path(std::path::Path::new(&stream_path))?,
-            /*sandbox*/ None,
-        ),
-    )
-    .await
-    .expect("streaming a named pipe should not hang");
-    let Err(stream_error) = stream_result else {
-        panic!("streaming a named pipe should be rejected");
-    };
-
-    assert_eq!(
-        (read_error.kind(), stream_error.kind()),
-        (
-            std::io::ErrorKind::InvalidInput,
-            std::io::ErrorKind::InvalidInput,
-        )
-    );
-    Ok(())
-}
-
-#[cfg(unix)]
 #[tokio::test]
 async fn stream_keeps_reading_the_open_file_after_path_replacement() -> Result<()> {
     let server = exec_server().await?;
@@ -733,7 +677,6 @@ async fn replace_open_truncates_existing_file() -> Result<()> {
 }
 
 /// Both restricted reads and full-disk reads must retain write sandbox enforcement.
-#[cfg(unix)]
 #[tokio::test]
 async fn writable_open_obeys_sandbox_write_permissions() -> Result<()> {
     use codex_exec_server::FileSystemSandboxContext;
@@ -818,8 +761,6 @@ fn connect_file_system(websocket_url: &str) -> Result<Arc<dyn ExecutorFileSystem
     Ok(environment.get_filesystem())
 }
 
-// Only the Unix stream tests above need this sandbox builder.
-#[cfg(unix)]
 fn read_only_sandbox(path: std::path::PathBuf) -> codex_exec_server::FileSystemSandboxContext {
     use codex_exec_server::FileSystemSandboxContext;
     use codex_protocol::models::PermissionProfile;

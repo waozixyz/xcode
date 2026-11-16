@@ -90,7 +90,6 @@ codex-utils-plugins = { workspace = true }
 codex-utils-pty = { workspace = true }
 codex-utils-string = { workspace = true }
 codex-utils-stream-parser = { workspace = true }
-codex-windows-sandbox = { package = "codex-windows-sandbox", path = "../windows-sandbox-rs" }
 dirs = { workspace = true }
 dunce = { workspace = true }
 eventsource-stream = { workspace = true }
@@ -114,7 +113,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
 shlex = { workspace = true }
-similar = { workspace = true }
+codex-utils-text-diff = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -144,6 +143,7 @@ openssl-sys = { workspace = true, features = ["vendored"] }
 openssl-sys = { workspace = true, features = ["vendored"] }
 
 [dev-dependencies]
+similar = { workspace = true }
 codex-backend-client = { workspace = true }
 codex-message-board = { workspace = true }
 codex-agent-message-board-host = { workspace = true }
@@ -161,7 +161,6 @@ codex-utils-cargo-bin = { workspace = true }
 codex-utils-redacted-string = { workspace = true }
 codex-utils-rustls-provider = { workspace = true }
 codex-web-search-extension = { workspace = true }
-codex-windows-sandbox-test-support = { workspace = true }
 core_test_support = { workspace = true }
 ctor = { workspace = true }
 insta = { workspace = true }
@@ -186,9 +185,6 @@ tracing-test = { workspace = true, features = ["no-env-filter"] }
 walkdir = { workspace = true }
 wiremock = { workspace = true }
 zstd = { workspace = true }
-
-[target.'cfg(windows)'.dev-dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [package.metadata.cargo-shear]
 ignored = ["openssl-sys"]

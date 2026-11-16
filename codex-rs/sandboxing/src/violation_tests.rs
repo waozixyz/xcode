@@ -176,7 +176,6 @@ fn keeps_output_snippet_on_the_stream_that_matched() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn classifies_linux_sigsys_exit() {
     let output = make_exec_output(

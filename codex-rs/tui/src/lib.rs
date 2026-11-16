@@ -268,7 +268,6 @@ mod user_prompt;
 mod version;
 mod vim_search;
 mod width;
-mod windows_sandbox;
 mod workspace_command;
 mod workspace_messages;
 
@@ -541,14 +540,6 @@ async fn connect_remote_app_server(
 
 async fn maybe_probe_default_daemon_socket(codex_home: &Path) -> Option<AbsolutePathBuf> {
     let socket_path = codex_app_server_client::app_server_control_socket_path(codex_home).ok()?;
-    #[cfg(windows)]
-    let (validated_path, _directory) =
-        codex_uds::validate_private_socket_path(socket_path.as_path()).ok()?;
-    #[cfg(windows)]
-    let validated_path = AbsolutePathBuf::from_absolute_path_checked(validated_path).ok()?;
-    #[cfg(windows)]
-    let probe_path = validated_path.as_path();
-    #[cfg(not(windows))]
     let probe_path = socket_path.as_path();
     match tokio::time::timeout(
         AUTO_CONNECT_DAEMON_CONNECT_TIMEOUT,
@@ -556,11 +547,7 @@ async fn maybe_probe_default_daemon_socket(codex_home: &Path) -> Option<Absolute
     )
     .await
     {
-        Ok(Ok(_stream)) => {
-            #[cfg(windows)]
-            _stream.ensure_non_elevated_peer().ok()?;
-            Some(socket_path)
-        }
+        Ok(Ok(_stream)) => Some(socket_path),
         Ok(Err(err)) => {
             tracing::debug!(%err, socket_path = %socket_path.display(), "skipping default app-server daemon socket");
             None
@@ -1371,8 +1358,6 @@ async fn run_ratatui_app(
     let mut app_server = Some(app_server_session);
     // Folder consent runs after the picker resolves the actual destination.
     let should_show_trust_screen_flag = false;
-    #[cfg(target_os = "windows")]
-    let mut trust_decision_was_made = false;
     let mut startup_model_provider = initial_config.model_provider_id.clone();
     let Some(active_app_server) = app_server.as_mut() else {
         unreachable!("app server should exist when auth is required");
@@ -1463,11 +1448,6 @@ async fn run_ratatui_app(
                 update_action: None,
                 exit_reason: ExitReason::UserRequested,
             });
-        }
-        #[cfg(target_os = "windows")]
-        {
-            trust_decision_was_made =
-                !uses_remote_workspace && onboarding_result.directory_trust_persisted;
         }
         if let Some(selected_id) = onboarding_result.selected_gateway {
             // Account state belongs to the provider captured by the embedded server at startup.
@@ -2085,10 +2065,6 @@ async fn run_ratatui_app(
                 )
                 .with_local_codex_home(&config.codex_home);
             }
-            #[cfg(target_os = "windows")]
-            {
-                trust_decision_was_made = true;
-            }
         } else if consent.should_exit {
             if !uses_remote_workspace {
                 config = load_config_or_exit_with_fallback_cwd(
@@ -2160,10 +2136,6 @@ async fn run_ratatui_app(
 
     set_default_client_residency_requirement(config.enforce_residency.value());
     let is_first_run = config.active_project.trust_level.is_none();
-    #[cfg(target_os = "windows")]
-    let should_prompt_windows_sandbox_nux_at_startup = trust_decision_was_made;
-    #[cfg(not(target_os = "windows"))]
-    let should_prompt_windows_sandbox_nux_at_startup = false;
 
     let Cli {
         prompt,
@@ -2297,8 +2269,7 @@ async fn run_ratatui_app(
     };
 
     let mut initial_backends = app::backend_sessions::InitialBackendSessions::singleton(app_server);
-    if cfg!(any(target_os = "macos", target_os = "linux"))
-        && config.features.enabled(Feature::TuiMultiBackend)
+    if config.features.enabled(Feature::TuiMultiBackend)
         && cloud_preview_available
         && !workload_identity_selected
         && config
@@ -2344,7 +2315,6 @@ async fn run_ratatui_app(
         session_selection,
         feedback,
         is_first_run,
-        should_prompt_windows_sandbox_nux_at_startup,
         app_server_target,
         state_db,
         environment_manager,

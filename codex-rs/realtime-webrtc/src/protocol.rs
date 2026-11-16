@@ -83,10 +83,7 @@ pub const RUNTIME_ENVIRONMENT: [(&str, &str); 7] = [
     ("GST_PLUGIN_PATH_1_0", ""),
     ("GST_PLUGIN_SYSTEM_PATH", ""),
     ("GST_PLUGIN_SYSTEM_PATH_1_0", ""),
-    (
-        "GST_REGISTRY",
-        if cfg!(windows) { "NUL" } else { "/dev/null" },
-    ),
+    ("GST_REGISTRY", "/dev/null"),
     ("GST_REGISTRY_UPDATE", "no"),
     ("GST_REGISTRY_FORK", "no"),
 ];

@@ -203,7 +203,6 @@ wire_api = 'responses'
     }
 }
 
-#[cfg(unix)]
 enum StdinTokenStartup {
     SkipPolicy,
     LoadPolicy,
@@ -211,7 +210,6 @@ enum StdinTokenStartup {
     CloseDuringPolicy,
 }
 
-#[cfg(unix)]
 #[test_case::test_case("pro", Some("endor"), StdinTokenStartup::SkipPolicy; "personal_skips_policy")]
 #[test_case::test_case("enterprise", Some("endor"), StdinTokenStartup::LoadPolicy; "enterprise_loads_policy")]
 #[test_case::test_case("pro", None, StdinTokenStartup::LoadPolicy; "unbound_account_loads_policy")]

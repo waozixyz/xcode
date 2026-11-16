@@ -1,7 +1,5 @@
-#[cfg(unix)]
 use std::ffi::OsString;
 
-#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
 /// This is designed to be called pre-main() (using `#[ctor::ctor]`) to perform
@@ -19,9 +17,6 @@ pub fn pre_main_hardening() {
     // On FreeBSD and OpenBSD, apply similar hardening to Linux/macOS:
     #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
     pre_main_hardening_bsd();
-
-    #[cfg(windows)]
-    pre_main_hardening_windows();
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -30,14 +25,6 @@ const PRCTL_FAILED_EXIT_CODE: i32 = 5;
 #[cfg(target_os = "macos")]
 const PTRACE_DENY_ATTACH_FAILED_EXIT_CODE: i32 = 6;
 
-#[cfg(any(
-    target_os = "linux",
-    target_os = "android",
-    target_os = "macos",
-    target_os = "freebsd",
-    target_os = "netbsd",
-    target_os = "openbsd"
-))]
 const SET_RLIMIT_CORE_FAILED_EXIT_CODE: i32 = 7;
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -99,7 +86,6 @@ pub(crate) fn pre_main_hardening_macos() {
     remove_env_vars_with_prefix(b"DYLD_");
 }
 
-#[cfg(unix)]
 fn set_core_file_size_limit_to_zero() {
     let rlim = libc::rlimit {
         rlim_cur: 0,
@@ -116,12 +102,6 @@ fn set_core_file_size_limit_to_zero() {
     }
 }
 
-#[cfg(windows)]
-pub(crate) fn pre_main_hardening_windows() {
-    // TODO(mbolin): Perform the appropriate configuration for Windows.
-}
-
-#[cfg(unix)]
 fn remove_env_vars_with_prefix(prefix: &[u8]) {
     for key in env_keys_with_prefix(std::env::vars_os(), prefix) {
         unsafe {
@@ -130,7 +110,6 @@ fn remove_env_vars_with_prefix(prefix: &[u8]) {
     }
 }
 
-#[cfg(unix)]
 fn env_keys_with_prefix<I>(vars: I, prefix: &[u8]) -> Vec<OsString>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
@@ -145,7 +124,7 @@ where
         .collect()
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;

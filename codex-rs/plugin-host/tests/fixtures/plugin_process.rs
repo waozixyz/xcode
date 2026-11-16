@@ -23,7 +23,6 @@ fn main() -> std::io::Result<()> {
         AllowStdIo::new(std::io::stdout().lock()).compat_write(),
         framing::codec(),
     );
-    #[cfg(unix)]
     if let Some(socket) = std::env::args_os()
         .skip(1)
         .find(|arg| std::path::Path::new(arg).is_absolute())
@@ -43,7 +42,6 @@ fn main() -> std::io::Result<()> {
     if program.file_stem() == Some(std::ffi::OsStr::new("failing-plugin-probe")) {
         return crash();
     }
-    #[cfg(unix)]
     if program.file_stem() == Some(std::ffi::OsStr::new("unready-plugin-probe")) {
         std::os::unix::net::UnixStream::connect(program.with_extension("sock"))?
             .write_all(&std::process::id().to_le_bytes())?;
@@ -56,7 +54,6 @@ fn main() -> std::io::Result<()> {
         framing::codec(),
     );
     block_on(output.send(codex_plugin_host::READY.into()))?;
-    #[cfg(unix)]
     {
         // SAFETY: getpgrp reads this process's group identifier.
         let group = unsafe { libc::getpgrp() };
@@ -65,7 +62,6 @@ fn main() -> std::io::Result<()> {
     let mut descendants = Vec::new();
     while let Some(message) = block_on(input.next()) {
         let message = message?;
-        #[cfg(unix)]
         if message.starts_with(b"/") {
             use std::os::unix::ffi::OsStrExt;
             descendants.push(

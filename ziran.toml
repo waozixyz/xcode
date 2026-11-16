@@ -12,3 +12,11 @@ runtime = "native/runtime.zi"
 [dependencies.mermaid]
 git = "https://github.com/ziranlang/mermaid.git"
 ref = "master"
+
+[dependencies.diff]
+git = "https://github.com/ziranlang/diff.git"
+ref = "master"
+
+[dependencies.git]
+git = "https://github.com/ziranlang/git.git"
+ref = "master"
