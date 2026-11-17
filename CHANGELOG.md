@@ -20,6 +20,7 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 - Parallel tool cells no longer fail at random with "Text file busy": starting a freshly compiled cell retries while another thread's fork still holds the file.
 - The upstream Codex version check runs on its own thread, so a slow network never delays Xcoder exiting; the offline local tests turn it off.
 - GPT-6.2-Sol (`gpt-6.2-sol`) is in the bundled model table, first, so it is the default when no model is configured even if the live catalog cannot be fetched. The entry is the provider's own (500,000-token context, efforts low to ultra, freeform `apply_patch`, code-mode-only tools, the `ultrafast` service tier, audio input). Before, a session whose catalog request timed out (the request has 5 s, including DNS) started on GPT-6.1-Sol, or ran GPT-6.2-Sol with fallback metadata and the warning "Model metadata for `gpt-6.2-sol` not found".
+- The `new-model` skill (`skills/new-model/SKILL.md`) lists the steps for adopting a new model, with the checks that save time: logins with quota and DNS speed first, builds only through `make`, real turns started as soon as the binary exists. `scripts/model-turns.py` runs the 12 real turns (a plain answer, a shell call and a patch edit at each effort). `scripts/install-xcoder-remote.sh omega|delta` installs the locally installed build on Omega or Delta, renaming each file into place.
 
 ## 0.1.0 — 2026-11-14
 
