@@ -19,6 +19,7 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 - `apply_patch` finds where each hunk goes with a Ziran matcher (`native/apply_patch.zi`) that borrows the file's lines instead of copying them. Answers are identical to the Rust matcher it replaces (checked against it on thousands of generated cases); on a 50,000-line file the whitespace- and punctuation-tolerant searches and searches that find nothing are 4-5x faster, exact matches cost about 0.4 ms more. `make benchmark-apply-patch` measures it.
 - Parallel tool cells no longer fail at random with "Text file busy": starting a freshly compiled cell retries while another thread's fork still holds the file.
 - The upstream Codex version check runs on its own thread, so a slow network never delays Xcoder exiting; the offline local tests turn it off.
+- GPT-6.2-Sol (`gpt-6.2-sol`) is in the bundled model table, first, so it is the default when no model is configured even if the live catalog cannot be fetched. The entry is the provider's own (500,000-token context, efforts low to ultra, freeform `apply_patch`, code-mode-only tools, the `ultrafast` service tier, audio input). Before, a session whose catalog request timed out (the request has 5 s, including DNS) started on GPT-6.1-Sol, or ran GPT-6.2-Sol with fallback metadata and the warning "Model metadata for `gpt-6.2-sol` not found".
 
 ## 0.1.0 — 2026-11-14
 

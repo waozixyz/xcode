@@ -792,6 +792,46 @@ async fn dynamic_manager_preserves_requested_model_when_fallback_is_allowed() {
     assert_eq!(endpoint.fetch_count(), 0);
 }
 
+/// A failed catalog request (for example a slow resolver exceeding the refresh timeout) leaves
+/// the bundled table in charge; a session without a configured model still gets the newest Sol.
+#[tokio::test]
+async fn failed_catalog_fetch_defaults_to_newest_bundled_sol() {
+    let codex_home = tempdir().expect("temp dir");
+    let endpoint = Arc::new(TestModelsEndpoint {
+        uses_codex_backend: true,
+        responses: Mutex::new(VecDeque::from([Err(CodexErr::RequestTimeout)])),
+        ..TestModelsEndpoint::default()
+    });
+    let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint.clone());
+
+    let model = manager
+        .get_default_model(
+            &None,
+            /*allow_provider_model_fallback*/ false,
+            RefreshStrategy::Online,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+
+    let newest_sol = load_remote_models_from_file()
+        .expect("bundled models should parse")
+        .into_iter()
+        .filter_map(|model| {
+            let version = model.slug.strip_prefix("gpt-")?.strip_suffix("-sol")?;
+            let parts = version
+                .split('.')
+                .map(str::parse::<u32>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            Some((parts, model.slug))
+        })
+        .max()
+        .map(|(_, slug)| slug)
+        .expect("bundled models should include a Sol model");
+    assert!(endpoint.fetch_count() >= 1);
+    assert_eq!(model, newest_sol);
+}
+
 #[tokio::test]
 async fn get_model_info_tracks_metadata_origin() {
     let codex_home = tempdir().expect("temp dir");
