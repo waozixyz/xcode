@@ -1,16 +1,16 @@
-// Shared by every build script that links an Xcoder Ziran module; each one
+// Shared by every build script that links an Xcode Ziran module; each one
 // includes this file with `include!`. Zi2c writes C under OUT_DIR/native.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The Xcoder project root: the nearest ancestor that holds `ziran.toml`.
+/// The Xcode project root: the nearest ancestor that holds `ziran.toml`.
 fn ziran_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .find(|directory| directory.join("ziran.toml").is_file())
-        .expect("Xcoder ziran.toml above this crate")
+        .expect("Xcode ziran.toml above this crate")
         .to_path_buf()
 }
 

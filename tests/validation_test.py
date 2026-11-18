@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('xcoder_validation', ROOT / 'scripts/test-xcoder.py')
+spec = importlib.util.spec_from_file_location('xcode_validation', ROOT / 'scripts/test-xcode.py')
 validation = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validation)
 
@@ -21,9 +21,9 @@ class ValidationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=parent) as temporary:
             root = Path(temporary)
             (root / 'build/bin').mkdir(parents=True)
-            for name in ['xcoder', 'codex-code-mode-host']:
+            for name in ['xcode', 'codex-code-mode-host']:
                 (root / 'build/bin' / name).write_bytes(b'test executable')
-            receipt = root / 'backup/xcoder-validation.json'
+            receipt = root / 'backup/xcode-validation.json'
             receipt.parent.mkdir()
             receipt.write_text('{"local_tests_passed":true}')
 
@@ -33,12 +33,12 @@ class ValidationTest(unittest.TestCase):
                     if failure:
                         raise subprocess.CalledProcessError(1, args)
                     if changed:
-                        (root / 'build/bin/xcoder').write_bytes(b'concurrent replacement')
+                        (root / 'build/bin/xcode').write_bytes(b'concurrent replacement')
                 return subprocess.CompletedProcess(args, 0)
 
             with patch.object(validation, 'ROOT', root), patch.object(validation, 'RECEIPT', receipt), \
                  patch.object(validation.subprocess, 'run', side_effect=command), \
-                 patch.object(sys, 'argv', ['test-xcoder.py', '--cargo', 'cargo']):
+                 patch.object(sys, 'argv', ['test-xcode.py', '--cargo', 'cargo']):
                 if failure or changed:
                     with self.assertRaises(subprocess.CalledProcessError if failure else RuntimeError):
                         validation.main()

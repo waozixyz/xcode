@@ -11,7 +11,7 @@ import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = Path(os.environ.get('XCODER_TEST_CLI', ROOT / 'build/bin/xcoder'))
+CLI = Path(os.environ.get('XCODE_TEST_CLI', ROOT / 'build/bin/xcode'))
 
 
 def fixture_config(port):
@@ -58,7 +58,7 @@ class NativeCliTest(unittest.TestCase):
             text = encoded.decode()
             name = f'integrity-{size}.txt'
             payloads[name] = encoded
-            delimiter = f'XCODER_INTEGRITY_{index}_EOF'
+            delimiter = f'XCODE_INTEGRITY_{index}_EOF'
             command = (f"cat > {name} <<'{delimiter}'\n{text}{delimiter}\n"
                        f"sha256sum {name}")
             calls.append(dict(tool='exec_command',
@@ -83,7 +83,7 @@ class NativeCliTest(unittest.TestCase):
                         process_ready.wait()
                         process_name = Path(f'/proc/{process_state["pid"]}/comm').read_text().strip()
                         if process_name != 'xcode':
-                            raise AssertionError(f'Xcoder process is named {process_name!r}, not xcode')
+                            raise AssertionError(f'Xcode process is named {process_name!r}, not xcode')
                         pending = [process_state['pid']]
                         while pending:
                             pid = pending.pop()
@@ -186,12 +186,12 @@ wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
 ''')
-            env = {key: value for key, value in os.environ.items() if key in ['PATH', 'LANG', 'LC_ALL', 'XCODER_ZIRAN_TOOLCHAIN']}
+            env = {key: value for key, value in os.environ.items() if key in ['PATH', 'LANG', 'LC_ALL', 'XCODE_ZIRAN_TOOLCHAIN']}
             env.update(HOME=str(home), CODEX_HOME=str(config), XDG_CONFIG_HOME=str(home / '.config'),
-                       XDG_CACHE_HOME=str(directory / 'cache'), XCODER_RUNTIME_DIR=str(directory / 'runtime'),
+                       XDG_CACHE_HOME=str(directory / 'cache'), XCODE_RUNTIME_DIR=str(directory / 'runtime'),
                        NO_PROXY='127.0.0.1,localhost', RUST_LOG='warn',
-                       XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
-                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0')
+                       XCODE_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
+                       HARMONY_SOURCE_SESSION='xcode-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODE_UPSTREAM_VERSION_CHECK='0')
             try:
                 command = [str(CLI), 'exec', '--ephemeral', '--skip-git-repo-check',
                            '--sandbox', 'workspace-write', '--json', 'Run the native local fixture.']
@@ -246,11 +246,11 @@ supports_websockets = false
                 dict(fixture='offline native tool loop', executable=str(CLI), separate_tool_hosts=0, **memory), indent=2) + '\n')
 
 
-    def test_shell_apply_patch_runs_xcoder_helper_ahead_of_login_profile(self):
+    def test_shell_apply_patch_runs_xcode_helper_ahead_of_login_profile(self):
         # Regression: a compound `apply_patch` heredoc is not intercepted, so the
         # shell resolves `apply_patch` itself. Login startup reset PATH and put a
         # profile copy first; that copy dropped each added file's first line and
-        # wrote the rest twice. Xcoder's own helper must win.
+        # wrote the rest twice. Xcode's own helper must win.
         files = {
             'Makefile': 'ZIRAN ?= ./scripts/ziran.sh\nSOURCES := src/app.zi\n\nall:\n\t$(ZIRAN) build\n',
             'README.md': '# taskmgr\n\nA task manager for Linux.\n',
@@ -321,10 +321,10 @@ supports_websockets = false
             (config / 'config.toml').write_text(fixture_config(server.server_address[1]))
             env = {key: value for key, value in os.environ.items() if key in ['PATH', 'LANG', 'LC_ALL']}
             env.update(HOME=str(home), CODEX_HOME=str(config), XDG_CONFIG_HOME=str(home / '.config'),
-                       XDG_CACHE_HOME=str(directory / 'cache'), XCODER_RUNTIME_DIR=str(directory / 'runtime'),
+                       XDG_CACHE_HOME=str(directory / 'cache'), XCODE_RUNTIME_DIR=str(directory / 'runtime'),
                        NO_PROXY='127.0.0.1,localhost', RUST_LOG='warn', SHELL='/bin/bash',
-                       XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
-                       HARMONY_SOURCE_SESSION='xcoder-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0')
+                       XCODE_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'),
+                       HARMONY_SOURCE_SESSION='xcode-offline-local-test', HARMONY_MODEL_INPUT_DISABLE='1', XCODE_UPSTREAM_VERSION_CHECK='0')
             try:
                 result = subprocess.run(
                     [str(CLI), 'exec', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'workspace-write',
@@ -342,7 +342,7 @@ supports_websockets = false
                        and item.get('call_id') == 'apply-patch-path']
             self.assertEqual(len(outputs), 1, json.dumps(requests[-1]))
             output = json.dumps(outputs[0]['output'])
-            self.assertFalse(marker.exists(), 'login profile apply_patch ran instead of xcoder: ' + output)
+            self.assertFalse(marker.exists(), 'login profile apply_patch ran instead of xcode: ' + output)
             self.assertNotIn(str(shim), output)
             for name, text in files.items():
                 self.assertEqual((directory / 'out' / name).read_bytes(), text.encode(), name)

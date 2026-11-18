@@ -104,7 +104,7 @@ pub fn try_parse_word_only_commands_sequence(tree: &Tree, src: &str) -> Option<V
 /// both accept a script they return the same words, and it never accepts a
 /// script tree-sitter rejects (checked by the parity tests below).
 pub fn parse_shell_script_into_commands(script: &str) -> Option<Vec<Vec<String>>> {
-    run_ziran_commands(xcoder_parse_plain_commands, script)
+    run_ziran_commands(xcode_parse_plain_commands, script)
 }
 
 type ZiranCommands =
@@ -159,7 +159,7 @@ fn decode_commands(
 }
 
 unsafe extern "C" {
-    fn xcoder_parse_plain_commands(
+    fn xcode_parse_plain_commands(
         script: *const u8,
         script_length: i64,
         bytes: *mut u8,
@@ -169,7 +169,7 @@ unsafe extern "C" {
         command_words: *mut i64,
         command_capacity: i64,
     ) -> i64;
-    fn xcoder_literal_commands(
+    fn xcode_literal_commands(
         script: *const u8,
         script_length: i64,
         bytes: *mut u8,
@@ -224,7 +224,7 @@ pub(crate) fn parse_shell_lc_literal_commands(command: &[String]) -> Option<Vec<
     let mut stack_word_ends = vec![0i64; capacity];
     // SAFETY: each buffer outlives the call and has `capacity` elements.
     let count = unsafe {
-        xcoder_literal_commands(
+        xcode_literal_commands(
             script.as_ptr(),
             script.len() as i64,
             bytes.as_mut_ptr(),
@@ -757,12 +757,12 @@ mod tests {
         );
     }
 
-    /// `XCODER_SHELL_DEBUG='script' cargo test -p codex-shell-command --lib --
+    /// `XCODE_SHELL_DEBUG='script' cargo test -p codex-shell-command --lib --
     /// --ignored --nocapture shell_debug`: both extractions of one script.
     #[test]
     #[ignore = "debugging aid"]
     fn shell_debug() {
-        let script = std::env::var("XCODER_SHELL_DEBUG").expect("XCODER_SHELL_DEBUG");
+        let script = std::env::var("XCODE_SHELL_DEBUG").expect("XCODE_SHELL_DEBUG");
         let command = bash(&script);
         println!(
             "ziran plain {:?}",
@@ -782,12 +782,12 @@ mod tests {
         );
     }
 
-    /// `XCODER_SHELL_CORPUS=commands.jsonl cargo test -p codex-shell-command
+    /// `XCODE_SHELL_CORPUS=commands.jsonl cargo test -p codex-shell-command
     /// --lib -- --ignored --nocapture shell_corpus`: one JSON string per line.
     #[test]
     #[ignore = "needs a local corpus of real commands"]
     fn shell_corpus() {
-        let path = std::env::var("XCODER_SHELL_CORPUS").expect("XCODER_SHELL_CORPUS");
+        let path = std::env::var("XCODE_SHELL_CORPUS").expect("XCODE_SHELL_CORPUS");
         let corpus = std::fs::read_to_string(path).expect("read corpus");
         let (mut total, mut accepted, mut stricter) = (0, 0, 0);
         let mut literal_problems = Vec::new();

@@ -1,12 +1,12 @@
 //! Keeps the version reported to the Codex service on the newest upstream
 //! Codex release (see `codex_protocol::client_version`).
 //!
-//! The latest release is cached in `CODEX_HOME/xcoder-upstream-version.json`.
+//! The latest release is cached in `CODEX_HOME/xcode-upstream-version.json`.
 //! [`load_cached`] records it at startup, before any request is built, and
 //! [`refresh_in_background`] asks GitHub for the latest `openai/codex` release
 //! once the cache is older than [`REFRESH_AFTER`]; the answer applies to the
 //! rest of this process and to every later one.
-//! `XCODER_UPSTREAM_VERSION_CHECK=0` turns the network check off.
+//! `XCODE_UPSTREAM_VERSION_CHECK=0` turns the network check off.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -22,9 +22,9 @@ use serde::Serialize;
 use crate::default_client::create_client;
 use crate::default_client::default_headers;
 
-const CACHE_FILENAME: &str = "xcoder-upstream-version.json";
+const CACHE_FILENAME: &str = "xcode-upstream-version.json";
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
-const CHECK_ENV_VAR: &str = "XCODER_UPSTREAM_VERSION_CHECK";
+const CHECK_ENV_VAR: &str = "XCODE_UPSTREAM_VERSION_CHECK";
 /// How old the cached release may be before it is checked again.
 pub const REFRESH_AFTER: Duration = Duration::from_secs(20 * 60 * 60);
 
@@ -80,7 +80,7 @@ pub fn refresh_in_background(codex_home: PathBuf) {
         return;
     }
     let spawned = std::thread::Builder::new()
-        .name("xcoder-upstream-version".to_string())
+        .name("xcode-upstream-version".to_string())
         .spawn(move || {
             let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()

@@ -11,9 +11,9 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-RECEIPT = ROOT / 'backup/xcoder-validation.json'
-PROFILE = os.environ.get('XCODER_CARGO_PROFILE', 'local')
-installer = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))
+RECEIPT = ROOT / 'backup/xcode-validation.json'
+PROFILE = os.environ.get('XCODE_CARGO_PROFILE', 'local')
+installer = runpy.run_path(str(ROOT / 'scripts/install-xcode.py'))
 digest = installer['digest']
 # Native tests built by `make native-test-build`, by suite name.
 NATIVE_TESTS = {'abi': 'native-abi-test', 'allocator': 'native-allocator-test', 'idle': 'native-idle-test'}
@@ -79,7 +79,7 @@ def main():
     RECEIPT.unlink(missing_ok=True)
     env = {key: value for key, value in os.environ.items() if key not in
            ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS',
-            'XCODER_TEST_HOST', 'XCODER_TEST_CLI']}
+            'XCODE_TEST_HOST', 'XCODE_TEST_CLI']}
     env['CARGO'] = args.cargo
     manifest = prebuilt_tests() if args.prebuilt_tests else None
     if args.prebuilt_tests and not args.existing_binaries:
@@ -93,7 +93,7 @@ def main():
     runtime = ROOT / 'build/native-runtime'
     runtime.mkdir(exist_ok=True, mode=0o700)
     runtime.chmod(0o700)
-    env['XCODER_RUNTIME_DIR'] = str(runtime)
+    env['XCODE_RUNTIME_DIR'] = str(runtime)
     commands = ([
         [str(ROOT / row['path'])] for row in manifest['tests']
     ] + [[sys.executable, 'tests/native_cell_test.py']] if manifest is not None else [
@@ -102,7 +102,7 @@ def main():
         for package in RUST_SUITES
     ])
     commands += [[sys.executable, 'tests/' + name]
-                 for name in ['validation_test.py', 'native_host_test.py', 'native_cli_test.py', 'install_xcoder_test.py']]
+                 for name in ['validation_test.py', 'native_host_test.py', 'native_cli_test.py', 'install_xcode_test.py']]
     for command in commands:
         subprocess.run(command, cwd=ROOT, env=env, check=True)
     if tested != fingerprints():
@@ -110,7 +110,7 @@ def main():
     if manifest is not None and manifest != prebuilt_tests():
         raise RuntimeError('Prebuilt local tests changed during execution')
     receipt = dict(local_tests_passed=True, tested_at=int(time.time()), **tested)
-    descriptor, temporary = tempfile.mkstemp(dir=RECEIPT.parent, prefix='.xcoder-validation-')
+    descriptor, temporary = tempfile.mkstemp(dir=RECEIPT.parent, prefix='.xcode-validation-')
     try:
         with os.fdopen(descriptor, 'w') as stream:
             json.dump(receipt, stream, indent=2)

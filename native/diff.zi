@@ -1,19 +1,19 @@
-// Xcoder's C ABI adapter for the diff package: line diffs, unified text and
+// Xcode's C ABI adapter for the diff package: line diffs, unified text and
 // unified-diff parsing.
 Diff :: #import "diff/diff"
 
 #program_export
-xcoder_diff_line_count :: (text: *u8, length: s64) -> s64 {
+xcode_diff_line_count :: (text: *u8, length: s64) -> s64 {
     return Diff.DiffLineCount(text, length)
 }
 
 #program_export
-xcoder_diff_op_capacity :: (old_count: s64, new_count: s64) -> s64 {
+xcode_diff_op_capacity :: (old_count: s64, new_count: s64) -> s64 {
     return Diff.DiffOpCapacity(old_count, new_count)
 }
 
 #program_export
-xcoder_diff_lines :: (old_text: *u8, old_length: s64, new_text: *u8, new_length: s64, budget: s64,
+xcode_diff_lines :: (old_text: *u8, old_length: s64, new_text: *u8, new_length: s64, budget: s64,
                       old_starts: *s64, new_starts: *s64, old_hashes: *u64, new_hashes: *u64,
                       forward: *s64, backward: *s64, raw_ops: *s64, ops: *s64, op_capacity: s64) -> s64 {
     return Diff.DiffLines(old_text, old_length, new_text, new_length, budget,
@@ -21,7 +21,7 @@ xcoder_diff_lines :: (old_text: *u8, old_length: s64, new_text: *u8, new_length:
 }
 
 #program_export
-xcoder_diff_unified :: (old_text: *u8, new_text: *u8, old_starts: *s64, new_starts: *s64,
+xcode_diff_unified :: (old_text: *u8, new_text: *u8, old_starts: *s64, new_starts: *s64,
                         ops: *s64, op_count: s64, context: s64, has_header: s32,
                         header_old: *u8, header_old_length: s64, header_new: *u8, header_new_length: s64,
                         output: *u8, output_capacity: s64) -> s64 {
@@ -30,7 +30,7 @@ xcoder_diff_unified :: (old_text: *u8, new_text: *u8, old_starts: *s64, new_star
 }
 
 #program_export
-xcoder_diff_parse :: (text: *u8, length: s64, header: *s64,
+xcode_diff_parse :: (text: *u8, length: s64, header: *s64,
                       hunks: *s64, hunk_capacity: s64, lines: *s64, line_capacity: s64) -> s64 {
     return Diff.DiffParseUnified(text, length, header, hunks, hunk_capacity, lines, line_capacity)
 }

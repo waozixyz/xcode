@@ -17,9 +17,9 @@ pub const TOOL_SEARCH_GUIDANCE: &str = r#"Discover deferred tools with {"calls":
 const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run tool calls through the precompiled native Ziran executor. Prefer a JSON tool plan; it needs no runtime compilation or worker process:
 {"calls":[{"tool":"exec_command","input":{"cmd":"pwd"}}]}
 `calls` accepts at most 128 enabled tool calls. Inputs are JSON values for function tools and exact strings for freeform tools. Calls run sequentially by default; add `"parallel":true` for up to four independent calls at once. Each reply is emitted as JSON with `call` (zero-based index), `tool`, `ok`, and `value` or `error`. A plan cannot depend on earlier results; use a later cell or custom code when results determine the next operation. All names and inputs are validated before any call starts. Permissions, approvals, cancellation and output budgets remain with the host.
-For custom orchestration, supply a complete Ziran program starting with `using X :: #import "xcoder/runtime"` and `main :: () -> s32 { ...; return 0 }`. Zi2c compiles only cache misses; identical source reuses its private cached executable. Custom code still executes in a separate sandbox. JavaScript is not supported.
+For custom orchestration, supply a complete Ziran program starting with `using X :: #import "xcode/runtime"` and `main :: () -> s32 { ...; return 0 }`. Zi2c compiles only cache misses; identical source reuses its private cached executable. Custom code still executes in a separate sandbox. JavaScript is not supported.
 Custom example:
-using X :: #import "xcoder/runtime"
+using X :: #import "xcode/runtime"
 main :: () -> s32 {
     reply := Call("exec_command", "{\"cmd\":\"pwd\"}")
     defer Release(*reply)
@@ -362,7 +362,7 @@ pub fn render_code_mode_sample(
     output_type: String,
 ) -> String {
     format!(
-        "{description}\n\nNative tool name: {tool_name}\nInput {input_name}: {input_type}\nOutput: {output_type}\nUse Call(name, input) from xcoder/runtime."
+        "{description}\n\nNative tool name: {tool_name}\nInput {input_name}: {input_type}\nOutput: {output_type}\nUse Call(name, input) from xcode/runtime."
     )
 }
 
@@ -380,7 +380,7 @@ fn render_code_mode_sample_for_definition(definition: &ToolDefinition) -> String
         CodeModeToolKind::Freeform => "Input: literal freeform text".to_owned(),
     };
     format!(
-        "{}\n\nNative tool name: {}\n{}\nUse Call(name, input) from xcoder/runtime; release the returned Reply.",
+        "{}\n\nNative tool name: {}\n{}\nUse Call(name, input) from xcode/runtime; release the returned Reply.",
         definition.description, definition.name, input
     )
 }

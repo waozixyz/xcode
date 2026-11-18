@@ -5,24 +5,24 @@ Tool :: struct { name: *u8; length: s64; kind: s32; }
 // Rust owns this state and all buffers; these functions retain no pointers.
 Executor :: struct { cursor: s64; active: s64; completed: s64; count: s64; lanes: s64; }
 #program_export
-xcoder_executor_init :: (state: *Executor, count: s64, lanes: s64) -> s32 {
+xcode_executor_init :: (state: *Executor, count: s64, lanes: s64) -> s32 {
     if state == null || count < 0 || count > 128 || lanes < 1 || lanes > 4 { return 0 }
     state.cursor = 0; state.active = 0; state.completed = 0; state.count = count; state.lanes = lanes
     return 1
 }
 #program_export
-xcoder_executor_next :: (state: *Executor) -> s64 {
+xcode_executor_next :: (state: *Executor) -> s64 {
     if state == null || state.active >= state.lanes || state.cursor >= state.count { return -1 }
     index := state.cursor; state.cursor += 1; state.active += 1; return index
 }
 #program_export
-xcoder_executor_complete :: (state: *Executor) -> s32 {
+xcode_executor_complete :: (state: *Executor) -> s32 {
     if state == null || state.active <= 0 { return 0 }
     state.active -= 1; state.completed += 1; return 1
 }
 
 #program_export
-xcoder_resolve_tool :: (name: *u8, length: s64, tools: *Tool, count: s64) -> s64 {
+xcode_resolve_tool :: (name: *u8, length: s64, tools: *Tool, count: s64) -> s64 {
     if name == null || length <= 0 || length > 4096 || count < 0 || (count > 0 && tools == null) { return -1 }
     found: s64 = -1
     for i: 0..count - 1 {

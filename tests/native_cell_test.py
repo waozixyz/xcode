@@ -8,7 +8,7 @@ from native_host_test import Peer
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIRAN = Path(os.environ['XCODER_ZIRAN_TOOLCHAIN']).resolve()
+ZIRAN = Path(os.environ['XCODE_ZIRAN_TOOLCHAIN']).resolve()
 
 
 class NativeCellTest(unittest.TestCase):
@@ -55,7 +55,7 @@ class NativeCellTest(unittest.TestCase):
             return calls, [item['text'] for item in result['content_items']]
 
     def test_real_tools_and_callback_frames(self):
-        calls, output = self.run_cell('''using X :: #import "xcoder/runtime"
+        calls, output = self.run_cell('''using X :: #import "xcode/runtime"
 main :: () -> s32 {
     reply := Call("fixture", "{\\"value\\":42}")
     defer Release(*reply)
@@ -68,13 +68,13 @@ main :: () -> s32 {
         self.assertEqual(json.loads(output[0]), {'ok': True, 'value': 42})
 
     def test_owner_and_source_file_contents_are_inaccessible(self):
-        calls, output = self.run_cell('''using X :: #import "xcoder/runtime"
+        calls, output = self.run_cell('''using X :: #import "xcode/runtime"
 using F :: #import "std/file"
 main :: () -> s32 {
     password, owner_ok := F.ReadEntireFile("/etc/passwd")
     source, source_ok := F.ReadEntireFile("main.zi")
     if owner_ok || source_ok || password.count != 0 || source.count != 0 { return 5 }
-    if F.WriteEntireFile("/etc/xcoder-sandbox-test", "forbidden") { return 6 }
+    if F.WriteEntireFile("/etc/xcode-sandbox-test", "forbidden") { return 6 }
     Text("isolated")
     return 0
 }
@@ -83,7 +83,7 @@ main :: () -> s32 {
         self.assertEqual(output, ['isolated'])
 
     def test_replies_are_freed_in_a_loop(self):
-        source = '''using X :: #import "xcoder/runtime"
+        source = '''using X :: #import "xcode/runtime"
 main :: () -> s32 {
     for i: 0..99 { reply := Call("fixture"); if !reply.ok { return 4 }; Release(*reply) }
     return 0
@@ -94,7 +94,7 @@ main :: () -> s32 {
         self.assertEqual(output, [])
 
     def test_batch_calls_release_each_reply(self):
-        source = '''using X :: #import "xcoder/runtime"
+        source = '''using X :: #import "xcode/runtime"
 main :: () -> s32 {
     calls: [4]BatchCall
     for i: 0..3 { calls[i].name = "fixture"; calls[i].input = "{}" }

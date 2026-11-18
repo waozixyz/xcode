@@ -1,4 +1,4 @@
-// Xcoder's C ABI adapter for the git package: object ids, loose objects,
+// Xcode's C ABI adapter for the git package: object ids, loose objects,
 // trees, commits, refs and remote URL sanitizing. Rust does the file I/O.
 Git :: #import "git/git"
 GitUrl :: #import "git/git_url"
@@ -27,67 +27,67 @@ Items :: (data: *Git.GitTreeItem, count: s64) -> []Git.GitTreeItem {
 }
 
 #program_export
-xcoder_git_sanitize_url :: (text: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
+xcode_git_sanitize_url :: (text: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
     return GitUrl.GitSanitizeUrl(Bytes(text, length), Bytes(out, capacity))
 }
 
 #program_export
-xcoder_git_hash_object :: (kind: s64, data: *u8, length: s64, id: *u8) -> s32 {
+xcode_git_hash_object :: (kind: s64, data: *u8, length: s64, id: *u8) -> s32 {
     return ifx Git.GitHashObject(kind, Bytes(data, length), Bytes(id, 20)) then 1 else 0
 }
 
 #program_export
-xcoder_git_loose_encoded_size :: (kind: s64, size: s64) -> s64 {
+xcode_git_loose_encoded_size :: (kind: s64, size: s64) -> s64 {
     return Git.GitLooseEncodedSize(kind, size)
 }
 
 #program_export
-xcoder_git_loose_encode :: (kind: s64, data: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
+xcode_git_loose_encode :: (kind: s64, data: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
     return Git.GitLooseEncode(kind, Bytes(data, length), Bytes(out, capacity))
 }
 
 #program_export
-xcoder_git_loose_decode :: (compressed: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
+xcode_git_loose_decode :: (compressed: *u8, length: s64, out: *u8, capacity: s64) -> s64 {
     return Git.GitLooseDecode(Bytes(compressed, length), Bytes(out, capacity))
 }
 
 #program_export
-xcoder_git_parse_header :: (data: *u8, length: s64, kind: *s64, size: *s64) -> s64 {
+xcode_git_parse_header :: (data: *u8, length: s64, kind: *s64, size: *s64) -> s64 {
     return Git.GitParseHeader(Bytes(data, length), kind, size)
 }
 
 #program_export
-xcoder_git_tree_sort :: (items: *Git.GitTreeItem, scratch: *Git.GitTreeItem, count: s64) -> s32 {
+xcode_git_tree_sort :: (items: *Git.GitTreeItem, scratch: *Git.GitTreeItem, count: s64) -> s32 {
     if count <= 0 { return 1 }
     return ifx Git.GitTreeSort(Items(items, count), Items(scratch, count)) then 1 else 0
 }
 
 #program_export
-xcoder_git_tree_encoded_size :: (items: *Git.GitTreeItem, count: s64) -> s64 {
+xcode_git_tree_encoded_size :: (items: *Git.GitTreeItem, count: s64) -> s64 {
     if count <= 0 { return 0 }
     return Git.GitTreeEncodedSize(Items(items, count))
 }
 
 #program_export
-xcoder_git_tree_encode :: (items: *Git.GitTreeItem, count: s64, out: *u8, capacity: s64) -> s64 {
+xcode_git_tree_encode :: (items: *Git.GitTreeItem, count: s64, out: *u8, capacity: s64) -> s64 {
     if count <= 0 { return 0 }
     return Git.GitTreeEncode(Items(items, count), Bytes(out, capacity))
 }
 
 #program_export
-xcoder_git_tree_next :: (tree: *u8, length: s64, at: s64, entry: *Git.GitTreeEntry) -> s64 {
+xcode_git_tree_next :: (tree: *u8, length: s64, at: s64, entry: *Git.GitTreeEntry) -> s64 {
     return Git.GitTreeNext(Bytes(tree, length), at, entry)
 }
 
 #program_export
-xcoder_git_commit_encoded_size :: (parent_count: s64, author: *Git.GitSignature,
+xcode_git_commit_encoded_size :: (parent_count: s64, author: *Git.GitSignature,
                                    committer: *Git.GitSignature, message_length: s64) -> s64 {
     empty: [1]u8
     return Git.GitCommitEncodedSize(parent_count, author, committer, empty[0:0]) + message_length
 }
 
 #program_export
-xcoder_git_commit_encode :: (tree: *u8, parents: *u8, parents_length: s64,
+xcode_git_commit_encode :: (tree: *u8, parents: *u8, parents_length: s64,
                              author: *Git.GitSignature, committer: *Git.GitSignature,
                              message: *u8, message_length: s64, out: *u8, capacity: s64) -> s64 {
     return Git.GitCommitEncode(Bytes(tree, 20), Bytes(parents, parents_length), author, committer,
@@ -95,16 +95,16 @@ xcoder_git_commit_encode :: (tree: *u8, parents: *u8, parents_length: s64,
 }
 
 #program_export
-xcoder_git_commit_tree :: (commit: *u8, length: s64, tree: *u8) -> s32 {
+xcode_git_commit_tree :: (commit: *u8, length: s64, tree: *u8) -> s32 {
     return ifx Git.GitCommitTree(Bytes(commit, length), Bytes(tree, 20)) then 1 else 0
 }
 
 #program_export
-xcoder_git_parse_ref :: (text: *u8, length: s64, target_start: *s64, target_end: *s64, id: *u8) -> s64 {
+xcode_git_parse_ref :: (text: *u8, length: s64, target_start: *s64, target_end: *s64, id: *u8) -> s64 {
     return Git.GitParseRef(Bytes(text, length), target_start, target_end, Bytes(id, 20))
 }
 
 #program_export
-xcoder_git_packed_ref :: (text: *u8, length: s64, name: *u8, name_length: s64, id: *u8) -> s32 {
+xcode_git_packed_ref :: (text: *u8, length: s64, name: *u8, name_length: s64, id: *u8) -> s32 {
     return ifx Git.GitPackedRef(Bytes(text, length), Bytes(name, name_length), Bytes(id, 20)) then 1 else 0
 }

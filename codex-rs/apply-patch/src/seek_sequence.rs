@@ -42,7 +42,7 @@ pub(crate) fn seek_sequence(
     }
     // SAFETY: every pointer and length describes a live `String` for the call.
     let found = unsafe {
-        xcoder_seek_sequence(
+        xcode_seek_sequence(
             line_data.as_ptr(),
             line_lengths.as_ptr(),
             lines.len() as i64,
@@ -57,7 +57,7 @@ pub(crate) fn seek_sequence(
 }
 
 unsafe extern "C" {
-    fn xcoder_seek_sequence(
+    fn xcode_seek_sequence(
         lines: *const *const u8,
         line_lengths: *const i64,
         line_count: i64,

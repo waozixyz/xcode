@@ -63,14 +63,14 @@ struct SandboxPolicy {
 }
 
 pub(crate) fn toolchain() -> Result<PathBuf, String> {
-    let path = std::env::var_os("XCODER_ZIRAN_TOOLCHAIN")
+    let path = std::env::var_os("XCODE_ZIRAN_TOOLCHAIN")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("XCODER_ZIRAN_TOOLCHAIN_DEFAULT")));
+        .unwrap_or_else(|| PathBuf::from(env!("XCODE_ZIRAN_TOOLCHAIN_DEFAULT")));
     let path = path
         .canonicalize()
         .map_err(|error| format!("Ziran toolchain: {error}"))?;
     if !path.join("build/bin/ziran").is_file() {
-        return Err("XCODER_ZIRAN_TOOLCHAIN must name a built Ziran toolchain".into());
+        return Err("XCODE_ZIRAN_TOOLCHAIN must name a built Ziran toolchain".into());
     }
     Ok(path)
 }
@@ -234,7 +234,7 @@ fn seccomp_filter(kind: SandboxKind) -> Vec<libc::sock_filter> {
     #[cfg(target_arch = "aarch64")]
     let arch = 0xc00000b7;
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-    compile_error!("Xcoder native cell isolation currently supports Linux x86-64 and AArch64");
+    compile_error!("Xcode native cell isolation currently supports Linux x86-64 and AArch64");
     const LD: u16 = 0x20;
     const JEQ: u16 = 0x15;
     const JGE: u16 = 0x35;
@@ -444,7 +444,7 @@ pub(crate) fn compiler(directory: &Path, toolchain: &Path) -> Result<Command, St
     command
         .arg(directory)
         .arg("--module-path")
-        .arg(format!("xcoder={}", directory.join("api").display()));
+        .arg(format!("xcode={}", directory.join("api").display()));
     command.arg("-o").arg(directory.join("out"));
     command.arg(directory.join("main.zi"));
     Ok(command)

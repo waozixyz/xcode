@@ -107,7 +107,7 @@ fn native_render(source: &str, max_width: usize) -> Result<NativeGrid, RenderErr
         return Err(RenderError::Limit);
     }
     let grid = unsafe {
-        xcoder_mermaid_grid(
+        xcode_mermaid_grid(
             NativeSource {
                 data: source.as_ptr(),
                 length: source.len() as i64,
@@ -182,13 +182,13 @@ impl NativeGrid {
 
 impl Drop for NativeGrid {
     fn drop(&mut self) {
-        unsafe { xcoder_mermaid_grid_free(self) };
+        unsafe { xcode_mermaid_grid_free(self) };
     }
 }
 
 unsafe extern "C" {
-    fn xcoder_mermaid_grid(source: NativeSource, max_width: i64) -> NativeGrid;
-    fn xcoder_mermaid_grid_free(grid: *mut NativeGrid);
+    fn xcode_mermaid_grid(source: NativeSource, max_width: i64) -> NativeGrid;
+    fn xcode_mermaid_grid_free(grid: *mut NativeGrid);
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ pub fn fuzzy_match(haystack: &str, needle: &str) -> Option<(Vec<usize>, i32)> {
     let mut indices = vec![0usize; needle.len()];
     let mut score = 0i32;
     let count = unsafe {
-        xcoder_fuzzy_match(
+        xcode_fuzzy_match(
             haystack.as_ptr(),
             haystack.len() as i64,
             needle.as_ptr(),
@@ -40,7 +40,7 @@ pub fn fuzzy_match(haystack: &str, needle: &str) -> Option<(Vec<usize>, i32)> {
 }
 
 unsafe extern "C" {
-    fn xcoder_fuzzy_match(
+    fn xcode_fuzzy_match(
         haystack: *const u8,
         haystack_length: i64,
         needle: *const u8,

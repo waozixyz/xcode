@@ -16,9 +16,9 @@ const LINE_FIELDS: usize = 3;
 const PARSE_ERROR: i64 = -3;
 
 unsafe extern "C" {
-    fn xcoder_diff_line_count(text: *const u8, length: i64) -> i64;
-    fn xcoder_diff_op_capacity(old_count: i64, new_count: i64) -> i64;
-    fn xcoder_diff_lines(
+    fn xcode_diff_line_count(text: *const u8, length: i64) -> i64;
+    fn xcode_diff_op_capacity(old_count: i64, new_count: i64) -> i64;
+    fn xcode_diff_lines(
         old_text: *const u8,
         old_length: i64,
         new_text: *const u8,
@@ -34,7 +34,7 @@ unsafe extern "C" {
         ops: *mut i64,
         op_capacity: i64,
     ) -> i64;
-    fn xcoder_diff_unified(
+    fn xcode_diff_unified(
         old_text: *const u8,
         new_text: *const u8,
         old_starts: *const i64,
@@ -50,7 +50,7 @@ unsafe extern "C" {
         output: *mut u8,
         output_capacity: i64,
     ) -> i64;
-    fn xcoder_diff_parse(
+    fn xcode_diff_parse(
         text: *const u8,
         length: i64,
         header: *mut i64,
@@ -109,9 +109,9 @@ impl<'a> Unified<'a> {
         // SAFETY: each pointer covers the length passed with it, and every
         // workspace has the size `native/diff.zi` documents.
         unsafe {
-            let old_count = xcoder_diff_line_count(old.as_ptr(), old.len() as i64);
-            let new_count = xcoder_diff_line_count(new.as_ptr(), new.len() as i64);
-            let capacity = xcoder_diff_op_capacity(old_count, new_count);
+            let old_count = xcode_diff_line_count(old.as_ptr(), old.len() as i64);
+            let new_count = xcode_diff_line_count(new.as_ptr(), new.len() as i64);
+            let capacity = xcode_diff_op_capacity(old_count, new_count);
             let snake = 2 * ((old_count + new_count + 1) / 2 + 1) + 2;
             let mut old_starts = vec![0i64; old_count as usize + 1];
             let mut new_starts = vec![0i64; new_count as usize + 1];
@@ -121,7 +121,7 @@ impl<'a> Unified<'a> {
             let mut backward = vec![0i64; snake as usize];
             let mut raw = vec![0i64; capacity as usize * FIELDS];
             let mut ops = vec![0i64; capacity as usize * FIELDS];
-            let count = xcoder_diff_lines(
+            let count = xcode_diff_lines(
                 old.as_ptr(),
                 old.len() as i64,
                 new.as_ptr(),
@@ -144,7 +144,7 @@ impl<'a> Unified<'a> {
                 None => (0, &[][..], &[][..]),
             };
             let write = |output: *mut u8, capacity: i64| {
-                xcoder_diff_unified(
+                xcode_diff_unified(
                     old.as_ptr(),
                     new.as_ptr(),
                     old_starts.as_ptr(),
@@ -271,7 +271,7 @@ impl<'a> Patch<'a> {
         // SAFETY: the buffers hold `line_capacity` records each, the most a
         // text with this many lines can produce.
         let count = unsafe {
-            xcoder_diff_parse(
+            xcode_diff_parse(
                 bytes.as_ptr(),
                 bytes.len() as i64,
                 header.as_mut_ptr(),

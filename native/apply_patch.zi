@@ -121,7 +121,7 @@ SameLine :: (left: *u8, left_length: s64, right: *u8, right_length: s64, mode: s
 // each mode over the whole range before relaxing to the next; -1 when none
 // matches, -2 for invalid arguments.
 #program_export
-xcoder_seek_sequence :: (lines: **u8, line_lengths: *s64, line_count: s64, pattern: **u8, pattern_lengths: *s64, pattern_count: s64, start: s64, eof: s32) -> s64 {
+xcode_seek_sequence :: (lines: **u8, line_lengths: *s64, line_count: s64, pattern: **u8, pattern_lengths: *s64, pattern_count: s64, start: s64, eof: s32) -> s64 {
     if line_count < 0 || pattern_count < 0 || start < 0 { return -2 }
     if pattern_count == 0 { return start }
     if pattern_count > line_count { return -1 }
@@ -227,7 +227,7 @@ SortReplacements :: (replacements: *s64, count: s64) {
 // context was not found; -2: a chunk's old lines were not found (failed_chunk
 // names the chunk); -3: invalid arguments or a buffer too small.
 #program_export
-xcoder_apply_chunks :: (contents: *u8, contents_length: s64,
+xcode_apply_chunks :: (contents: *u8, contents_length: s64,
                         line_data: **u8, line_lengths: *s64, line_endings: *s32, line_capacity: s64,
                         strings: **u8, string_lengths: *s64, string_count: s64,
                         chunks: *s64, chunk_count: s64, pairs: *s64,
@@ -450,7 +450,7 @@ WordEquals :: (text: string, start: s64, end: s64, word: string) -> bool {
 // 3 '...'), cd start, cd end]; the body excludes trailing newlines. Returns 1
 // when the script has this form, 0 otherwise.
 #program_export
-xcoder_apply_patch_heredoc :: (script: *u8, script_length: s64, result: *s64) -> s64 {
+xcode_apply_patch_heredoc :: (script: *u8, script_length: s64, result: *s64) -> s64 {
     if script_length < 0 || result == null || (script_length > 0 && script == null) { return 0 }
     text := B.TextFromBytes(B.BytesFromPointer(script, cast(u64)script_length))
     at := SkipSpacesAndNewlines(text, 0)

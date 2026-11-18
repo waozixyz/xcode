@@ -1,7 +1,7 @@
 OpenAI Codex
 Copyright 2025 OpenAI
 
-Xcoder fork modifications
+Xcode fork modifications
 Copyright 2026 Waozi <waozi@proton.me>
 This fork changes tool orchestration to native Ziran/Zi2c execution with
 embedded Rust supervision. The original license and upstream notices remain.

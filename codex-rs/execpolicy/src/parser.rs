@@ -286,7 +286,7 @@ fn parse_rules_file(path: &str, contents: &str) -> Result<Vec<Statement>> {
     let mut error = [0i64; 3];
     // SAFETY: the buffers outlive the call and have the capacities passed.
     let count = unsafe {
-        xcoder_parse_rules(
+        xcode_parse_rules(
             contents.as_ptr(),
             contents.len() as i64,
             nodes.as_mut_ptr(),
@@ -432,7 +432,7 @@ impl NodeReader<'_> {
 }
 
 unsafe extern "C" {
-    fn xcoder_parse_rules(
+    fn xcode_parse_rules(
         source: *const u8,
         source_length: i64,
         nodes: *mut i64,

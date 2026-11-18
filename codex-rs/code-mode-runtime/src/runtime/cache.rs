@@ -226,7 +226,7 @@ pub(super) async fn prepare(
     source: &str,
 ) -> Result<bool, String> {
     let mut hash = Sha256::new();
-    hash.update(b"xcoder-cell-cache-v1\0");
+    hash.update(b"xcode-cell-cache-v1\0");
     hash.update(compiler_key(toolchain)?.as_bytes());
     hash.update(include_bytes!("../../../../native/runtime.zi"));
     hash.update(include_bytes!("../native_sandbox.rs"));
@@ -316,7 +316,7 @@ mod tests {
 
     #[tokio::test]
     async fn native_cells_run_inside_nested_mount_namespace_without_bwrap() {
-        if std::env::var_os("XCODER_NESTED_SANDBOX_TEST").is_some() {
+        if std::env::var_os("XCODE_NESTED_SANDBOX_TEST").is_some() {
             let root = tempfile::tempdir_in(runtime_root().unwrap()).unwrap();
             let toolchain = crate::native_sandbox::toolchain().unwrap();
             let source = r#"c :: #system_library "libc";
@@ -349,8 +349,8 @@ main :: () -> s32 { bytes: [3]u8 = .[50,51,10]; unused Write(1,*bytes[0],3); ret
             ])
             .arg(std::env::current_exe().unwrap())
             .args(["--exact", NESTED_TEST, "--nocapture"])
-            .env("XCODER_NESTED_SANDBOX_TEST", "1")
-            .env("XCODER_BWRAP", fake_bwrap)
+            .env("XCODE_NESTED_SANDBOX_TEST", "1")
+            .env("XCODE_BWRAP", fake_bwrap)
             .output()
             .unwrap();
         assert!(

@@ -1,9 +1,9 @@
-## Xcoder
+## Xcode
 
 For automatic Linux builds and downloads, see
-[Xcoder Linux](https://github.com/waozixyz/xcoder/actions/workflows/xcoder-linux.yml).
+[Xcode Linux](https://github.com/waozixyz/xcode/actions/workflows/xcode-linux.yml).
 
-Xcoder is Waozi's source fork of OpenAI Codex, under the original Apache 2.0
+Xcode is Waozi's source fork of OpenAI Codex, under the original Apache 2.0
 license. Tool orchestration uses Ziran compiled through Zi2c. Ordinary plans run
 through an executor linked into Rust, without a compiler or child process.
 Custom Ziran cells compile on a cache miss and reuse private cached executables.
@@ -26,7 +26,7 @@ artifacts are reused when a build is resumed.
 Run `make test` for Rust/C ABI, Ziran-backed Mermaid and fuzzy-match, native
 sandbox, callback, host transport and offline full-CLI local tests. The CLI fixture runs a real shell tool through the
 embedded supervisor without contacting an external model service.
-`make` builds the CLI at `build/bin/xcoder` with its adjacent tool host.
+`make` builds the CLI at `build/bin/xcode` with its adjacent tool host.
 `make test` writes an installation receipt only after the full local suite passes;
 a failed rerun removes the earlier receipt. `make install` verifies the exact binaries and preserves
 Harmony's existing launcher, accounts and histories. It replaces the launcher's
@@ -49,7 +49,7 @@ name. Add `"parallel":true` for up to four independent calls at
 once. A plan supports up to 128 calls; dependent steps use a later cell or custom
 code. This path works without the compiler installed.
 
-Custom native cells import `xcoder/runtime`. `Call(name, json)` returns caller-owned
+Custom native cells import `xcode/runtime`. `Call(name, json)` returns caller-owned
 storage: inspect `Body(*reply)` and release it with `defer Release(*reply)`.
 `Text`, `Image`, `Audio`, `Notify`, `Store`, `Load`, `Catalog` and `Yield` provide
 output and session state. `CallBatch` runs arrays of `BatchCall` on up to four
@@ -58,8 +58,8 @@ socket; the compiler has only its binaries, headers, standard library and cell
 sources. Tool errors never fall back to JavaScript.
 
 The custom-cell cache holds at most 64 executables and 256 MiB on disk.
-Files default to `~/.local/state/xcoder/runtime/cache`; an explicit
-`XCODER_RUNTIME_DIR` keeps its selected location. Cache keys include source,
+Files default to `~/.local/state/xcode/runtime/cache`; an explicit
+`XCODE_RUNTIME_DIR` keeps its selected location. Cache keys include source,
 the runtime API, sandbox/compiler settings, toolchain inputs and the C compiler.
 Executables are verified before reuse; corruption triggers recompilation.
 

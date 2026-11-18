@@ -9,8 +9,8 @@ import tarfile
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'xcoder-linux-x86_64'
-installer = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))
+NAME = 'xcode-linux-x86_64'
+installer = runpy.run_path(str(ROOT / 'scripts/install-xcode.py'))
 digest = installer['digest']
 
 
@@ -35,12 +35,12 @@ def package(toolchain):
         for name in ['build/bin', 'std', 'include']:
             shutil.copytree(toolchain / name, stage / 'toolchain' / name)
         shutil.copy2(toolchain / 'LICENSE', stage / 'toolchain/LICENSE')
-        launcher = stage / 'xcoder'
+        launcher = stage / 'xcode'
         launcher.write_text('''#!/bin/sh
 set -eu
-xcoder_root=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
-export XCODER_ZIRAN_TOOLCHAIN="${XCODER_ZIRAN_TOOLCHAIN:-"$xcoder_root/toolchain"}"
-exec "$xcoder_root/libexec/xcoder" "$@"
+xcode_root=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)
+export XCODE_ZIRAN_TOOLCHAIN="${XCODE_ZIRAN_TOOLCHAIN:-"$xcode_root/toolchain"}"
+exec "$xcode_root/libexec/xcode" "$@"
 ''')
         launcher.chmod(0o755)
         archive = output / (NAME + '.tar.gz')

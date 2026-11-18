@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-installer = runpy.run_path(str(ROOT / 'scripts/install-xcoder.py'))
+installer = runpy.run_path(str(ROOT / 'scripts/install-xcode.py'))
 publish = installer['publish_package_entry']
 
 
@@ -25,7 +25,7 @@ class PackageCutoverTest(unittest.TestCase):
     def test_running_executable_keeps_its_inode_and_can_still_be_executed(self):
         entry = self.root / 'codex'
         compatibility = self.root / 'codex-upstream'
-        native = self.root / 'xcoder'
+        native = self.root / 'xcode'
         # A plain shell, not coreutils: multi-call coreutils builds (uutils)
         # refuse to run under another file name.
         shell = os.path.realpath('/bin/sh')
@@ -48,7 +48,7 @@ class PackageCutoverTest(unittest.TestCase):
     def test_existing_compatibility_entry_is_preserved(self):
         entry = self.root / 'codex'
         compatibility = self.root / 'codex-upstream'
-        native = self.root / 'xcoder'
+        native = self.root / 'xcode'
         entry.write_text('original')
         compatibility.write_text('preserve')
         native.write_text('native')
@@ -57,12 +57,12 @@ class PackageCutoverTest(unittest.TestCase):
         self.assertEqual(entry.read_text(), 'original')
         self.assertEqual(compatibility.read_text(), 'preserve')
 
-    def test_installs_xcoder_without_creating_a_public_codex_alias(self):
+    def test_installs_xcode_without_creating_a_public_codex_alias(self):
         source = self.root / 'source'
         (source / 'build/bin').mkdir(parents=True)
-        metadata = dict(product='xcoder', tool_language='ziran', pipeline='zi2c',
+        metadata = dict(product='xcode', tool_language='ziran', pipeline='zi2c',
                         javascript_tool_runtime=False)
-        binary = source / 'build/bin/xcoder'
+        binary = source / 'build/bin/xcode'
         binary.write_text('#!/usr/bin/env python3\nprint(' + repr(json.dumps(metadata)) + ')\n')
         binary.chmod(0o755)
         host = source / 'build/bin/codex-code-mode-host'
@@ -72,7 +72,7 @@ class PackageCutoverTest(unittest.TestCase):
         (source / 'backup').mkdir()
         receipt = dict(local_tests_passed=True, binary_sha256=installer['digest'](binary),
                        host_sha256=installer['digest'](host))
-        (source / 'backup/xcoder-validation.json').write_text(json.dumps(receipt))
+        (source / 'backup/xcode-validation.json').write_text(json.dumps(receipt))
         install = installer['install']
         for managed in [False, True]:
             with self.subTest(managed=managed):
@@ -83,10 +83,15 @@ class PackageCutoverTest(unittest.TestCase):
                     managed_command.symlink_to('/usr/bin/true')
                 with patch.dict(install.__globals__, ROOT=source):
                     install(prefix)
-                self.assertTrue((prefix / 'bin/xcoder').is_symlink())
+                self.assertTrue((prefix / 'bin/xcode').is_symlink())
                 self.assertFalse((prefix / 'bin/codex').exists())
+                folder = prefix / 'lib/xcode/bin'
+                self.assertEqual(os.readlink(folder / 'xcode'), 'codex')
+                self.assertEqual(json.loads((folder / 'codex.xcode.json').read_text())['product'], 'xcode')
+                self.assertFalse((prefix / 'lib/xcoder').exists())
+                self.assertFalse((prefix / 'bin/xcoder').exists())
                 if managed:
-                    self.assertEqual(managed_command.resolve(), (prefix / 'bin/xcoder').resolve())
+                    self.assertEqual(managed_command.resolve(), (prefix / 'bin/xcode').resolve())
 
 
 if __name__ == '__main__':

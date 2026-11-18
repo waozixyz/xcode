@@ -12,6 +12,6 @@ fn main() {
         // which can trigger systemd-oomd on constrained builders even when rustc fits.
         println!("cargo:rustc-link-arg=-Wl,--no-keep-memory");
         // The idle-memory watcher relies on the GNU allocator's trim call.
-        compile_ziran("native/idle.zi", "xcoder_idle", &[]);
+        compile_ziran("native/idle.zi", "xcode_idle", &[]);
     }
 }

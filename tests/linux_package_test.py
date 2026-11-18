@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'xcoder-linux-x86_64'
+NAME = 'xcode-linux-x86_64'
 
 
 class LinuxPackageTest(unittest.TestCase):
@@ -21,16 +21,16 @@ class LinuxPackageTest(unittest.TestCase):
             with tarfile.open(ROOT / 'build' / (NAME + '.tar.gz')) as archive:
                 archive.extractall(directory, filter='data')
             package = directory / NAME
-            alias = directory / 'xcoder'
-            alias.symlink_to(package / 'xcoder')
+            alias = directory / 'xcode'
+            alias.symlink_to(package / 'xcode')
             env = {key: value for key, value in os.environ.items() if key not in
                    ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS',
-                    'XCODER_ZIRAN_TOOLCHAIN', 'XCODER_TEST_CLI', 'XCODER_TEST_HOST']}
-            metadata = subprocess.check_output([str(alias), '--xcoder-runtime-info'], env=env, text=True)
-            self.assertEqual(json.loads(metadata)['product'], 'xcoder')
-            env.update(XCODER_TEST_CLI=str(alias),
-                       XCODER_TEST_HOST=str(package / 'libexec/codex-code-mode-host'),
-                       XCODER_ZIRAN_TOOLCHAIN=str(package / 'toolchain'))
+                    'XCODE_ZIRAN_TOOLCHAIN', 'XCODE_TEST_CLI', 'XCODE_TEST_HOST']}
+            metadata = subprocess.check_output([str(alias), '--xcode-runtime-info'], env=env, text=True)
+            self.assertEqual(json.loads(metadata)['product'], 'xcode')
+            env.update(XCODE_TEST_CLI=str(alias),
+                       XCODE_TEST_HOST=str(package / 'libexec/codex-code-mode-host'),
+                       XCODE_ZIRAN_TOOLCHAIN=str(package / 'toolchain'))
             for name in ['native_cli_test.py', 'native_host_test.py']:
                 subprocess.run([sys.executable, str(ROOT / 'tests' / name)],
                                cwd=directory, env=env, check=True)

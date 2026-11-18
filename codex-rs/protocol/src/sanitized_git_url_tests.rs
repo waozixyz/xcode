@@ -1,12 +1,12 @@
 use super::SanitizedGitUrl;
 use crate::protocol::GitInfo;
+use gix_url::Scheme;
+use gix_url::Url;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde::de::value::Error;
 use serde::de::value::StrDeserializer;
 use serde_json::json;
-use gix_url::Scheme;
-use gix_url::Url;
 
 /// HTTPS usernames and passwords must never survive construction.
 #[test]
@@ -335,8 +335,7 @@ fn gix_sanitize(value: &str) -> Result<String, &'static str> {
         Err(_) => {
             // gix mistakes an IPv6 address's first colon for the SCP path
             // separator when a username comes before the bracketed host.
-            let (user, host_and_path) =
-                value.split_once('@').ok_or("invalid git remote URL")?;
+            let (user, host_and_path) = value.split_once('@').ok_or("invalid git remote URL")?;
             let (host, path) = host_and_path
                 .strip_prefix('[')
                 .and_then(|host_and_path| host_and_path.split_once("]:"))
@@ -403,11 +402,58 @@ fn next(state: &mut u64) -> u64 {
 #[test]
 fn matches_gix_url_on_generated_remotes() {
     let pieces = [
-        "https://", "http://", "ssh://", "git://", "file://", "ext::", "hg::", "remote-hg::", "ftp://",
-        "git+ssh://", "x://", "", "user", "git", "alice", ":", "@", "secret", "%40", "%3A", "%ff", "%",
-        "%2", "[", "]", "::1", "2001:db8::1", "fe80::1%25eth0", "127.0.0.1", "github.com", "Example.COM",
-        "example.com", ":22", ":0", ":65536", ":abc", "/", "/org/repo.git", "org/repo", "~user/repo", "?",
-        "#", " ", "\\", "é", "\u{a0}", "localhost", "*", "a::b", "-oProxyCommand", "..", "x",
+        "https://",
+        "http://",
+        "ssh://",
+        "git://",
+        "file://",
+        "ext::",
+        "hg::",
+        "remote-hg::",
+        "ftp://",
+        "git+ssh://",
+        "x://",
+        "",
+        "user",
+        "git",
+        "alice",
+        ":",
+        "@",
+        "secret",
+        "%40",
+        "%3A",
+        "%ff",
+        "%",
+        "%2",
+        "[",
+        "]",
+        "::1",
+        "2001:db8::1",
+        "fe80::1%25eth0",
+        "127.0.0.1",
+        "github.com",
+        "Example.COM",
+        "example.com",
+        ":22",
+        ":0",
+        ":65536",
+        ":abc",
+        "/",
+        "/org/repo.git",
+        "org/repo",
+        "~user/repo",
+        "?",
+        "#",
+        " ",
+        "\\",
+        "é",
+        "\u{a0}",
+        "localhost",
+        "*",
+        "a::b",
+        "-oProxyCommand",
+        "..",
+        "x",
     ];
     let mut state = 0x9e37_79b9_7f4a_7c15_u64;
     for round in 0..200_000 {

@@ -1,5 +1,5 @@
 include!("../../native/zi2c_build.rs");
 
 fn main() {
-    compile_ziran("native/mermaid.zi", "xcoder_mermaid", &["mermaid"]);
+    compile_ziran("native/mermaid.zi", "xcode_mermaid", &["mermaid"]);
 }

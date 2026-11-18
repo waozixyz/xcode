@@ -181,16 +181,16 @@ pub(crate) fn spawn_runtime(
 }
 
 fn runtime_root() -> Result<PathBuf, String> {
-    let root = std::env::var_os("XCODER_RUNTIME_DIR")
+    let root = std::env::var_os("XCODE_RUNTIME_DIR")
         .map(PathBuf::from)
         .or_else(|| {
-            std::env::var_os("XDG_RUNTIME_DIR").map(|value| PathBuf::from(value).join("xcoder"))
+            std::env::var_os("XDG_RUNTIME_DIR").map(|value| PathBuf::from(value).join("xcode"))
         })
         .or_else(|| {
             std::env::var_os("HOME")
-                .map(|value| PathBuf::from(value).join(".local/state/xcoder/runtime"))
+                .map(|value| PathBuf::from(value).join(".local/state/xcode/runtime"))
         })
-        .ok_or("set XCODER_RUNTIME_DIR or HOME")?;
+        .ok_or("set XCODE_RUNTIME_DIR or HOME")?;
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let info = std::fs::symlink_metadata(&root).map_err(|error| error.to_string())?;

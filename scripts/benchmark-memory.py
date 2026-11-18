@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure how an interactive Xcoder session's memory grows and what an idle session keeps resident.
+"""Measure how an interactive Xcode session's memory grows and what an idle session keeps resident.
 
 The session runs offline in a private tmux terminal against a local model
 fixture. One typed prompt starts a chain of real shell tool calls, each
@@ -49,7 +49,7 @@ def by_mapping(pid):
                 kind = 'anonymous (allocator arenas, thread stacks)'
             elif name.startswith('['):
                 kind = 'kernel'
-            elif '/bin/' in name and ('xcode' in name or 'codex' in name or 'xcoder' in name):
+            elif '/bin/' in name and ('xcode' in name or 'codex' in name):
                 kind = 'program code' if executable else 'program data and tables'
             elif '.so' in name:
                 kind = 'shared libraries'
@@ -120,7 +120,7 @@ class Terminal:
     """A private tmux server kept as a child so its session's memory is readable."""
 
     def __init__(self, directory):
-        self.name = 'xcoder-memory-' + str(os.getpid())
+        self.name = 'xcode-memory-' + str(os.getpid())
         environment = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'HOME') if key in os.environ}
         environment['TMUX_TMPDIR'] = str(directory)
         self.environment = environment
@@ -149,7 +149,7 @@ class Terminal:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cli', type=Path, default=Path.home() / '.local/lib/xcoder/bin/xcode')
+    parser.add_argument('--cli', type=Path, default=Path.home() / '.local/lib/xcode/bin/xcode')
     parser.add_argument('--calls', type=int, default=120, help='tool calls in the session')
     parser.add_argument('--output-bytes', type=int, default=30000, help='bytes each tool call prints')
     parser.add_argument('--idle-seconds', type=float, default=20, help='idle time before the idle measurement')
@@ -254,12 +254,12 @@ trust_level = "trusted"
 ''')
         environment = dict(HOME=str(home), CODEX_HOME=str(config), TMPDIR=str(directory / 'tmp'),
                            XDG_CONFIG_HOME=str(home / '.config'), XDG_CACHE_HOME=str(home / '.cache'),
-                           XCODER_RUNTIME_DIR=str(directory / 'r'), RUST_LOG='error',
-                           NO_PROXY='127.0.0.1,localhost', HARMONY_SOURCE_SESSION='xcoder-offline-benchmark',
-                           HARMONY_MODEL_INPUT_DISABLE='1', XCODER_UPSTREAM_VERSION_CHECK='0', XCODER_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'))
+                           XCODE_RUNTIME_DIR=str(directory / 'r'), RUST_LOG='error',
+                           NO_PROXY='127.0.0.1,localhost', HARMONY_SOURCE_SESSION='xcode-offline-benchmark',
+                           HARMONY_MODEL_INPUT_DISABLE='1', XCODE_UPSTREAM_VERSION_CHECK='0', XCODE_ZIRAN_TOOLCHAIN=str(directory / 'no-compiler'))
         if args.trace_library:
             environment.update(LD_PRELOAD=str(args.trace_library.resolve()),
-                               XCODER_ALLOC_TRACE=str(directory / 'alloc-trace.txt'))
+                               XCODE_ALLOC_TRACE=str(directory / 'alloc-trace.txt'))
         for setting in args.environment:
             name, _, value = setting.partition('=')
             environment[name] = value

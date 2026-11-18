@@ -1,4 +1,4 @@
-// Hands an idle Xcoder session's resident memory back to the operating system.
+// Hands an idle Xcode session's resident memory back to the operating system.
 //
 // A session that is not working still holds its whole history, the freed space
 // its allocator keeps for reuse, and every code page it ever ran. One release
@@ -281,7 +281,7 @@ Watch :: (argument: *void) -> *void {
         quiet += interval
         if quiet < idle { continue }
         if released && ResidentBytes() < floor + RegrowthBytes { continue }
-        if xcoder_idle_release(*report[0]) == 1 {
+        if xcode_idle_release(*report[0]) == 1 {
             released = true
             floor = report[1]
         }
@@ -298,7 +298,7 @@ Watch :: (argument: *void) -> *void {
 // swap, and the number of mappings examined. Returns 1, or 0 when the
 // process's mappings cannot be read.
 #program_export
-xcoder_idle_release :: (report: *s64) -> s32 {
+xcode_idle_release :: (report: *s64) -> s32 {
     totals: Report
     before: s64 = ResidentBytes()
     unused TrimRaw(cast(usize)0)
@@ -317,7 +317,7 @@ xcoder_idle_release :: (report: *s64) -> s32 {
 // Start the watcher: release once the process has been idle for
 // `idle_milliseconds`. Returns 1 when the watcher runs.
 #program_export
-xcoder_idle_watch :: (idle_milliseconds: s64) -> s32 {
+xcode_idle_watch :: (idle_milliseconds: s64) -> s32 {
     if idle_milliseconds <= 0 || watch_idle_milliseconds != 0 { return 0 }
     watch_idle_milliseconds = idle_milliseconds
     thread: usize = 0
@@ -331,6 +331,6 @@ xcoder_idle_watch :: (idle_milliseconds: s64) -> s32 {
 
 // Release passes completed so far.
 #program_export
-xcoder_idle_releases :: () -> s64 {
+xcode_idle_releases :: () -> s64 {
     return release_count
 }

@@ -20,7 +20,7 @@ def main():
     base, stacks = None, []
     for line in args.trace.read_text().splitlines():
         fields = line.split()
-        if fields[0] == 'M' and base is None and len(fields) > 6 and fields[6].rsplit('/', 1)[-1] in ('xcoder', 'xcode', 'codex'):
+        if fields[0] == 'M' and base is None and len(fields) > 6 and fields[6].rsplit('/', 1)[-1] in ('xcode', 'codex'):
             base = int(fields[1].split('-')[0], 16) - int(fields[3], 16)
         elif fields[0] == 'I':
             print('allocator:', ', '.join(f'{name} {int(value) / 1048576:.1f} MiB' for name, value in

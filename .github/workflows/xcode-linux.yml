@@ -1,4 +1,4 @@
-name: Xcoder Linux
+name: Xcode Linux
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: xcoder-linux-${{ github.ref }}
+  group: xcode-linux-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: '1'
       # Published builds keep the optimized profile; local builds use `local`.
-      XCODER_CARGO_PROFILE: release
+      XCODE_CARGO_PROFILE: release
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -47,8 +47,8 @@ jobs:
             build/cargo-home/registry
             build/cargo-home/git
             codex-rs/target
-          key: xcoder-linux-${{ runner.arch }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/rust-toolchain.toml', 'ziran.lock') }}
-          restore-keys: xcoder-linux-${{ runner.arch }}-
+          key: xcode-linux-${{ runner.arch }}-${{ hashFiles('codex-rs/Cargo.lock', 'codex-rs/rust-toolchain.toml', 'ziran.lock') }}
+          restore-keys: xcode-linux-${{ runner.arch }}-
       - name: Build and run the complete offline local suite
         run: make test
       - name: Package the tested Linux build and its native compiler
@@ -60,9 +60,9 @@ jobs:
       - name: Upload Linux download
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: xcoder-linux-x86_64
+          name: xcode-linux-x86_64
           path: |
-            build/xcoder-linux-x86_64.tar.gz
-            build/xcoder-linux-x86_64.tar.gz.sha256
+            build/xcode-linux-x86_64.tar.gz
+            build/xcode-linux-x86_64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30

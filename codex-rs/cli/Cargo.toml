@@ -1,15 +1,15 @@
 [package]
 name = "codex-cli"
-# Xcoder's own release number, shown by `xcoder --version`. The version reported
+# Xcode's own release number, shown by `xcode --version`. The version reported
 # to the Codex service is separate: see codex_protocol::client_version.
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 build = "build.rs"
-default-run = "xcoder"
+default-run = "xcode"
 
 [[bin]]
-name = "xcoder"
+name = "xcode"
 path = "src/main.rs"
 
 [[bin]]

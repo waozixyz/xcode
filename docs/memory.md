@@ -1,4 +1,4 @@
-# Xcoder session memory
+# Xcode session memory
 
 Measured on 2026-11-13 on `alpha` (physical host, Linux x86-64, 15 GiB RAM)
 with `scripts/benchmark-memory.py`. The benchmark starts the interactive CLI
@@ -65,7 +65,7 @@ The pass runs again only after the session has worked, or has grown by 32 MB
 while still idle. Without free swap space, steps 1 and 3 still apply and
 private memory stays resident.
 
-`XCODER_IDLE_RELEASE_SECONDS` sets the idle period; `0` disables the watcher.
+`XCODE_IDLE_RELEASE_SECONDS` sets the idle period; `0` disables the watcher.
 
 **The replay buffer no longer doubles command output.** The copy of a
 finished command kept for replay holds the first and last 8 KiB of output
@@ -76,7 +76,7 @@ outputs.
 
 ## Results
 
-Build of 2026-11-13 with the watcher linked in (`build/bin/xcoder`), 15-second
+Build of 2026-11-13 with the watcher linked in (`build/bin/xcode`), 15-second
 idle period for the run:
 
 | Session | Idle before release | After release | In swap | Next keypress |
@@ -105,8 +105,8 @@ period.
 
 ```sh
 make benchmark-memory          # 150 calls, idle footprint, release, wake time
-python3 scripts/benchmark-memory.py --cli build/bin/xcoder --calls 600 \
-    --release-wait 30 --environment XCODER_IDLE_RELEASE_SECONDS=15
+python3 scripts/benchmark-memory.py --cli build/bin/xcode --calls 600 \
+    --release-wait 30 --environment XCODE_IDLE_RELEASE_SECONDS=15
 ```
 
 The report gives resident memory after each call, the idle footprint by
@@ -119,10 +119,10 @@ against an unstripped binary of the same build:
 
 ```sh
 cc -O2 -fPIC -shared -o build/memory/alloc-trace.so scripts/memory/alloc-trace.c
-python3 scripts/benchmark-memory.py --cli build/bin/xcoder --calls 150 \
+python3 scripts/benchmark-memory.py --cli build/bin/xcode --calls 150 \
     --trace-library build/memory/alloc-trace.so --environment MALLOC_ARENA_MAX=2
 python3 scripts/memory/alloc-report.py build/memory/alloc-trace.txt \
-    --symbols codex-rs/target/release/xcoder
+    --symbols codex-rs/target/release/xcode
 ```
 
 The sandboxed shell tool cannot start inside an already confined shell, so

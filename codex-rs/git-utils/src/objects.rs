@@ -14,41 +14,41 @@ const ID_BYTES: usize = 20;
 const DEFAULT_BRANCH: &str = "refs/heads/main";
 
 unsafe extern "C" {
-    fn xcoder_git_hash_object(kind: i64, data: *const u8, length: i64, id: *mut u8) -> i32;
-    fn xcoder_git_loose_encoded_size(kind: i64, size: i64) -> i64;
-    fn xcoder_git_loose_encode(
+    fn xcode_git_hash_object(kind: i64, data: *const u8, length: i64, id: *mut u8) -> i32;
+    fn xcode_git_loose_encoded_size(kind: i64, size: i64) -> i64;
+    fn xcode_git_loose_encode(
         kind: i64,
         data: *const u8,
         length: i64,
         out: *mut u8,
         capacity: i64,
     ) -> i64;
-    fn xcoder_git_loose_decode(
+    fn xcode_git_loose_decode(
         compressed: *const u8,
         length: i64,
         out: *mut u8,
         capacity: i64,
     ) -> i64;
-    fn xcoder_git_parse_header(data: *const u8, length: i64, kind: *mut i64, size: *mut i64)
+    fn xcode_git_parse_header(data: *const u8, length: i64, kind: *mut i64, size: *mut i64)
     -> i64;
-    fn xcoder_git_tree_sort(items: *mut NativeTreeItem, scratch: *mut NativeTreeItem, count: i64)
+    fn xcode_git_tree_sort(items: *mut NativeTreeItem, scratch: *mut NativeTreeItem, count: i64)
     -> i32;
-    fn xcoder_git_tree_encoded_size(items: *const NativeTreeItem, count: i64) -> i64;
-    fn xcoder_git_tree_encode(
+    fn xcode_git_tree_encoded_size(items: *const NativeTreeItem, count: i64) -> i64;
+    fn xcode_git_tree_encode(
         items: *const NativeTreeItem,
         count: i64,
         out: *mut u8,
         capacity: i64,
     ) -> i64;
-    fn xcoder_git_tree_next(tree: *const u8, length: i64, at: i64, entry: *mut NativeTreeEntry)
+    fn xcode_git_tree_next(tree: *const u8, length: i64, at: i64, entry: *mut NativeTreeEntry)
     -> i64;
-    fn xcoder_git_commit_encoded_size(
+    fn xcode_git_commit_encoded_size(
         parent_count: i64,
         author: *const NativeSignature,
         committer: *const NativeSignature,
         message_length: i64,
     ) -> i64;
-    fn xcoder_git_commit_encode(
+    fn xcode_git_commit_encode(
         tree: *const u8,
         parents: *const u8,
         parents_length: i64,
@@ -59,15 +59,15 @@ unsafe extern "C" {
         out: *mut u8,
         capacity: i64,
     ) -> i64;
-    fn xcoder_git_commit_tree(commit: *const u8, length: i64, tree: *mut u8) -> i32;
-    fn xcoder_git_parse_ref(
+    fn xcode_git_commit_tree(commit: *const u8, length: i64, tree: *mut u8) -> i32;
+    fn xcode_git_parse_ref(
         text: *const u8,
         length: i64,
         target_start: *mut i64,
         target_end: *mut i64,
         id: *mut u8,
     ) -> i64;
-    fn xcoder_git_packed_ref(
+    fn xcode_git_packed_ref(
         text: *const u8,
         length: i64,
         name: *const u8,
@@ -134,7 +134,7 @@ impl ObjectId {
         let mut id = [0u8; ID_BYTES];
         // SAFETY: `data` covers its length and `id` holds 20 bytes.
         let ok =
-            unsafe { xcoder_git_hash_object(kind as i64, data.as_ptr(), data.len() as i64, id.as_mut_ptr()) };
+            unsafe { xcode_git_hash_object(kind as i64, data.as_ptr(), data.len() as i64, id.as_mut_ptr()) };
         assert_eq!(ok, 1, "hash of a known object kind");
         Self(id)
     }
@@ -226,10 +226,10 @@ pub(crate) fn encode_tree(entries: &[TreeEntry]) -> Vec<u8> {
     let count = items.len() as i64;
     // SAFETY: both item buffers hold `count` entries borrowing `entries`.
     unsafe {
-        assert_eq!(xcoder_git_tree_sort(items.as_mut_ptr(), scratch.as_mut_ptr(), count), 1);
-        let size = xcoder_git_tree_encoded_size(items.as_ptr(), count);
+        assert_eq!(xcode_git_tree_sort(items.as_mut_ptr(), scratch.as_mut_ptr(), count), 1);
+        let size = xcode_git_tree_encoded_size(items.as_ptr(), count);
         let mut out = vec![0u8; size as usize];
-        let written = xcoder_git_tree_encode(items.as_ptr(), count, out.as_mut_ptr(), size);
+        let written = xcode_git_tree_encode(items.as_ptr(), count, out.as_mut_ptr(), size);
         assert_eq!(written, size, "tree entries have valid names and modes");
         out
     }
@@ -241,7 +241,7 @@ pub(crate) fn decode_tree(tree: &[u8]) -> anyhow::Result<Vec<TreeEntry>> {
     while (at as usize) < tree.len() {
         let mut entry = NativeTreeEntry::default();
         // SAFETY: `tree` covers its length; `entry` is a valid out pointer.
-        let next = unsafe { xcoder_git_tree_next(tree.as_ptr(), tree.len() as i64, at, &mut entry) };
+        let next = unsafe { xcode_git_tree_next(tree.as_ptr(), tree.len() as i64, at, &mut entry) };
         anyhow::ensure!(next > at, "malformed tree object");
         let mode = EntryMode::from_bits(entry.mode).context("unknown tree entry mode")?;
         let mut id = [0u8; ID_BYTES];
@@ -315,9 +315,9 @@ impl Repository {
         }
         // SAFETY: `out` holds the size the package reports for this object.
         let encoded = unsafe {
-            let size = xcoder_git_loose_encoded_size(kind as i64, data.len() as i64);
+            let size = xcode_git_loose_encoded_size(kind as i64, data.len() as i64);
             let mut out = vec![0u8; size as usize];
-            let written = xcoder_git_loose_encode(
+            let written = xcode_git_loose_encode(
                 kind as i64,
                 data.as_ptr(),
                 data.len() as i64,
@@ -347,7 +347,7 @@ impl Repository {
             let mut out = vec![0u8; capacity];
             // SAFETY: both buffers cover the lengths passed with them.
             let length = unsafe {
-                xcoder_git_loose_decode(
+                xcode_git_loose_decode(
                     compressed.as_ptr(),
                     compressed.len() as i64,
                     out.as_mut_ptr(),
@@ -358,7 +358,7 @@ impl Repository {
                 let (mut kind, mut size) = (0i64, 0i64);
                 // SAFETY: `out` holds `length` inflated bytes.
                 let header = unsafe {
-                    xcoder_git_parse_header(out.as_ptr(), length, &mut kind, &mut size)
+                    xcode_git_parse_header(out.as_ptr(), length, &mut kind, &mut size)
                 };
                 anyhow::ensure!(header > 0, "malformed object header");
                 anyhow::ensure!(size as u64 <= limit, "object {id} exceeds the size limit");
@@ -398,7 +398,7 @@ impl Repository {
                     let mut id = [0u8; ID_BYTES];
                     // SAFETY: each buffer covers the length passed with it.
                     let found = unsafe {
-                        xcoder_git_packed_ref(
+                        xcode_git_packed_ref(
                             packed.as_ptr(),
                             packed.len() as i64,
                             name.as_ptr(),
@@ -414,7 +414,7 @@ impl Repository {
             let mut id = [0u8; ID_BYTES];
             // SAFETY: `text` covers its length; the out pointers are valid.
             let kind = unsafe {
-                xcoder_git_parse_ref(text.as_ptr(), text.len() as i64, &mut start, &mut end, id.as_mut_ptr())
+                xcode_git_parse_ref(text.as_ptr(), text.len() as i64, &mut start, &mut end, id.as_mut_ptr())
             };
             match kind {
                 1 => {
@@ -439,7 +439,7 @@ impl Repository {
         let commit = self.read_kind(&commit_id, Kind::Commit, 1 << 20)?;
         let mut tree = [0u8; ID_BYTES];
         // SAFETY: `commit` covers its length and `tree` holds 20 bytes.
-        let ok = unsafe { xcoder_git_commit_tree(commit.as_ptr(), commit.len() as i64, tree.as_mut_ptr()) };
+        let ok = unsafe { xcode_git_commit_tree(commit.as_ptr(), commit.len() as i64, tree.as_mut_ptr()) };
         anyhow::ensure!(ok == 1, "malformed commit {commit_id}");
         Ok(ObjectId(tree))
     }
@@ -466,14 +466,14 @@ impl Repository {
         // SAFETY: every buffer covers the length passed with it, and `out`
         // holds the size the package reports.
         let content = unsafe {
-            let size = xcoder_git_commit_encoded_size(
+            let size = xcode_git_commit_encoded_size(
                 parents.len() as i64,
                 &native,
                 &native,
                 message.len() as i64,
             );
             let mut out = vec![0u8; size as usize];
-            let written = xcoder_git_commit_encode(
+            let written = xcode_git_commit_encode(
                 tree.0.as_ptr(),
                 parent_bytes.as_ptr(),
                 parent_bytes.len() as i64,

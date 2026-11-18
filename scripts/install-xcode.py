@@ -20,7 +20,7 @@ def digest(path):
 
 
 # The local-test receipt key of each packaged executable in build/bin.
-PACKAGED = {'binary_sha256': 'xcoder', 'host_sha256': 'codex-code-mode-host'}
+PACKAGED = {'binary_sha256': 'xcode', 'host_sha256': 'codex-code-mode-host'}
 
 
 def packaged_digests(root=None):
@@ -31,7 +31,7 @@ def packaged_digests(root=None):
 def tested_digests():
     """The packaged digests, only when the local-test receipt covers exactly these executables."""
     expected = packaged_digests()
-    validation = json.loads((ROOT / 'backup/xcoder-validation.json').read_text())
+    validation = json.loads((ROOT / 'backup/xcode-validation.json').read_text())
     if not validation.get('local_tests_passed') or any(validation.get(key) != value for key, value in expected.items()):
         raise ValueError('Run the integrated local tests for these exact executables first')
     return expected
@@ -68,25 +68,25 @@ def publish_package_entry(entry, native, compatibility):
 
 
 def install(prefix, before_cutover=None):
-    binary = ROOT / 'build/bin/xcoder'
+    binary = ROOT / 'build/bin/xcode'
     host = ROOT / 'build/bin/codex-code-mode-host'
-    metadata = json.loads(subprocess.check_output([str(binary), '--xcoder-runtime-info'], text=True))
-    if metadata != dict(product='xcoder', tool_language='ziran', pipeline='zi2c', javascript_tool_runtime=False):
-        raise ValueError('Not the native Xcoder build')
+    metadata = json.loads(subprocess.check_output([str(binary), '--xcode-runtime-info'], text=True))
+    if metadata != dict(product='xcode', tool_language='ziran', pipeline='zi2c', javascript_tool_runtime=False):
+        raise ValueError('Not the native Xcode build')
     # The validation receipt binds both executables to their actual local test.
     expected = tested_digests()
-    backup = ROOT / 'backup/xcoder-install'
-    subprocess.run(['git', 'check-ignore', '-q', 'backup/xcoder-install'], cwd=ROOT, check=True)
+    backup = ROOT / 'backup/xcode-install'
+    subprocess.run(['git', 'check-ignore', '-q', 'backup/xcode-install'], cwd=ROOT, check=True)
     backup.mkdir(parents=True, exist_ok=True, mode=0o700)
-    destination = prefix / 'lib/xcoder/bin'
+    destination = prefix / 'lib/xcode/bin'
     destination.mkdir(parents=True, exist_ok=True)
     managed = prefix / 'lib/harmony/agent-bin/codex'
-    target = managed if managed.is_symlink() or managed.is_file() else prefix / 'bin/xcoder'
+    target = managed if managed.is_symlink() or managed.is_file() else prefix / 'bin/xcode'
     target.parent.mkdir(parents=True, exist_ok=True)
     original = {'path': str(target), 'symlink': os.readlink(target) if target.is_symlink() else None}
-    alias = prefix / 'bin/xcoder'
+    alias = prefix / 'bin/xcode'
     alias.parent.mkdir(parents=True, exist_ok=True)
-    original['xcoder_alias'] = {'path': str(alias), 'symlink': os.readlink(alias) if alias.is_symlink() else None}
+    original['xcode_alias'] = {'path': str(alias), 'symlink': os.readlink(alias) if alias.is_symlink() else None}
     # Owner rule: never keep copies of replaced binaries. The receipt records
     # only which paths and links were replaced.
     package_entry = target.resolve() if target.exists() else None
@@ -104,7 +104,7 @@ def install(prefix, before_cutover=None):
     atomic_copy(host, destination / 'codex-code-mode-host')
     atomic_copy(binary, destination / 'codex')
     native_receipt = dict(metadata, **expected)
-    receipt_path = destination / 'codex.xcoder.json'
+    receipt_path = destination / 'codex.xcode.json'
     fd, receipt_stage = tempfile.mkstemp(dir=destination, prefix='.native-receipt-')
     try:
         with os.fdopen(fd, 'w') as stream:
@@ -117,6 +117,13 @@ def install(prefix, before_cutover=None):
         Path(receipt_stage).unlink(missing_ok=True)
     for name in ['LICENSE', 'NOTICE']:
         shutil.copyfile(ROOT / name, destination.parent / name)
+    # `xcode` beside the binary is the product's own command inside the install folder.
+    command = destination / 'xcode'
+    if not command.is_symlink():
+        command_link = destination / '.xcode-link-new'
+        command_link.unlink(missing_ok=True)
+        command_link.symlink_to('codex')
+        os.replace(command_link, command)
     # A coordinated local installer can publish its validated routing helper
     # after the native image is ready and immediately before launch paths move.
     if before_cutover is not None:
@@ -124,22 +131,22 @@ def install(prefix, before_cutover=None):
     if original.get('package_entry'):
         entry = Path(original['package_entry'])
         publish_package_entry(entry, destination / 'codex', Path(original['package_compatibility_entry']))
-    link = target.with_name(target.name + '.xcoder-new')
+    link = target.with_name(target.name + '.xcode-new')
     if link.exists() or link.is_symlink():
         raise FileExistsError(str(link))
     link.symlink_to(destination / 'codex')
     os.replace(link, target)
     if alias != target:
-        alias_link = alias.with_name(alias.name + '.xcoder-new')
+        alias_link = alias.with_name(alias.name + '.xcode-new')
         if alias_link.exists() or alias_link.is_symlink():
             raise FileExistsError(str(alias_link))
         alias_link.symlink_to(destination / 'codex')
         os.replace(alias_link, alias)
-    installed = json.loads(subprocess.check_output([str(target), '--xcoder-runtime-info'], text=True))
+    installed = json.loads(subprocess.check_output([str(target), '--xcode-runtime-info'], text=True))
     if installed != metadata or digest(destination / 'codex') != expected['binary_sha256'] or digest(destination / 'codex-code-mode-host') != expected['host_sha256']:
-        raise ValueError('Installed Xcoder verification failed; replaced paths are recorded in ' + str(receipt))
+        raise ValueError('Installed Xcode verification failed; replaced paths are recorded in ' + str(receipt))
     if original.get('package_entry'):
-        registered = json.loads(subprocess.check_output([original['package_entry'], '--xcoder-runtime-info'], text=True))
+        registered = json.loads(subprocess.check_output([original['package_entry'], '--xcode-runtime-info'], text=True))
         if registered != metadata:
             raise ValueError('Registered Codex package entry verification failed')
     print(json.dumps(dict(installed=str(target), binary=str(destination / 'codex'), recovery=str(receipt), **expected)))

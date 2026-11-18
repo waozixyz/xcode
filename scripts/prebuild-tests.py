@@ -11,7 +11,7 @@ import runpy
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-validation = runpy.run_path(str(ROOT / 'scripts/test-xcoder.py'))
+validation = runpy.run_path(str(ROOT / 'scripts/test-xcode.py'))
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--cargo', required=True)
 args = parser.parse_args()

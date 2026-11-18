@@ -20,7 +20,7 @@ LowerCount :: (point: u32, output: *u32) -> s32 {
 }
 
 #program_export
-xcoder_fuzzy_match :: (haystack_data: *u8, haystack_length: s64, needle_data: *u8, needle_length: s64, scratch: *u32, scratch_capacity: s64, indices: *s64, index_capacity: s64, score: *s32) -> s64 {
+xcode_fuzzy_match :: (haystack_data: *u8, haystack_length: s64, needle_data: *u8, needle_length: s64, scratch: *u32, scratch_capacity: s64, indices: *s64, index_capacity: s64, score: *s32) -> s64 {
     if score == null || haystack_length < 0 || needle_length < 0 ||
        haystack_length > cast(s64)2147483647 || needle_length > cast(s64)2147483647 ||
        (haystack_length > 0 && haystack_data == null) ||

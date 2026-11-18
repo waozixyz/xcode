@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare preserved JS binaries with Xcoder, offline, without changing installs.
+"""Compare preserved JS binaries with Xcode, offline, without changing installs.
 
 Tool cells include compilation, sandbox startup, transport, and output handling.
 The CLI fixture selects the preserved JS host through its existing exec adapter.
@@ -23,7 +23,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-NATIVE_API = 'using X :: #import "xcoder/runtime"\nusing J :: #import "std/json_document"\n'
+NATIVE_API = 'using X :: #import "xcode/runtime"\nusing J :: #import "std/json_document"\n'
 MEMORY_KEYS = ('pss_kib', 'rss_kib', 'swappss_kib', 'pss_anon_kib', 'pss_file_kib')
 
 
@@ -40,11 +40,11 @@ def environment(directory):
     home = directory / 'home'
     home.mkdir()
     (directory / 'tmp').mkdir()
-    env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'XCODER_ZIRAN_TOOLCHAIN') if key in os.environ}
+    env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'XCODE_ZIRAN_TOOLCHAIN') if key in os.environ}
     env.update(HOME=str(home), CODEX_HOME=str(home / '.codex'), TMPDIR=str(directory / 'tmp'),
                XDG_CONFIG_HOME=str(home / '.config'), XDG_CACHE_HOME=str(home / '.cache'),
-               XCODER_RUNTIME_DIR=str(directory / 'r'), RUST_LOG='error',
-               NO_PROXY='127.0.0.1,localhost', HARMONY_SOURCE_SESSION='xcoder-offline-benchmark',
+               XCODE_RUNTIME_DIR=str(directory / 'r'), RUST_LOG='error',
+               NO_PROXY='127.0.0.1,localhost', HARMONY_SOURCE_SESSION='xcode-offline-benchmark',
                HARMONY_MODEL_INPUT_DISABLE='1')
     return env
 
@@ -321,12 +321,12 @@ def cli_trial(engine, cli, js_host, directory, cells, mode):
     requests, dispatches, latencies, post_call_pss, post_call_anon, errors = [], [], [], [], [], []
     state = {}
     ready = threading.Event()
-    arguments = json.dumps(dict(cmd='printf xcoder-benchmark-marker', max_output_tokens=1000))
+    arguments = json.dumps(dict(cmd='printf xcode-benchmark-marker', max_output_tokens=1000))
     source = (native('r := Call("exec_command", ' + json.dumps(arguments) + '); defer Release(*r); Text(Body(*r))')
               if engine == 'native' else 'text(await tools.exec_command(' + arguments + '))')
     if engine == 'native' and mode == 'plan':
         source = json.dumps(dict(calls=[dict(tool='exec_command', input=json.loads(arguments))]))
-        env['XCODER_ZIRAN_TOOLCHAIN'] = str(directory / 'no-compiler')
+        env['XCODE_ZIRAN_TOOLCHAIN'] = str(directory / 'no-compiler')
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -341,7 +341,7 @@ def cli_trial(engine, cli, js_host, directory, cells, mode):
                 requests.append(request)
                 if count:
                     outputs = [x for x in request['input'] if x.get('type') == 'custom_tool_call_output' and x.get('call_id') == 'bench-' + str(count - 1)]
-                    if len(outputs) != 1 or 'xcoder-benchmark-marker' not in json.dumps(outputs):
+                    if len(outputs) != 1 or 'xcode-benchmark-marker' not in json.dumps(outputs):
                         raise AssertionError('real shell tool did not return its marker: ' + json.dumps(outputs))
                     latencies.append((now - dispatches[-1]) * 1000)
                     snapshot = state['sampler'].snapshot()
@@ -606,8 +606,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--javascript-host', required=True, type=Path)
     parser.add_argument('--javascript-cli', type=Path)
-    parser.add_argument('--native-host', type=Path, default=Path.home() / '.local/lib/xcoder/bin/codex-code-mode-host')
-    parser.add_argument('--native-cli', type=Path, default=Path.home() / '.local/lib/xcoder/bin/codex')
+    parser.add_argument('--native-host', type=Path, default=Path.home() / '.local/lib/xcode/bin/codex-code-mode-host')
+    parser.add_argument('--native-cli', type=Path, default=Path.home() / '.local/lib/xcode/bin/codex')
     parser.add_argument('--blocks', type=int, default=3)
     parser.add_argument('--repeats', type=int, default=5)
     parser.add_argument('--cli-trials', type=int, default=5)

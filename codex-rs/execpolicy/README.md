@@ -16,7 +16,7 @@
   assignments, with strings (quoted, raw or triple-quoted, with Starlark escapes),
   lists, tuples, integers, `True`/`False`/`None`, names of earlier assignments,
   `+` and `#` comments. Functions, loops, conditions, `load` and f-strings are
-  rejected with the line they appear on. Xcoder parses them in Ziran
+  rejected with the line they appear on. Xcode parses them in Ziran
   (`native/execpolicy.zi`) instead of running a Starlark interpreter.
 - Prefix rules look like this:
 

@@ -1,9 +1,9 @@
-// Live-allocation tracer for attributing an Xcoder session's retained heap.
+// Live-allocation tracer for attributing an Xcode session's retained heap.
 //
 // Preloaded into the CLI, it records every allocation of at least
-// XCODER_ALLOC_TRACE_MIN bytes (default 2048) with its call stack and forgets
-// it when freed. Creating the file "$XCODER_ALLOC_TRACE.trigger" writes the
-// live set, grouped by stack, to "$XCODER_ALLOC_TRACE". Other programs that
+// XCODE_ALLOC_TRACE_MIN bytes (default 2048) with its call stack and forgets
+// it when freed. Creating the file "$XCODE_ALLOC_TRACE.trigger" writes the
+// live set, grouped by stack, to "$XCODE_ALLOC_TRACE". Other programs that
 // inherit the preload pass straight through to the C library.
 #define _GNU_SOURCE
 #include <execinfo.h>
@@ -136,15 +136,15 @@ static void *watch(void *unused) {
 }
 
 __attribute__((constructor)) static void start(void) {
-    const char *path = getenv("XCODER_ALLOC_TRACE");
+    const char *path = getenv("XCODE_ALLOC_TRACE");
     char executable[512];
     ssize_t length = readlink("/proc/self/exe", executable, sizeof executable - 1);
     if (!path || length <= 0) return;
     executable[length] = 0;
     const char *name = strrchr(executable, '/');
     name = name ? name + 1 : executable;
-    if (strcmp(name, "xcoder") && strcmp(name, "xcode") && strcmp(name, "codex")) return;
-    if (getenv("XCODER_ALLOC_TRACE_MIN")) minimum = strtoull(getenv("XCODER_ALLOC_TRACE_MIN"), NULL, 10);
+    if (strcmp(name, "xcode") && strcmp(name, "codex")) return;
+    if (getenv("XCODE_ALLOC_TRACE_MIN")) minimum = strtoull(getenv("XCODE_ALLOC_TRACE_MIN"), NULL, 10);
     snprintf(output, sizeof output, "%s", path);
     slots = mmap(NULL, sizeof(Slot) * SLOTS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     stacks = mmap(NULL, sizeof(Stack) * STACKS, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);

@@ -21,7 +21,7 @@ fn request(body: &str) -> ExecuteRequest {
             output_schema: None,
         }],
         source: format!(
-            "using X :: #import \"xcoder/runtime\"\nmain :: () -> s32 {{\n{body}\nreturn 0\n}}\n"
+            "using X :: #import \"xcode/runtime\"\nmain :: () -> s32 {{\n{body}\nreturn 0\n}}\n"
         ),
         yield_time_ms: Some(30_000),
         max_output_tokens: None,
@@ -518,7 +518,7 @@ async fn pending_callbacks_leave_other_cells_responsive() {
 async fn native_cells_cannot_fork_and_can_still_call_tools() {
     let session = InProcessCodeModeSession::new();
     let mut input = request("");
-    input.source = r#"using X :: #import "xcoder/runtime"
+    input.source = r#"using X :: #import "xcode/runtime"
 c :: #system_library "libc";
 Fork :: () -> s32 #foreign c "fork";
 main :: () -> s32 { if Fork() >= 0 { return 8 }; Text("blocked"); return 0 }
@@ -542,7 +542,7 @@ async fn session_memory_limit_reaches_the_native_allocator() {
         max_yield_time_ms: None,
     });
     let mut input = request("");
-    input.source = r#"using X :: #import "xcoder/runtime"
+    input.source = r#"using X :: #import "xcode/runtime"
 c :: #system_library "libc";
 Malloc :: (size: usize) -> *void #foreign c "malloc";
 Free :: (value: *void) #foreign c "free";

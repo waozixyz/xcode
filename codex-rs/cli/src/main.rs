@@ -107,12 +107,12 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
 
-/// Xcoder — Codex with native Ziran tool execution
+/// Xcode — Codex with native Ziran tool execution
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
 #[derive(Debug, Parser)]
 #[clap(
-    name = "xcoder",
+    name = "xcode",
     author,
     version,
     // If a sub‑command is given, ignore requirements of the default args.
@@ -177,7 +177,7 @@ enum Subcommand {
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
-    /// Show how to update the Xcoder source installation.
+    /// Show how to update the Xcode source installation.
     Update,
 
     /// Diagnose local Codex installation, config, auth, and runtime health.
@@ -738,7 +738,7 @@ fn run_update_action(
 ) -> anyhow::Result<()> {
     if !matches!(action, UpdateAction::Daemon(_)) {
         anyhow::bail!(
-            "Xcoder is maintained from waozixyz/xcoder. Run `make test` and `make install` in that source repository to update this native fork."
+            "Xcode is maintained from waozixyz/xcode. Run `make test` and `make install` in that source repository to update this native fork."
         );
     }
     if let UpdateAction::Daemon(source) = action {
@@ -929,7 +929,7 @@ fn stage_str(stage: Stage) -> &'static str {
 }
 
 #[cfg(target_os = "linux")]
-fn set_xcoder_process_name() {
+fn set_xcode_process_name() {
     // Keep compatibility command paths separate from the process identity the
     // owner sees in ps, top and Harmony resource accounting.
     // SAFETY: PR_SET_NAME reads the supplied NUL-terminated static bytes and
@@ -946,29 +946,28 @@ fn set_xcoder_process_name() {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn set_xcoder_process_name() {}
+fn set_xcode_process_name() {}
 
 fn main() -> anyhow::Result<()> {
-    set_xcoder_process_name();
+    set_xcode_process_name();
     native_allocator::configure();
-    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--xcoder-runtime-info"))
-    {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--xcode-runtime-info")) {
         println!(
             "{}",
-            r#"{"product":"xcoder","tool_language":"ziran","pipeline":"zi2c","javascript_tool_runtime":false}"#
+            r#"{"product":"xcode","tool_language":"ziran","pipeline":"zi2c","javascript_tool_runtime":false}"#
         );
         return Ok(());
     }
     // Keep the persistent native-code cache in the owner's filesystem rather
     // than a RAM-backed XDG runtime directory. Explicit paths remain in force.
-    if std::env::var_os("XCODER_RUNTIME_DIR").is_none()
+    if std::env::var_os("XCODE_RUNTIME_DIR").is_none()
         && let Some(home) = std::env::var_os("HOME")
     {
         // SAFETY: startup runs before the async runtime or worker threads exist.
         unsafe {
             std::env::set_var(
-                "XCODER_RUNTIME_DIR",
-                std::path::PathBuf::from(home).join(".local/state/xcoder/runtime"),
+                "XCODE_RUNTIME_DIR",
+                std::path::PathBuf::from(home).join(".local/state/xcode/runtime"),
             );
         }
     }
@@ -979,7 +978,7 @@ fn main() -> anyhow::Result<()> {
         // long-lived CLI hands its memory back while idle.
         native_idle::start();
         // Report the newest upstream Codex release to the service, never
-        // Xcoder's own version; record it before any request is built.
+        // Xcode's own version; record it before any request is built.
         if let Ok(codex_home) = find_codex_home() {
             codex_login::upstream_version::load_cached(codex_home.as_path());
             codex_login::upstream_version::refresh_in_background(codex_home.into_path_buf());

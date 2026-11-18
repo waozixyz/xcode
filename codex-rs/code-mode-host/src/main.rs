@@ -100,14 +100,14 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     native_allocator::configure();
     // Persist custom-code cache files outside RAM-backed runtime directories.
-    if std::env::var_os("XCODER_RUNTIME_DIR").is_none()
+    if std::env::var_os("XCODE_RUNTIME_DIR").is_none()
         && let Some(home) = std::env::var_os("HOME")
     {
         // SAFETY: no async runtime or worker threads have started yet.
         unsafe {
             std::env::set_var(
-                "XCODER_RUNTIME_DIR",
-                PathBuf::from(home).join(".local/state/xcoder/runtime"),
+                "XCODE_RUNTIME_DIR",
+                PathBuf::from(home).join(".local/state/xcode/runtime"),
             );
         }
     }

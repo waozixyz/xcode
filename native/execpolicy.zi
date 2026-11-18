@@ -1,4 +1,4 @@
-// Parses Xcoder `.rules` files: the declarative subset of Starlark they use.
+// Parses Xcode `.rules` files: the declarative subset of Starlark they use.
 //
 // A file is a sequence of top-level statements, each a call such as
 // `prefix_rule(pattern = ["git"], decision = "prompt")` or an assignment
@@ -476,7 +476,7 @@ ParseStatement :: (p: *Parser) -> bool {
 // Parses source into nodes and bytes. Returns the node count, or -1 with
 // error = [code, line, column]; -2 for invalid arguments.
 #program_export
-xcoder_parse_rules :: (source: *u8, source_length: s64, nodes: *s64, node_capacity: s64,
+xcode_parse_rules :: (source: *u8, source_length: s64, nodes: *s64, node_capacity: s64,
                        bytes: *u8, byte_capacity: s64, error: *s64) -> s64 {
     if source_length < 0 || node_capacity < 0 || byte_capacity < 0 || error == null || nodes == null ||
        bytes == null || (source_length > 0 && source == null) { return -2 }

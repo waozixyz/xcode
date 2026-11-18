@@ -283,7 +283,7 @@ fn extract_apply_patch_from_bash(
     let mut found = [0i64; 5];
     // SAFETY: `src` and `found` outlive the call; Ziran writes five values.
     let matched =
-        unsafe { xcoder_apply_patch_heredoc(src.as_ptr(), src.len() as i64, found.as_mut_ptr()) };
+        unsafe { xcode_apply_patch_heredoc(src.as_ptr(), src.len() as i64, found.as_mut_ptr()) };
     if matched != 1 {
         return Err(ExtractHeredocError::CommandDidNotStartWithApplyPatch);
     }
@@ -297,7 +297,7 @@ fn extract_apply_patch_from_bash(
 }
 
 unsafe extern "C" {
-    fn xcoder_apply_patch_heredoc(script: *const u8, script_length: i64, result: *mut i64) -> i64;
+    fn xcode_apply_patch_heredoc(script: *const u8, script_length: i64, result: *mut i64) -> i64;
 }
 
 /// The tree-sitter query the heredoc form was recognized with before Ziran.

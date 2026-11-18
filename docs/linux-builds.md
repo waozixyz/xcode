@@ -1,22 +1,22 @@
-# Xcoder Linux downloads
+# Xcode Linux downloads
 
-Every push to `master` builds and tests Xcoder for Linux x86_64 on GitHub.
+Every push to `master` builds and tests Xcode for Linux x86_64 on GitHub.
 Pull requests and manual runs use the same build. Open the repository's
-[Xcoder Linux runs](https://github.com/waozixyz/xcoder/actions/workflows/xcoder-linux.yml)
-and download the `xcoder-linux-x86_64` artifact from a successful run.
+[Xcode Linux runs](https://github.com/waozixyz/xcode/actions/workflows/xcode-linux.yml)
+and download the `xcode-linux-x86_64` artifact from a successful run.
 Downloads are retained for 30 days. These builds do not create a release.
 
 Unzip the artifact, then verify and extract its archive:
 
 ```sh
-sha256sum --check xcoder-linux-x86_64.tar.gz.sha256
-tar -xzf xcoder-linux-x86_64.tar.gz
-./xcoder-linux-x86_64/xcoder
+sha256sum --check xcode-linux-x86_64.tar.gz.sha256
+tar -xzf xcode-linux-x86_64.tar.gz
+./xcode-linux-x86_64/xcode
 ```
 
-Keep the extracted directory together. Its `xcoder` launcher selects the included
+Keep the extracted directory together. Its `xcode` launcher selects the included
 Ziran compiler, so custom tool programs work after moving the download. You can
-link this launcher into a directory on your `PATH` under the name `xcoder`.
+link this launcher into a directory on your `PATH` under the name `xcode`.
 The archive includes the CLI, tool host, Ziran compiler, standard library and
 licenses. It contains no accounts or saved sessions.
 

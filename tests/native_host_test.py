@@ -10,16 +10,16 @@ import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST = Path(os.environ.get('XCODER_TEST_HOST', ROOT / 'build/bin/codex-code-mode-host'))
+HOST = Path(os.environ.get('XCODE_TEST_HOST', ROOT / 'build/bin/codex-code-mode-host'))
 
 
 class Peer:
     def __init__(self, directory, toolchain=None):
         env = {key: value for key, value in os.environ.items() if key not in
                ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS']}
-        env['XCODER_RUNTIME_DIR'] = str(directory / 'runtime')
+        env['XCODE_RUNTIME_DIR'] = str(directory / 'runtime')
         if toolchain is not None:
-            env['XCODER_ZIRAN_TOOLCHAIN'] = str(toolchain)
+            env['XCODE_ZIRAN_TOOLCHAIN'] = str(toolchain)
         self.process = subprocess.Popen([str(HOST), '--listen', 'stdio://'], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         self.messages = queue.Queue()
@@ -96,7 +96,7 @@ class NativeHostTest(unittest.TestCase):
         definitions = [dict(name=name, tool_name=dict(name=name, namespace=None),
                             description='native fixture', kind=kind, input_schema=None,
                             output_schema=None) for name, kind in tools]
-        source = 'using X :: #import "xcoder/runtime"\nmain :: () -> s32 {\n' + body + '\nreturn 0\n}\n'
+        source = 'using X :: #import "xcode/runtime"\nmain :: () -> s32 {\n' + body + '\nreturn 0\n}\n'
         self.peer.operation(ident, 'session/execute', request=dict(tool_call_id='native-host-call',
                             enabled_tools=definitions, source=source, yield_time_ms=30000,
                             max_output_tokens=10000))

@@ -2,10 +2,10 @@
 
 Measured on 2026-11-12 on `omega`, Linux x86-64. The Ziran package and Rust
 adapter rendered all measured inputs identically to the original Rust
-renderer. These are component results; complete Xcoder
+renderer. These are component results; complete Xcode
 performance and production integration remain unverified.
 
-The standalone package lives in `ziranlang/packages/mermaid`. Xcoder consumes
+The standalone package lives in `ziranlang/packages/mermaid`. Xcode consumes
 its exported module through Ziran's package resolver. Ordinary labels use
 48 inline bytes with owned overflow for longer labels. Layout borrows label
 lines, and the native adapter transfers an owned Unicode cell grid to Rust.
@@ -45,7 +45,7 @@ and the benchmark executable hash are retained in
 [mermaid-performance.json](mermaid-performance.json).
 
 The measured reference was the original Rust renderer in
-[`codex-rs/mermaid/src`](https://github.com/waozixyz/xcoder/tree/ba9d4a9e84bd34d9f2915fca36c9333a0eee8951/codex-rs/mermaid/src),
+[`codex-rs/mermaid/src`](https://github.com/waozixyz/xcode/tree/ba9d4a9e84bd34d9f2915fca36c9333a0eee8951/codex-rs/mermaid/src),
 compiled unchanged into the benchmark executable. After these measurements
 the duplicated Rust renderer and its benchmark harness were removed; parsing
 and layout now exist only in the Ziran package. The raw samples and hashes in
@@ -66,8 +66,8 @@ the JSON report remain the evidence for these ratios.
   Ziran's `build/check-logs`. This full suite was not rerun for this report.
   The focused vector suite and bootstrap local tests passed in that run.
 
-Full Xcoder local tests and its production build are blocked: the required
-`xcoder-compilation.scope` cannot be created because the user-systemd bus
+Full Xcode local tests and its production build are blocked: the required
+`xcode-compilation.scope` cannot be created because the user-systemd bus
 is unavailable. A fresh `build-queue -- python3
 scripts/low-priority-build.py true` reproduces the missing-bus error. The
 memory scope has not been disabled. An earlier desktop `make test` request
@@ -76,7 +76,7 @@ and context requests currently return HTTP 403, preventing native-host
 verification and routing of the bridge issue to its owning task.
 
 The new package repository remains uncommitted and unpublished. Its pinned
-published toolchain and Xcoder's development dependency lock still require
+published toolchain and Xcode's development dependency lock still require
 finalization and locked-consumer validation after the upstream prerequisite
 is integrated. Full application validation is required before committing or
 pushing this feature set. No release or installation has been performed.

@@ -22,7 +22,7 @@ impl SanitizedGitUrl {
 }
 
 unsafe extern "C" {
-    fn xcoder_git_sanitize_url(text: *const u8, length: i64, out: *mut u8, capacity: i64) -> i64;
+    fn xcode_git_sanitize_url(text: *const u8, length: i64, out: *mut u8, capacity: i64) -> i64;
 }
 
 impl TryFrom<&str> for SanitizedGitUrl {
@@ -37,7 +37,7 @@ impl TryFrom<&str> for SanitizedGitUrl {
         // SAFETY: `value` covers its length and `out` its capacity, which the
         // package requires to be at least the input length plus 16.
         let length = unsafe {
-            xcoder_git_sanitize_url(
+            xcode_git_sanitize_url(
                 value.as_ptr(),
                 value.len() as i64,
                 out.as_mut_ptr(),

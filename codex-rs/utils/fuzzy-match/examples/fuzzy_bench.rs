@@ -79,11 +79,11 @@ fn median(values: &mut [u128]) -> u128 {
 }
 
 fn main() {
-    let iterations = std::env::var("XCODER_FUZZY_BENCH_ITERS")
+    let iterations = std::env::var("XCODE_FUZZY_BENCH_ITERS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(200_000);
-    let samples = std::env::var("XCODER_FUZZY_BENCH_SAMPLES")
+    let samples = std::env::var("XCODE_FUZZY_BENCH_SAMPLES")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(9);

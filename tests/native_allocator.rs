@@ -38,7 +38,7 @@ fn arenas() -> usize {
 
 #[test]
 fn allocator_probe() {
-    let Ok(mode) = std::env::var("XCODER_ALLOCATOR_PROBE") else {
+    let Ok(mode) = std::env::var("XCODE_ALLOCATOR_PROBE") else {
         return;
     };
     let configured = allocator::configure();
@@ -76,7 +76,7 @@ fn real_allocator_cap_and_explicit_owner_settings() {
         let mut command = std::process::Command::new(std::env::current_exe().unwrap());
         command
             .args(["--exact", "allocator_probe", "--nocapture"])
-            .env("XCODER_ALLOCATOR_PROBE", mode)
+            .env("XCODE_ALLOCATOR_PROBE", mode)
             .env_remove("LD_PRELOAD")
             .env_remove("MALLOC_ARENA_MAX")
             .env_remove("GLIBC_TUNABLES");

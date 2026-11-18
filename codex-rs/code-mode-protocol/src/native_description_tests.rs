@@ -66,7 +66,7 @@ fn server_javascript_templates_cannot_override_the_native_contract() {
         false,
         Some(&messages),
     );
-    assert!(description.contains("xcoder/runtime"));
+    assert!(description.contains("xcode/runtime"));
     assert!(!description.contains("Run JavaScript in V8"));
     assert!(description.contains(r#""tool":"tool_search""#));
 }
@@ -83,7 +83,7 @@ fn native_freeform_declarations_do_not_expect_json() {
 #[test]
 fn native_source_and_observation_pragma_round_trip() {
     let source =
-        "using X :: #import \"xcoder/runtime\"\nmain :: () -> s32 { Text(\"hi\"); return 0 }";
+        "using X :: #import \"xcode/runtime\"\nmain :: () -> s32 { Text(\"hi\"); return 0 }";
     let plain = parse_exec_source(source).unwrap();
     assert_eq!(plain.code, source);
     let plan = r#"{"calls":[{"tool":"exec_command","input":{"cmd":"pwd"}}]}"#;

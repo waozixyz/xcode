@@ -46,7 +46,7 @@
   "root": {
     "dependencies": {"diff": "p71bb90bc4bfbef3a", "git": "p12f96d1e4f853fa9", "mermaid": "peb7256f63ad47763"},
     "dependency_refs": {"diff": "master", "git": "master", "mermaid": "master"},
-    "name": "xcoder"
+    "name": "xcode"
   },
   "toolchain": {
     "commit": "10e854af6b77d1acd6475f9271f9ecbcbd71cdc4",

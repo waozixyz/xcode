@@ -74,7 +74,7 @@ async fn reports_cell_actor_panics_to_the_owner() {
     let started = runtime
         .execute(
             execute_request(
-                r#"using X :: #import "xcoder/runtime"
+                r#"using X :: #import "xcode/runtime"
 main :: () -> s32 { Text("done"); return 0 }"#,
             ),
             ObserveMode::YieldAfter(Duration::from_secs(1)),
@@ -150,7 +150,7 @@ async fn termination_rejects_a_waiting_store_commit_before_the_next_cell_can_loa
                 output_truncation: CodeModeOutputTruncation::Client,
                 tool_call_id: "reader".to_string(),
                 enabled_tools: Vec::new(),
-                source: r#"using X :: #import "xcoder/runtime"
+                source: r#"using X :: #import "xcode/runtime"
 main :: () -> s32 { value := Load("candidate"); defer Release(*value); Text(Body(*value)); return 0 }"#.to_string(),
             },
             ObserveMode::YieldAfter(Duration::from_secs(1)),

@@ -194,7 +194,7 @@ ReadCommand :: (s: *Scanner) -> bool {
 // arguments or buffers too small. Word k ends at word_ends[k] in bytes;
 // command c has command_words[c] words.
 #program_export
-xcoder_parse_plain_commands :: (script: *u8, script_length: s64, bytes: *u8, byte_capacity: s64,
+xcode_parse_plain_commands :: (script: *u8, script_length: s64, bytes: *u8, byte_capacity: s64,
                                 word_ends: *s64, word_capacity: s64,
                                 command_words: *s64, command_capacity: s64) -> s64 {
     if script_length < 0 || (script_length > 0 && script == null) || bytes == null || word_ends == null ||
@@ -1075,7 +1075,7 @@ XList :: (x: *Extract, close: u8) -> bool {
 // cannot be parsed, -2 for invalid arguments or buffers too small. The stack
 // buffers need the same capacity as the output ones.
 #program_export
-xcoder_literal_commands :: (script: *u8, script_length: s64, bytes: *u8, capacity: s64,
+xcode_literal_commands :: (script: *u8, script_length: s64, bytes: *u8, capacity: s64,
                             word_ends: *s64, command_words: *s64,
                             stack_bytes: *u8, stack_word_ends: *s64) -> s64 {
     if script_length < 0 || (script_length > 0 && script == null) || bytes == null || word_ends == null ||

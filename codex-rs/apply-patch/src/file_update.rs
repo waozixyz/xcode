@@ -126,7 +126,7 @@ pub(crate) fn apply_chunks(
     // SAFETY: every table outlives the call and has the length passed for it;
     // Ziran writes at most `output_capacity` bytes into `output`.
     let written = unsafe {
-        xcoder_apply_chunks(
+        xcode_apply_chunks(
             original.as_ptr(),
             original.len() as i64,
             line_data.as_mut_ptr(),
@@ -168,7 +168,7 @@ pub(crate) fn apply_chunks(
 }
 
 unsafe extern "C" {
-    fn xcoder_apply_chunks(
+    fn xcode_apply_chunks(
         contents: *const u8,
         contents_length: i64,
         line_data: *mut *const u8,

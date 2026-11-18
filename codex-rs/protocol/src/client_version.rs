@@ -1,9 +1,9 @@
-//! The client version Xcoder reports to the Codex service.
+//! The client version Xcode reports to the Codex service.
 //!
 //! The Codex service hides newer models (for example `gpt-6.1-sol`) from
-//! older clients and refuses them on model requests. Xcoder therefore reports
+//! older clients and refuses them on model requests. Xcode therefore reports
 //! the newest upstream Codex release it knows about, never its own version:
-//! Xcoder's release number (`xcoder --version`) is separate and unrelated.
+//! Xcode's release number (`xcode --version`) is separate and unrelated.
 //!
 //! The newest release known is the larger of [`TRACKED_UPSTREAM_CLIENT_VERSION`],
 //! built in, and the latest upstream release recorded at startup from the
