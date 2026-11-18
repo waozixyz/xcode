@@ -20,6 +20,7 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::openai_models::ModelAccessPrograms;
 use codex_protocol::openai_models::ModelOrigin;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::openai_models::XCODE_DEFAULT_MODEL;
 use codex_protocol::turn_input::CyberAccessProgram;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -793,9 +794,10 @@ async fn dynamic_manager_preserves_requested_model_when_fallback_is_allowed() {
 }
 
 /// A failed catalog request (for example a slow resolver exceeding the refresh timeout) leaves
-/// the bundled table in charge; a session without a configured model still gets the newest Sol.
+/// the bundled table in charge; a session without a configured model still gets Sol 6.1, the
+/// xcode default, although a newer Sol is bundled ahead of it.
 #[tokio::test]
-async fn failed_catalog_fetch_defaults_to_newest_bundled_sol() {
+async fn failed_catalog_fetch_defaults_to_xcode_default_sol() {
     let codex_home = tempdir().expect("temp dir");
     let endpoint = Arc::new(TestModelsEndpoint {
         uses_codex_backend: true,
@@ -813,23 +815,61 @@ async fn failed_catalog_fetch_defaults_to_newest_bundled_sol() {
         )
         .await;
 
-    let newest_sol = load_remote_models_from_file()
-        .expect("bundled models should parse")
-        .into_iter()
-        .filter_map(|model| {
-            let version = model.slug.strip_prefix("gpt-")?.strip_suffix("-sol")?;
-            let parts = version
-                .split('.')
-                .map(str::parse::<u32>)
-                .collect::<Result<Vec<_>, _>>()
-                .ok()?;
-            Some((parts, model.slug))
-        })
-        .max()
-        .map(|(_, slug)| slug)
-        .expect("bundled models should include a Sol model");
+    let bundled = load_remote_models_from_file().expect("bundled models should parse");
+    let first = bundled
+        .iter()
+        .min_by_key(|model| model.priority)
+        .expect("bundled models should not be empty");
+    assert_eq!(
+        first.slug, "gpt-6.2-sol",
+        "the newest Sol stays bundled first"
+    );
     assert!(endpoint.fetch_count() >= 1);
-    assert_eq!(model, newest_sol);
+    assert_eq!(model, XCODE_DEFAULT_MODEL);
+    assert_eq!(model, "gpt-6.1-sol");
+}
+
+/// A live catalog that ranks Sol 6.2 above Sol 6.1 keeps 6.2 selectable and 6.1 the default.
+#[test]
+fn build_available_models_prefers_xcode_default_over_higher_priority_model() {
+    let manager = static_manager_for_tests(ModelsResponse { models: Vec::new() });
+    let newer =
+        remote_model_with_visibility("gpt-6.2-sol", "GPT-6.2-Sol", /*priority*/ 1, "list");
+    let default =
+        remote_model_with_visibility("gpt-6.1-sol", "GPT-6.1-Sol", /*priority*/ 5, "list");
+
+    let available = manager.build_available_models(vec![default, newer]);
+
+    let slugs: Vec<_> = available
+        .iter()
+        .map(|preset| preset.model.as_str())
+        .collect();
+    assert_eq!(slugs, vec!["gpt-6.2-sol", "gpt-6.1-sol"]);
+    let defaults: Vec<_> = available
+        .iter()
+        .filter(|preset| preset.is_default)
+        .map(|preset| preset.model.as_str())
+        .collect();
+    assert_eq!(defaults, vec!["gpt-6.1-sol"]);
+}
+
+/// A hidden Sol 6.1 is not forced on; the first picker-visible model stays the default.
+#[test]
+fn build_available_models_skips_hidden_xcode_default() {
+    let manager = static_manager_for_tests(ModelsResponse { models: Vec::new() });
+    let newer =
+        remote_model_with_visibility("gpt-6.2-sol", "GPT-6.2-Sol", /*priority*/ 1, "list");
+    let hidden =
+        remote_model_with_visibility("gpt-6.1-sol", "GPT-6.1-Sol", /*priority*/ 0, "hide");
+
+    let available = manager.build_available_models(vec![hidden, newer]);
+
+    let defaults: Vec<_> = available
+        .iter()
+        .filter(|preset| preset.is_default)
+        .map(|preset| preset.model.as_str())
+        .collect();
+    assert_eq!(defaults, vec!["gpt-6.2-sol"]);
 }
 
 #[tokio::test]

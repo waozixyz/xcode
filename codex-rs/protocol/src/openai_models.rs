@@ -245,6 +245,11 @@ pub struct ModelServiceTier {
     pub description: String,
 }
 
+/// xcode's model when none is configured. Newer models stay selectable; the default moves only
+/// when the owner asks. A catalog that does not offer it picker-visible falls back to its
+/// highest-priority picker-visible model.
+pub const XCODE_DEFAULT_MODEL: &str = "gpt-6.1-sol";
+
 /// Metadata describing a Codex-supported model.
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
 pub struct ModelPreset {
@@ -1162,12 +1167,18 @@ impl ModelPreset {
 
     /// Recompute the single default preset using picker visibility.
     ///
-    /// The first picker-visible model wins; if none are picker-visible, the first model wins.
+    /// [`XCODE_DEFAULT_MODEL`] wins while it is picker-visible; otherwise the first
+    /// picker-visible model wins; if none are picker-visible, the first model wins.
     pub fn mark_default_by_picker_visibility(models: &mut [ModelPreset]) {
         for preset in models.iter_mut() {
             preset.is_default = false;
         }
-        if let Some(default) = models.iter_mut().find(|preset| preset.show_in_picker) {
+        if let Some(default) = models
+            .iter_mut()
+            .find(|preset| preset.show_in_picker && preset.model == XCODE_DEFAULT_MODEL)
+        {
+            default.is_default = true;
+        } else if let Some(default) = models.iter_mut().find(|preset| preset.show_in_picker) {
             default.is_default = true;
         } else if let Some(default) = models.first_mut() {
             default.is_default = true;

@@ -2,6 +2,7 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 
 ## Unreleased
 
+- xcode starts on Sol 6.1 (`gpt-6.1-sol`) when no model is configured, even when the catalog ranks a newer model first; Sol 6.2 (`gpt-6.2-sol`) and the other listed models stay selectable. The default is `XCODE_DEFAULT_MODEL` and moves only when the owner chooses; a catalog that does not offer Sol 6.1 falls back to its first listed model.
 - Local builds are faster. `make` builds a `local` profile (no cross-crate LTO, 16 codegen units, incremental, no debug info) whose final link spreads over many cores and needs a fraction of the memory; published releases keep the optimized `release` profile (`XCODER_CARGO_PROFILE=release`, set in CI).
 - `codex-protocol`, which nearly every crate depends on, no longer waits for the network proxy to compile: the policy values it shares with the proxy live in a small `codex-network-policy` crate. The proxy was the slowest crate in the build (about 140 s), so its compile time now overlaps the rest.
 - Line diffs, unified diff text and unified-diff parsing come from the Ziran `diff` package (`native/diff.zi`, `codex-utils-text-diff`) instead of `similar` and `diffy`; the turn diff, `apply_patch` results, the git baseline and the TUI diff view use it. Output matches `similar` byte for byte and parsing matches `diffy` on generated and damaged patches. The 100 ms diff deadline is now a deterministic work budget.
