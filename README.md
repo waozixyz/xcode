@@ -1,5 +1,8 @@
 ## Xcode
 
+Source: https://git.waozi.xyz/waozixyz/xcode (Gitea, the primary repository).
+Every push there is mirrored to https://github.com/waozixyz/xcode, where CI runs.
+
 For automatic Linux builds and downloads, see
 [Xcode Linux](https://github.com/waozixyz/xcode/actions/workflows/xcode-linux.yml).
 

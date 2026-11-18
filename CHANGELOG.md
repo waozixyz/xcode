@@ -2,6 +2,7 @@ The changelog can be found on the [releases page](https://github.com/openai/code
 
 ## Unreleased
 
+- The primary repository is Gitea, https://git.waozi.xyz/waozixyz/xcode; every push there is mirrored to GitHub (https://github.com/waozixyz/xcode), where CI runs. The README, the update message and the docs point at Gitea.
 - xcode starts on Sol 6.1 (`gpt-6.1-sol`) when no model is configured, even when the catalog ranks a newer model first; Sol 6.2 (`gpt-6.2-sol`) and the other listed models stay selectable. The default is `XCODE_DEFAULT_MODEL` and moves only when the owner chooses; a catalog that does not offer Sol 6.1 falls back to its first listed model.
 - The fork is called xcode, not xcoder: the repository is `waozixyz/xcode`, `xcode --version` prints `xcode`, the manifest product, receipts and `--xcode-runtime-info` say `xcode`, and installs go to `~/.local/lib/xcode` with `~/.local/bin/xcode`. Scripts, tests, environment variables (`XCODE_*`), the Ziran package and native symbols follow. The `codex` binary and crate names from upstream stay.
 - Local builds are faster. `make` builds a `local` profile (no cross-crate LTO, 16 codegen units, incremental, no debug info) whose final link spreads over many cores and needs a fraction of the memory; published releases keep the optimized `release` profile (`XCODE_CARGO_PROFILE=release`, set in CI).

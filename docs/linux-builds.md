@@ -1,6 +1,7 @@
 # Xcode Linux downloads
 
-Every push to `master` builds and tests Xcode for Linux x86_64 on GitHub.
+Every push to `master` on https://git.waozi.xyz/waozixyz/xcode is mirrored to GitHub, which builds
+and tests Xcode for Linux x86_64.
 Pull requests and manual runs use the same build. Open the repository's
 [Xcode Linux runs](https://github.com/waozixyz/xcode/actions/workflows/xcode-linux.yml)
 and download the `xcode-linux-x86_64` artifact from a successful run.

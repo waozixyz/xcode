@@ -738,7 +738,7 @@ fn run_update_action(
 ) -> anyhow::Result<()> {
     if !matches!(action, UpdateAction::Daemon(_)) {
         anyhow::bail!(
-            "Xcode is maintained from waozixyz/xcode. Run `make test` and `make install` in that source repository to update this native fork."
+            "Xcode is maintained at https://git.waozi.xyz/waozixyz/xcode. Run `make test` and `make install` in that source repository to update this native fork."
         );
     }
     if let UpdateAction::Daemon(source) = action {

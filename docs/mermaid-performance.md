@@ -45,7 +45,7 @@ and the benchmark executable hash are retained in
 [mermaid-performance.json](mermaid-performance.json).
 
 The measured reference was the original Rust renderer in
-[`codex-rs/mermaid/src`](https://github.com/waozixyz/xcode/tree/ba9d4a9e84bd34d9f2915fca36c9333a0eee8951/codex-rs/mermaid/src),
+[`codex-rs/mermaid/src`](https://git.waozi.xyz/waozixyz/xcode/src/commit/ba9d4a9e84bd34d9f2915fca36c9333a0eee8951/codex-rs/mermaid/src),
 compiled unchanged into the benchmark executable. After these measurements
 the duplicated Rust renderer and its benchmark harness were removed; parsing
 and layout now exist only in the Ziran package. The raw samples and hashes in
